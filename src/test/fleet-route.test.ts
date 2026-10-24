@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeDb, type FakeDb } from "@/test/helpers/fake-supabase";
 
@@ -43,8 +43,16 @@ const json = (res: Response) => res.json() as Promise<{ data?: Record<string, un
 const req = (method: string, body?: unknown) => new Request("http://x.test/", { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 beforeEach(() => {
+  // The rental below is due back on 2026-10-15; pin the clock so "due back must be ahead" holds
+  // whatever today's date is.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse("2026-10-10T14:00:00Z"));
   h.db = seed();
   h.role = "owner";
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("fleet settings route", () => {

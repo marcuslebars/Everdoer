@@ -7,6 +7,7 @@ import type { Json, Tables } from "@/server/db/database.types";
 import { createActivityEvent } from "@/server/services/activity-events";
 import { sendDailyDigests } from "@/server/services/push/digest";
 import { processOwnerDigests } from "@/server/services/owner-digest";
+import { processDueOwnerCalls } from "@/server/services/owner-channel/calls";
 import { sweepOwnerApprovals } from "@/server/services/owner-channel/notify";
 import { sweepUnansweredTexts } from "@/server/services/sms-agent/entry";
 import { processWeeklyReports } from "@/server/services/weekly-report/send";
@@ -396,6 +397,7 @@ export async function runScheduler(
   // Done-for-you: quick setup → enrichment → switch-on → page → follow-ups.
   await runDoneForYouPasses(admin, nowMs);
   await guarded("owner approvals", null, () => sweepOwnerApprovals(admin, nowMs)); // expire + morning sends (docs/front-desk-ai.md)
+  await guarded("owner calls", null, () => processDueOwnerCalls(admin, nowMs)); // scheduled "call Dave at 9" (docs/owner-call-requests.md)
   await guarded("unanswered texts", null, () => sweepUnansweredTexts(admin, nowMs)); // re-run lost SMS-agent turns, else tell the owner once
   // Daily operator health email (docs/operator-health.md) — at/after 07:30 BUSINESS_TIMEZONE,
   // once per day (claimed in operator_health_reports before sending), throttled like the

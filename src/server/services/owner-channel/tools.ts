@@ -14,8 +14,10 @@ import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { toPlainText } from "@/server/services/sms-agent/guard";
 import { setConversationAi } from "@/server/services/sms-agent/takeover";
 import { createApproval, ensureShortCodes, listPendingApprovals } from "./approvals";
-import { shortWhen } from "./common";
+import { attachApproval, briefInputSchema, cancelCallRequest, createCallRequest, failureMessage, openCallRequestFor, ownerCallsDailyCap, resolveCallTime, toE164 } from "./calls";
+import { consumeLimit, shortWhen } from "./common";
 import {
+  callCustomerProposal,
   cancelProposal,
   newConfirmation,
   OWNER_COMMAND_KIND,
@@ -27,6 +29,8 @@ import {
   type OwnerCommandPayload,
 } from "./owner-commands";
 import { contactName, findScopedBooking, findScopedContact, openTimesForBooking, type CompanyScope } from "./schedule";
+import { formatNanp } from "@/server/services/dfy/intake";
+import { requireReceptionistMinutes } from "@/server/services/voice/minutes";
 
 export interface ToolRunState {
   admin: AdminClient;
@@ -40,6 +44,8 @@ export interface ToolRunState {
   actions: Array<{ tool: string; ok: boolean; detail?: Record<string, unknown> }>;
   /** The AI staff owner tools for this company (staff/registry.ts activeRolesFor); unset → all roles'. */
   roleOwnerTools?: RoleOwnerTool[];
+  /** Marina can place calls for this owner (Retell outbound on + the plan has marina_reception). */
+  callsEnabled?: boolean;
 }
 
 const CONFIRM_MINUTES = 30;
@@ -145,6 +151,35 @@ export const OWNER_TOOLS: Anthropic.Messages.Tool[] = [
     input_schema: { type: "object", properties: {} },
   },
 ];
+
+/** Tools that place calls (docs/owner-call-requests.md); listed only when ToolRunState.callsEnabled. */
+export const CALL_TOOLS: Anthropic.Messages.Tool[] = [
+  {
+    name: "call_customer",
+    description:
+      "Have Marina phone a customer on the owner's behalf: say the owner's message and, optionally, get one question answered. The owner is shown exactly what will be said and must confirm with a code; nothing is dialed until then. Put the owner's message in purpose (their words, tidied, same meaning) and one question in ask_for only if they asked one. Use when='now' only if the owner said now / right away; otherwise leave when blank unless they gave a time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contact_id: { type: "string" },
+        purpose: { type: "string", description: "What to tell them, in the owner's words." },
+        ask_for: { type: "string", description: "The one question to get answered (optional)." },
+        when: { type: "string", description: "'now', or YYYY-MM-DD HH:MM local, or blank for the next calling hours." },
+        if_voicemail: { type: "string", enum: ["leave_message", "hang_up"] },
+      },
+      required: ["contact_id", "purpose"],
+    },
+  },
+  {
+    name: "cancel_customer_call",
+    description: "Cancel a call to a customer that is waiting for confirmation or scheduled for later. Nothing to confirm; a call already in progress can't be cancelled.",
+    input_schema: { type: "object", properties: { contact_id: { type: "string" } }, required: ["contact_id"] },
+  },
+];
+
+export function ownerToolsFor(state: Pick<ToolRunState, "callsEnabled">): Anthropic.Messages.Tool[] {
+  return state.callsEnabled ? [...OWNER_TOOLS, ...CALL_TOOLS] : OWNER_TOOLS;
+}
 
 type Input = Record<string, unknown>;
 
@@ -336,6 +371,63 @@ async function textCustomerTool(state: ToolRunState, input: Input) {
   return { ok: true, asked_owner: "Confirmation sent; nothing is sent to the customer until the owner confirms." };
 }
 
+async function callCustomerTool(state: ToolRunState, input: Input) {
+  if (!state.callsEnabled) return { error: "Calling customers isn't available for this business." };
+  const contact = await findScopedContact(state.admin, state.scope, input.contact_id);
+  if (!contact) return { error: "No such customer for this business." };
+  const who = contactName(contact);
+  if (!contact.phone) return { ok: false, reason: `${who} has no phone number on file.` };
+  const phone = toE164(contact.phone);
+  if (!phone) return { ok: false, reason: `${who}'s number on file isn't a callable phone number.` };
+
+  const parsed = briefInputSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Tell me what Marina should say." };
+  const when = resolveCallTime(parsed.data.when, state.nowMs, state.scope.timeZone);
+  if ("error" in when) return { error: when.error };
+
+  const open = await openCallRequestFor(state.admin, state.scope, contact.id);
+  if (open) return { ok: false, reason: `A call to ${who} is already ${open.status === "scheduled" ? "scheduled" : "waiting"}. Say "cancel the call to ${who.split(" ")[0]}" first.` };
+  // Plan + this month's minutes, checked now so the owner isn't asked to confirm a call that
+  // can't be placed (checked again at placement).
+  try {
+    await requireReceptionistMinutes(state.admin, state.scope.organizationId);
+  } catch (err) {
+    return { ok: false, reason: `The call can't be placed - ${failureMessage(err)}.` };
+  }
+
+  const brief = { purpose: parsed.data.purpose, askFor: parsed.data.ask_for, ifVoicemail: parsed.data.if_voicemail ?? ("leave_message" as const), who };
+  const request = await createCallRequest(state.admin, { scope: state.scope, contactId: contact.id, brief, runAtMs: when.runAtMs, ownerPhone: state.ownerPhone });
+  if (request === "already_open") return { ok: false, reason: `A call to ${who} is already waiting. Say "cancel the call to ${who.split(" ")[0]}" first.` };
+  // The daily cap counts proposals that got this far (a refused one is cancelled, not counted twice).
+  const day = localDate(new Date(state.nowMs), state.scope.timeZone);
+  if (!(await consumeLimit(state.admin, `owner_calls:${state.scope.companyId}:${day}`, ownerCallsDailyCap(), 86_400))) {
+    await cancelCallRequest(state.admin, request.id);
+    return { ok: false, reason: "That's the daily limit on calls I can place for this business - try again tomorrow." };
+  }
+
+  // Nothing is dialed yet: the owner sees exactly what Marina will say and confirms with a code.
+  const proposal = callCustomerProposal(request, who, formatNanp(phone), brief, when.label);
+  await proposeConfirmation(state, contact.id, proposal);
+  if (state.confirmation) await attachApproval(state.admin, request.id, state.confirmation.id);
+  return { ok: true, asked_owner: "Confirmation sent; nothing is dialed until the owner confirms." };
+}
+
+async function cancelCustomerCallTool(state: ToolRunState, input: Input) {
+  const contact = await findScopedContact(state.admin, state.scope, input.contact_id);
+  if (!contact) return { error: "No such customer for this business." };
+  const who = contactName(contact);
+  const open = await openCallRequestFor(state.admin, state.scope, contact.id);
+  if (!open) return { ok: false, reason: `No call to ${who} is waiting or scheduled.` };
+  if (open.status === "dialing") return { ok: false, reason: `The call to ${who} is already being placed.` };
+  const cancelled = await cancelCallRequest(state.admin, open.id);
+  if (!cancelled) return { ok: false, reason: `The call to ${who} was already handled.` };
+  if (open.approval_id) {
+    // The confirmation it was waiting on no longer applies.
+    await state.admin.from("owner_approvals").update({ status: "rejected", decided_at: new Date(state.nowMs).toISOString(), decided_via: "sms", decided_by: state.ownerPhone }).eq("id", open.approval_id).eq("status", "pending");
+  }
+  return { ok: true, cancelled: who };
+}
+
 async function setAiForCustomerTool(state: ToolRunState, input: Input) {
   const contact = await findScopedContact(state.admin, state.scope, input.contact_id);
   if (!contact) return { error: "No such customer for this business." };
@@ -369,6 +461,12 @@ export async function runOwnerTool(state: ToolRunState, name: string, input: Inp
         break;
       case "text_customer":
         result = await textCustomerTool(state, input);
+        break;
+      case "call_customer":
+        result = await callCustomerTool(state, input);
+        break;
+      case "cancel_customer_call":
+        result = await cancelCustomerCallTool(state, input);
         break;
       case "set_ai_for_customer":
         result = await setAiForCustomerTool(state, input);

@@ -32,6 +32,65 @@ export interface CallAnsweringView {
   agentKind: "message" | "receptionist";
   available: boolean;
   preview: { greeting: string; collects: string[]; never: string[]; afterCall: string[] };
+  /** Calls the owner asked for by text ("call Dave, tell him…"), newest first. */
+  ownerCalls?: OwnerCallListItem[];
+}
+
+export interface OwnerCallListItem {
+  id: string;
+  who: string;
+  purpose: string;
+  askFor: string | null;
+  status: string;
+  runAt: string;
+  createdAt: string;
+  result: string | null;
+}
+
+const CALL_STATUS_LABEL: Record<string, string> = {
+  proposed: "Waiting for your OK",
+  scheduled: "Scheduled",
+  dialing: "Calling",
+  placed: "On the call",
+  completed: "Done",
+  failed: "Didn't connect",
+  cancelled: "Cancelled",
+  expired: "Not confirmed",
+};
+
+function whenLabel(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString("en-CA", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function OwnerCallsList({ calls }: { calls: OwnerCallListItem[] }) {
+  return (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Calls you asked for</p>
+        <p className="text-xs text-muted-foreground">Text "call Dave, tell him…" to add one</p>
+      </div>
+      {calls.length === 0 ? (
+        <p className="text-sm text-muted-foreground">None yet. Text the assistant: "Call Dave Henderson, tell him the lift is fixed and ask if Thursday still works."</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {calls.map((call) => (
+            <li key={call.id} className="py-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-foreground">{call.who}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {CALL_STATUS_LABEL[call.status] ?? call.status} · {whenLabel(call.runAt)}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">Say: "{call.purpose}"{call.askFor ? ` · Ask: "${call.askFor}"` : ""}</p>
+              {call.result && <p className="text-xs text-foreground mt-0.5">{call.result}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 const path = (orgId: string, companyId: string) => `/api/organizations/${orgId}/companies/${companyId}/ai-settings/call-answering`;
@@ -174,6 +233,8 @@ export function CallAnsweringSettingsSection({
       )}
 
       <MinutesBar allowance={data.allowance} />
+
+      {data.agentKind === "receptionist" && <OwnerCallsList calls={data.ownerCalls ?? []} />}
 
       <div className={cn("rounded-lg bg-secondary/50 p-3 space-y-2", data.mode !== "ai" && "opacity-60")}>
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">What the AI says</p>

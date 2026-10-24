@@ -510,6 +510,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      owner_call_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          company_id: string;
+          contact_id: string;
+          approval_id: string | null;
+          requested_by_phone: string;
+          brief: Json;
+          status: string;
+          run_at: string;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          retell_call_id: string | null;
+          placed_at: string | null;
+          outcome: Json | null;
+          owner_notified_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          company_id: string;
+          contact_id: string;
+          approval_id?: string | null;
+          requested_by_phone: string;
+          brief?: Json;
+          status?: string;
+          run_at?: string;
+          claimed_at?: string | null;
+          claimed_by?: string | null;
+          retell_call_id?: string | null;
+          placed_at?: string | null;
+          outcome?: Json | null;
+          owner_notified_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          company_id?: string;
+          contact_id?: string;
+          approval_id?: string | null;
+          requested_by_phone?: string;
+          brief?: Json;
+          status?: string;
+          run_at?: string;
+          claimed_at?: string | null;
+          claimed_by?: string | null;
+          retell_call_id?: string | null;
+          placed_at?: string | null;
+          outcome?: Json | null;
+          owner_notified_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       owner_phone_verifications: {
         Row: {
           id: string;

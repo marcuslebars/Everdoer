@@ -10,8 +10,10 @@ import { extractAiUsage, isAIConfigured } from "@/server/ai/claude";
 import { getOwnerAgentModel } from "@/server/ai/config";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { recordAiUsageSafe } from "@/server/services/usage";
+import { isRetellOutboundActive } from "@/server/services/voice";
+import { hasReceptionistPlan } from "@/server/services/voice/minutes";
 import type { CompanyScope } from "./schedule";
-import { OWNER_TOOLS, runOwnerTool, type ToolRunState } from "./tools";
+import { ownerToolsFor, runOwnerTool, type ToolRunState } from "./tools";
 
 const MAX_ROUNDS = 6;
 const MAX_REPLY = 480;
@@ -20,6 +22,32 @@ export { getOwnerAgentModel };
 
 export const FALLBACK_HELP =
   "I can help with: what's on today/tomorrow, who's waiting on me, look up a customer, move or cancel a booking, text a customer (\"tell Dana we'll be there at 3\"), AI on/off, pause texts. Reply Y/N (with the #) to approvals.";
+
+/** Prompt rules for the call tools (docs/owner-call-requests.md), only when they're listed. */
+const CALL_RULES = [
+  "call_customer proposes a phone call by Marina. Put the owner's message in purpose in their words (tidied, same meaning); put a single question in ask_for only if they asked one. Never add prices, dates or promises they didn't give. If they said \"now\" or \"right away\", when=\"now\"; otherwise leave when blank unless they gave a time. The owner confirms with a code; never say a call was placed unless a tool says so.",
+  "If a name matches more than one customer, ask which one before proposing a call.",
+  "\"cancel the call to Dave\" → cancel_customer_call.",
+];
+const CALLS_NOT_IN_PLAN_RULE = "You can't place phone calls for this business (that's part of the Front Desk plan). If asked to call someone, say so in one line and offer to text them instead.";
+const CALLS_NOT_SET_UP_RULE = "You can't place phone calls right now (calling isn't set up on this account - support can switch it on). If asked to call someone, say so in one line and offer to text them instead.";
+
+export type OwnerCallsAvailability = "enabled" | "not_set_up" | "not_in_plan";
+
+/**
+ * Can Marina place calls for this owner? Retell outbound must be on (only it carries a per-call
+ * prompt) and the plan must include the receptionist (marina_reception). A billing lookup
+ * error reads as "not in plan" (calls off) rather than failing the whole command.
+ */
+export async function ownerCallsAvailability(admin: AdminClient, organizationId: string): Promise<OwnerCallsAvailability> {
+  if (!isRetellOutboundActive()) return "not_set_up";
+  try {
+    return (await hasReceptionistPlan(admin, organizationId)) ? "enabled" : "not_in_plan";
+  } catch (err) {
+    console.error("[owner-channel] plan check failed; calls off:", err instanceof Error ? err.message : err);
+    return "not_in_plan";
+  }
+}
 
 function systemPrompt(scope: CompanyScope, nowMs: number, roleNotes: string[] = []): string {
   const today = new Date(nowMs).toLocaleDateString("en-CA", { timeZone: scope.timeZone, weekday: "long", year: "numeric", month: "long", day: "numeric" });
@@ -73,8 +101,11 @@ export async function runOwnerCommandAgent(input: OwnerAgentInput): Promise<Owne
   const nowMs = input.nowMs ?? Date.now();
   const staffRoles = await activeRolesFor(input.admin, { organizationId: input.scope.organizationId, companyId: input.scope.companyId });
   const roleTools = staffRoles.flatMap((r) => r.ownerTools);
-  const roleNotes = staffRoles.flatMap((r) => r.ownerPromptNotes);
-  const state: ToolRunState = { admin: input.admin, scope: input.scope, ownerPhone: input.ownerPhone, nowMs, confirmation: null, actions: [], roleOwnerTools: roleTools };
+  const calls = await ownerCallsAvailability(input.admin, input.scope.organizationId);
+  const callsEnabled = calls === "enabled";
+  const callNotes = callsEnabled ? CALL_RULES : [calls === "not_set_up" ? CALLS_NOT_SET_UP_RULE : CALLS_NOT_IN_PLAN_RULE];
+  const roleNotes = [...callNotes, ...staffRoles.flatMap((r) => r.ownerPromptNotes)];
+  const state: ToolRunState = { admin: input.admin, scope: input.scope, ownerPhone: input.ownerPhone, nowMs, confirmation: null, actions: [], roleOwnerTools: roleTools, callsEnabled };
   if (!isAIConfigured()) return { reply: FALLBACK_HELP, confirmationId: null, actions: [], rounds: 0 };
 
   const client = new Anthropic();
@@ -88,7 +119,7 @@ export async function runOwnerCommandAgent(input: OwnerAgentInput): Promise<Owne
       model,
       max_tokens: 1_024,
       system: [{ type: "text", text: systemPrompt(input.scope, nowMs, roleNotes) }],
-      tools: [...OWNER_TOOLS, ...roleTools.map((t) => t.tool)],
+      tools: [...ownerToolsFor(state), ...roleTools.map((t) => t.tool)],
       messages,
     });
     const usage = extractAiUsage(response, model);
@@ -114,7 +145,8 @@ export async function runOwnerCommandAgent(input: OwnerAgentInput): Promise<Owne
   }
 
   if (state.confirmation) {
-    // The summary is never clipped (a text_customer echo must be exact) — it's ≤ ~360 chars.
+    // The summary is never clipped (a text_customer / call_customer echo must be exact): ≤ ~360
+    // chars for texts, ≤ ~580 for calls (brief caps + a 60-char name), under sendOwnerSms's 700.
     return { reply: `${state.confirmation.summary} Reply ${state.confirmationCode ?? "with the code"} to confirm, or N to leave it.`, confirmationId: state.confirmation.id, actions: state.actions, rounds: rounds + 1 };
   }
   return { reply: clip(finalText || FALLBACK_HELP), confirmationId: null, actions: state.actions, rounds: rounds + 1 };

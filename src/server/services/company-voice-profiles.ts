@@ -27,11 +27,15 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
  * The profile's agent id + from-number win when set (so the call uses THAT brand's agent —
  * hence its KB + prompt — and caller ID); its brand_label + dynamic_variables feed the
  * greeting. customer_name / company_name are always injected last.
+ *
+ * `ctx.systemPrompt` is the prompt built for THIS call (retell/outbound-prompt.ts); when set it
+ * wins over the profile's stored prompt. That stored prompt is the inbound receptionist's
+ * (onboarding-provision.ts writes it there), so an outbound call must never run on it.
  */
 export function effectiveVoiceForProfile(
   globalConfig: RetellVoiceConfig,
   profile: CompanyVoiceProfile | null,
-  ctx: { customerName?: string | null; companyName?: string | null },
+  ctx: { customerName?: string | null; companyName?: string | null; systemPrompt?: string | null },
 ): { config: RetellVoiceConfig; dynamicVariables: Record<string, string> } {
   const config: RetellVoiceConfig = {
     apiKey: globalConfig.apiKey,
@@ -46,8 +50,9 @@ export function effectiveVoiceForProfile(
   // Everdoer-managed prompt: render it against the variables above (so {{customer_name}},
   // {{company_name}} + brand vars resolve), then inject as {{system_prompt}} — the Retell
   // agent's general prompt is a `{{system_prompt}}` passthrough.
-  if (profile?.systemPrompt) {
-    dynamicVariables.system_prompt = renderTemplate(profile.systemPrompt, dynamicVariables);
+  const prompt = ctx.systemPrompt?.trim() || profile?.systemPrompt || null;
+  if (prompt) {
+    dynamicVariables.system_prompt = renderTemplate(prompt, dynamicVariables);
   }
   return { config, dynamicVariables };
 }
