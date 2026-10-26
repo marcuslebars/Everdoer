@@ -1127,10 +1127,14 @@ function buildActivityEventTraceSummary(activityEvent: Tables<"activity_events">
       };
     case "contact.call_placed": {
       const toNumber = typeof metadata.toNumber === "string" ? metadata.toNumber : null;
+      // A call the owner asked for by text (docs/owner-call-requests.md).
+      const atRequest = typeof metadata.ownerCallRequestId === "string";
       return {
-        detail: toNumber ? `Marina placed a call to ${toNumber}.` : "Marina placed a call to this lead.",
+        detail: atRequest
+          ? `Marina called${toNumber ? ` ${toNumber}` : ""} at your request.`
+          : toNumber ? `Marina placed a call to ${toNumber}.` : "Marina placed a call to this lead.",
         metadata,
-        title: "Call placed",
+        title: atRequest ? "Call placed at your request" : "Call placed",
       };
     }
     case "contact.call_completed": {

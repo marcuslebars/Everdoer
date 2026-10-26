@@ -15,6 +15,8 @@ import {
   resolveCompanyVoiceProfile,
   type CompanyVoiceProfile,
 } from "@/server/services/company-voice-profiles";
+import { buildOutboundCallPrompt, defaultOutboundBrief, type OwnerCallBrief } from "@/server/services/retell/outbound-prompt";
+import { loadCompanyFacts } from "@/server/services/voice/company-facts";
 
 type MarinaProvider = "retell" | "cartesia";
 
@@ -32,6 +34,14 @@ function selectMarinaProvider(): MarinaProvider | null {
 
 export function isVoiceConfigured(): boolean {
   return selectMarinaProvider() !== null;
+}
+
+/**
+ * Outbound calls run through Retell (RETELL_OUTBOUND_ENABLED + the outbound config). Only
+ * Retell carries a per-call prompt, so briefed calls (owner call requests) need this to be true.
+ */
+export function isRetellOutboundActive(): boolean {
+  return selectMarinaProvider() === "retell";
 }
 
 interface MarinaCallOutcome {
@@ -53,6 +63,8 @@ async function placeMarinaCall(input: {
   metadata: Record<string, unknown>;
   /** Per-company profile → the brand's agent (its KB + prompt), caller ID, and context. */
   voiceProfile?: CompanyVoiceProfile | null;
+  /** The prompt built for THIS call (retell/outbound-prompt.ts); injected as {{system_prompt}}. */
+  systemPrompt?: string | null;
 }): Promise<MarinaCallOutcome> {
   const provider = selectMarinaProvider();
   if (!provider) {
@@ -73,6 +85,7 @@ async function placeMarinaCall(input: {
     const { config, dynamicVariables } = effectiveVoiceForProfile(globalCfg, input.voiceProfile ?? null, {
       customerName: input.customerName,
       companyName: input.companyName,
+      systemPrompt: input.systemPrompt ?? null,
     });
     const result = await placeRetellCall(
       { toNumber: input.toNumber, metadata: input.metadata, dynamicVariables },
@@ -83,6 +96,42 @@ async function placeMarinaCall(input: {
 
   const result = await placeOutboundCall({ toNumber: input.toNumber, metadata: input.metadata });
   return { agentCallId: result.agentCallId, provider, toNumber: result.toNumber };
+}
+
+/**
+ * The per-call outbound prompt. Facts come from voice/company-facts.ts (the receptionist reads
+ * the same); a lookup failure falls back to a facts-free prompt rather than failing the call —
+ * the brief still gets said. Null (no company) → no prompt override (global agent default).
+ */
+async function outboundPromptFor(
+  context: TenantServiceContext,
+  companyId: string | null | undefined,
+  customerName: string | null,
+  companyName: string | null,
+  brief: OwnerCallBrief | null,
+): Promise<string | null> {
+  if (!companyId) return null;
+  const name = companyName ?? "the business";
+  try {
+    const facts = await loadCompanyFacts(context, companyId);
+    return buildOutboundCallPrompt(
+      {
+        companyName: facts.companyName,
+        customerName,
+        services: facts.services,
+        hoursText: facts.hoursText,
+        serviceArea: facts.serviceArea,
+        transferNumber: facts.transferNumber,
+      },
+      brief ?? defaultOutboundBrief(facts.companyName, customerName ?? "them"),
+    );
+  } catch (err) {
+    console.error("[voice] company facts unavailable; using a facts-free outbound prompt:", err instanceof Error ? err.message : err);
+    return buildOutboundCallPrompt(
+      { companyName: name, customerName, services: [], hoursText: null, serviceArea: null, transferNumber: null },
+      brief ?? defaultOutboundBrief(name, customerName ?? "them"),
+    );
+  }
 }
 
 /** The brand name to greet as, for the outbound dynamic variables. */
@@ -127,8 +176,18 @@ export async function callContactWithMarina(
      * toward the daily cap. Null/omitted for owner-initiated (authenticated) calls.
      */
     triggerSource?: string | null;
+    /**
+     * What the owner asked Marina to say / find out (docs/owner-call-requests.md). Only Retell
+     * outbound carries a per-call prompt, so a brief with the Cartesia fallback is refused.
+     */
+    brief?: OwnerCallBrief | null;
+    /** The owner_call_requests row this call belongs to; echoed in the call metadata. */
+    requestId?: string | null;
   },
 ): Promise<PlaceCallResult> {
+  if (options?.brief && !isRetellOutboundActive()) {
+    throw new ValidationError("Calling with instructions needs Retell outbound calling.");
+  }
   const { data, error } = await context.supabase
     .from("contacts")
     .select("id, first_name, last_name, phone, company_id")
@@ -152,6 +211,9 @@ export async function callContactWithMarina(
   // that company's Retell agent (its knowledge base + prompt) and greets correctly.
   const voiceProfile = await resolveCompanyVoiceProfile(context, contact.company_id);
   const companyName = await resolveCompanyName(context, contact.company_id);
+  // The prompt for this call: the company's facts + the owner's brief (or the plain follow-up
+  // brief). Built per call, never the stored inbound prompt — see effectiveVoiceForProfile.
+  const systemPrompt = await outboundPromptFor(context, contact.company_id, name || null, companyName, options?.brief ?? null);
 
   const outcome = await placeMarinaCall({
     toNumber,
@@ -162,8 +224,10 @@ export async function callContactWithMarina(
       name: name || undefined,
       organizationId: context.organizationId,
       companyId: contact.company_id,
+      ...(options?.requestId ? { ownerCallRequestId: options.requestId } : {}),
     },
     voiceProfile,
+    systemPrompt,
   });
 
   // Best-effort: log the placed call on the contact's timeline. The call is already
@@ -184,6 +248,7 @@ export async function callContactWithMarina(
         // Tag unauthenticated-sourced calls so the abuse guard can count them (Task 5);
         // omitted for owner-initiated calls so they don't count toward the public cap.
         ...(options?.triggerSource ? { triggerSource: options.triggerSource } : {}),
+        ...(options?.requestId ? { ownerCallRequestId: options.requestId } : {}),
       },
     });
   } catch {

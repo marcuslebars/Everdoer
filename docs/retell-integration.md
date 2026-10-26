@@ -264,6 +264,14 @@ Write `{{customer_name}}` / `{{company_name}}` / any brand variable directly in 
 Everdoer fills them in server-side before the call. Apply
 `20260812130000_add_voice_profile_system_prompt.sql`.
 
+> **Since owner call requests (docs/owner-call-requests.md):** the outbound prompt is built
+> **per call** by `retell/outbound-prompt.ts` from the company's facts (`voice/company-facts.ts`)
+> plus the owner's brief, and passed as `ctx.systemPrompt` to `effectiveVoiceForProfile`, which
+> prefers it over the profile's stored `systemPrompt`. The stored one is what
+> `provisionPhoneForCompany` writes — the **inbound** receptionist prompt — so it no longer drives
+> outbound calls; it remains the fallback only when no per-call prompt is supplied. Add the
+> post-call analysis field `owner_question_answer` (string) to the outbound agent.
+
 ### Fully retiring Cartesia (later)
 
 Once Retell outbound is proven: leave the flag on, then delete the Cartesia branch in

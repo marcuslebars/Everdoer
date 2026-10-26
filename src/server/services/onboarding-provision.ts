@@ -1,14 +1,12 @@
 import { UserFacingError } from "@/server/errors";
 import type { Tables } from "@/server/db/database.types";
-import { listCatalogItems } from "@/server/services/quotes/catalog-items";
-import { bookableService, DEFAULT_ONLINE_BOOKING_SETTINGS } from "@/server/services/scheduling/rules";
-import { bookingPageUrl } from "@/server/services/scheduling/urls";
 import type { TenantServiceContext } from "@/server/services/shared";
 import { upsertCompanyVoiceProfile } from "@/server/services/company-voice-profiles";
 import { getPack, packReceptionistNotes } from "@/server/services/packs";
 import { parseAppliedIndustryPack } from "@/server/services/packs/types";
 import { buildReceptionistTools, RECEPTIONIST_ANALYSIS_FIELDS } from "@/server/services/retell/receptionist-tools";
 import { retellCountryFor } from "@/server/services/voice/canada";
+import { hoursToText, loadCompanyFacts } from "@/server/services/voice/company-facts";
 import {
   buildReceptionistPrompt,
   createRetellClient,
@@ -36,43 +34,8 @@ export interface ProvisionPhoneInput {
   onCreated?: (ids: { llmId?: string; agentId?: string; phoneNumber?: string }) => Promise<void>;
 }
 
-async function loadCompany(context: TenantServiceContext, companyId: string): Promise<Tables<"companies">> {
-  const { data, error } = await context.supabase
-    .from("companies")
-    .select("*")
-    .eq("organization_id", context.organizationId)
-    .eq("id", companyId)
-    .single();
-  if (error) throw error;
-  return data as Tables<"companies">;
-}
-
-export function hoursToText(hours: Tables<"companies">["hours"]): string | null {
-  if (!hours || typeof hours !== "object") return null;
-  const record = hours as Record<string, unknown>;
-  // The wizard stores a freeform summary; honor it directly.
-  if (typeof record.summary === "string" && record.summary.trim()) return record.summary.trim();
-  if (typeof record.text === "string" && record.text.trim()) return record.text.trim();
-  // Google Places style (written by the done-for-you enrichment): ["Monday: 8:00 AM – 5:00 PM", …].
-  const weekdayText = record.weekdayText ?? record.weekday_text ?? record.weekdayDescriptions;
-  if (Array.isArray(weekdayText)) {
-    const lines = weekdayText.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
-    return lines.length ? lines.join("; ") : null;
-  }
-  if (Array.isArray(record.periods)) return null;
-  const entries = Object.entries(record);
-  if (entries.length === 0) return null;
-  return entries
-    .map(([day, v]) => {
-      if (v && typeof v === "object" && "open" in v && "close" in v) {
-        const o = (v as { open?: unknown }).open;
-        const c = (v as { close?: unknown }).close;
-        return `${day} ${String(o ?? "?")}–${String(c ?? "?")}`;
-      }
-      return `${day} ${String(v)}`;
-    })
-    .join(", ");
-}
+// hoursToText + the company/catalog loader live in voice/company-facts.ts (shared with outbound calls).
+export { hoursToText };
 
 async function upsertRetellVoiceNumber(
   context: TenantServiceContext,
@@ -127,17 +90,12 @@ export async function provisionPhoneForCompany(
     throw new UserFacingError("Phone setup isn't available right now. Please contact support.", { status: 503, code: "voice_not_configured" });
   }
 
-  const company = await loadCompany(context, input.companyId);
-  const items = await listCatalogItems(context, input.companyId);
-  // Each service with its price when the owner (or their own website) gave one — the prompt
-  // tells Marina never to invent a price that isn't listed here.
-  const services = items.map((i) => {
-    const price = bookableService(i, DEFAULT_ONLINE_BOOKING_SETTINGS, false).priceLabel;
-    return price ? `${i.label} — ${price}` : i.label;
-  });
+  // Services (with a price only when the owner or their site gave one), hours, service area and
+  // booking link — the same facts outbound calls are built from (voice/company-facts.ts).
+  const facts = await loadCompanyFacts(context, input.companyId);
+  const { company, items, services, bookingUrl } = facts;
   const baseUrl = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
   const webhookUrl = `${baseUrl}/api/retell/webhook`;
-  const bookingUrl = bookingPageUrl(company);
 
   // The company's industry pack (if one was applied) adds trade FAQs / urgency keywords.
   const appliedPack = parseAppliedIndustryPack(company.industry_pack);
@@ -154,7 +112,7 @@ export async function provisionPhoneForCompany(
     {
       companyName: company.name,
       services,
-      hoursText: hoursToText(company.hours),
+      hoursText: facts.hoursText,
       bookingUrl,
       serviceArea: company.service_area,
       transferNumber: input.transferNumber ?? company.owner_phone_e164,

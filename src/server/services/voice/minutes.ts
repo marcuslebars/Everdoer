@@ -13,7 +13,7 @@
  *
  * Months are America/Toronto calendar months (usage_monthly_v).
  */
-import { orgCan, orgLimit } from "@/server/services/billing/gating";
+import { orgCan, orgLimit, requireFeature } from "@/server/services/billing/gating";
 import { torontoMonthStart } from "@/server/services/usage";
 import type { createSupabaseAdminClient } from "@/server/supabase/admin";
 
@@ -60,6 +60,14 @@ async function sumVoiceMinutes(
  */
 export async function hasReceptionistPlan(admin: AdminClient, organizationId: string): Promise<boolean> {
   return orgCan(admin as unknown as GatingClient, organizationId, "marina_reception");
+}
+
+/**
+ * The receptionist plan AND minutes left this month, or it throws: AuthorizationError (no
+ * plan) / UsageCapExceeded (allowance spent) — exactly what the outbound-call routes enforce.
+ */
+export async function requireReceptionistMinutes(admin: AdminClient, organizationId: string): Promise<void> {
+  await requireFeature(admin as unknown as GatingClient, organizationId, "marina_reception");
 }
 
 export async function loadMinuteAllowance(

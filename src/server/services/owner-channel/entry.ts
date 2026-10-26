@@ -5,6 +5,7 @@ import { ANYWAY_NOTE_KINDS, PRICE_NOTE_KINDS, TEXT_NOTE_KINDS } from "@/server/s
 import { SHORT_CODE_REUSE_MS } from "@/server/services/front-desk/approvals";
 import { normalizePhoneLast10 } from "@/server/services/lead-intake/matching";
 import { runOwnerCommandAgent } from "./agent";
+import { closeCallRequestForApproval } from "./calls";
 import { orderNoteFits } from "@/server/services/staff/purchasing/notes";
 import { decideApproval, isExpired, listLine, looksLikeApprovalAttempt, parseApprovalReply, parseTextNoteReply, type ParsedApprovalReply } from "./approvals";
 import { consumeLimit, findOwnerCompanies, sameOwnerPhone, sendOwnerSms, type OwnerCompany } from "./common";
@@ -276,6 +277,7 @@ async function handleConfirmationCode(admin: AdminClient, sms: InboundOwnerSms, 
           .eq("status", "pending")
           .select("id");
         cancelled += (data ?? []).length;
+        if ((data ?? []).length > 0) await closeCallRequestForApproval(admin, row.id, "cancelled");
       } else {
         await admin.from("owner_approvals").update({ payload: toJson({ ...payload, confirmAttempts: attempts }) }).eq("id", row.id).eq("status", "pending");
       }

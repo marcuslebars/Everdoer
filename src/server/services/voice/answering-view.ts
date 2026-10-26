@@ -28,6 +28,31 @@ export interface CallAnsweringView {
   /** The deployment has Retell wired (otherwise calls go to voicemail whatever the mode). */
   available: boolean;
   preview: { greeting: string; collects: string[]; never: string[]; afterCall: string[] };
+  /** Calls the owner asked for by text (docs/owner-call-requests.md), newest first. */
+  ownerCalls: OwnerCallListItem[];
+}
+
+export interface OwnerCallListItem {
+  id: string;
+  who: string;
+  purpose: string;
+  askFor: string | null;
+  status: string;
+  /** When it was / will be placed (run_at), ISO. */
+  runAt: string;
+  createdAt: string;
+  /** One line once the call ended: the answer, else the summary. */
+  result: string | null;
+}
+
+function ownerCallItem(row: Awaited<ReturnType<typeof listCallRequests>>[number]): OwnerCallListItem | null {
+  const brief = readBrief(row);
+  if (!brief) return null;
+  const outcome = row.outcome && typeof row.outcome === "object" && !Array.isArray(row.outcome) ? (row.outcome as Record<string, unknown>) : null;
+  const answer = typeof outcome?.answer === "string" ? outcome.answer : null;
+  const summary = typeof outcome?.summary === "string" ? outcome.summary : null;
+  const result = outcome?.inVoicemail === true ? "Voicemail" : outcome?.reached === false ? "No answer" : answer ?? summary;
+  return { id: row.id, who: brief.who, purpose: brief.purpose, askFor: brief.askFor, status: row.status, runAt: row.run_at, createdAt: row.created_at, result };
 }
 
 export async function getCallAnsweringView(admin: AdminClient, organizationId: string, companyId: string, now: Date = new Date()): Promise<CallAnsweringView | null> {
@@ -42,6 +67,7 @@ export async function getCallAnsweringView(admin: AdminClient, organizationId: s
   const config = getAiAnswerConfig();
   const name = state.company.name;
   const agentKind = frontDesk ? "receptionist" : "message";
+  const ownerCalls = (await listCallRequests(admin, { organizationId, companyId })).map(ownerCallItem).filter((x): x is OwnerCallListItem => x !== null);
   return {
     companyId,
     companyName: name,
@@ -67,10 +93,12 @@ export async function getCallAnsweringView(admin: AdminClient, organizationId: s
         "If the AI can't pick up, or your minutes run out, callers get your voicemail and the usual text-back",
       ],
     },
+    ownerCalls,
   };
 }
 
 import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write";
+import { listCallRequests, readBrief } from "@/server/services/owner-channel/calls";
 
 /** Merge ONLY the call_answering section; returns the fresh view. */
 export async function updateCallAnswering(

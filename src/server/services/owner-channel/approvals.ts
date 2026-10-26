@@ -17,6 +17,7 @@ import type {
 import { insertApproval, nextShortCode, recentShortCodes } from "@/server/services/front-desk/approvals";
 import { parseOwnerNote } from "@/server/services/front-desk/owner-note";
 import { executeApprovedAction } from "@/server/services/sms-agent/approved";
+import { closeCallRequestForApproval } from "./calls";
 import { executeOwnerCommand, OWNER_COMMAND_KIND } from "./owner-commands";
 
 type ApprovalDbRow = Tables<"owner_approvals">;
@@ -293,7 +294,9 @@ export async function expireApproval(admin: AdminClient, row: ApprovalDbRow, now
   const message = `#${row.short_code ?? "?"} expired before you answered, so nothing was done: ${clipLine(row.summary, 140)}`;
   if (!claimed) return { outcome: "already", approval: row, result: null, message };
   const decision: ApprovalDecision = { approved: false, ownerNote: null, decidedVia: "expiry", decidedBy: "system" };
-  // An owner's own command confirmation that timed out needs no follow-up.
+  // An owner's own command confirmation that timed out needs no follow-up — except a call
+  // request waiting on it, which is closed with it (docs/owner-call-requests.md).
+  if (claimed.kind === OWNER_COMMAND_KIND) await closeCallRequestForApproval(admin, claimed.id, "expired");
   const result =
     claimed.kind === OWNER_COMMAND_KIND ? { ok: true, message: "Expired — nothing changed." } : await runApproval(admin, claimed, decision);
   const settled = await settle(admin, claimed, decision, result, "expired");

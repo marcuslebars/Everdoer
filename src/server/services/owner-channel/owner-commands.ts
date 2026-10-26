@@ -16,6 +16,7 @@ import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write
 import type { AdminClient, ApprovalDecision, ExecuteResult, OwnerApprovalRow } from "@/server/services/front-desk/contracts";
 import { markOwnerTakeover } from "@/server/services/sms-agent/takeover";
 import { deliverMessage } from "@/server/services/workflow-engine/messaging";
+import { cancelCallRequest, findScopedCallRequest, placeOrScheduleOwnerCall, type OwnerCallRequestRow } from "./calls";
 import { ctxFor, DEFAULT_TIMEZONE, shortWhen } from "./common";
 import { contactName, findScopedBooking, findScopedContact, openTimesForBooking, type CompanyScope } from "./schedule";
 
@@ -29,7 +30,9 @@ export const OWNER_COMMAND_KIND = "owner_command";
 export type OwnerCommandPayload =
   | { action: "reschedule"; bookingId: string; startsAt: string; windowKey: string | null; previousStartsAt: string; who: string }
   | { action: "cancel"; bookingId: string; who: string }
-  | { action: "text_customer"; contactId: string; message: string; who: string };
+  | { action: "text_customer"; contactId: string; message: string; who: string }
+  /** A Marina call the owner asked for (calls.ts); the brief lives on the owner_call_requests row. */
+  | { action: "call_customer"; requestId: string; contactId: string; who: string };
 
 // ── Confirmation codes ────────────────────────────────────────────────────────
 // Destructive owner commands (cancel, move, text a customer) are confirmed with a 4-digit code
@@ -71,8 +74,9 @@ async function scopeForApproval(admin: AdminClient, approval: OwnerApprovalRow):
 }
 
 export async function executeOwnerCommand(admin: AdminClient, approval: OwnerApprovalRow, decision: ApprovalDecision): Promise<ExecuteResult> {
-  if (!decision.approved) return { ok: true, message: "OK, left it as is." };
   const payload = approval.payload as Partial<OwnerCommandPayload>;
+  if (payload.action === "call_customer") return executeCallCustomer(admin, approval, payload, decision);
+  if (!decision.approved) return { ok: true, message: "OK, left it as is." };
   const scope = await scopeForApproval(admin, approval);
   if (!scope) return { ok: false, message: "I couldn't find that business." };
 
@@ -131,6 +135,24 @@ export async function executeOwnerCommand(admin: AdminClient, approval: OwnerApp
   }
 
   return { ok: false, message: "I don't know how to do that one." };
+}
+
+/**
+ * A confirmed (or declined) call request. The row is loaded by the approval's own organization +
+ * company, never by the payload alone; a declined or expired confirmation cancels it.
+ */
+async function executeCallCustomer(admin: AdminClient, approval: OwnerApprovalRow, payload: Partial<Extract<OwnerCommandPayload, { action: "call_customer" }>>, decision: ApprovalDecision): Promise<ExecuteResult> {
+  const scope = await scopeForApproval(admin, approval);
+  if (!scope) return { ok: false, message: "I couldn't find that business." };
+  const request = await findScopedCallRequest(admin, scope, payload.requestId);
+  const who = payload.who ?? "them";
+  if (!request) return { ok: false, message: `I couldn't find that call to ${who} any more.` };
+  if (!decision.approved) {
+    await cancelCallRequest(admin, request.id);
+    return { ok: true, message: `OK, no call to ${who}.` };
+  }
+  const result = await placeOrScheduleOwnerCall(admin, request, scope.timeZone);
+  return { ok: result.ok, message: result.message, detail: { requestId: request.id, contactId: request.contact_id, status: result.status } };
 }
 
 // ── Business-wide switches (applied directly; reversible) ────────────────────
@@ -239,6 +261,27 @@ export function rescheduleProposal(
 /** Build the confirmation line + payload for a text to a customer (the exact message, echoed). */
 export function textCustomerProposal(contactId: string, who: string, message: string): { summary: string; payload: OwnerCommandPayload } {
   return { summary: `Send to ${who}: "${message}"?`, payload: { action: "text_customer", contactId, message, who } };
+}
+
+/**
+ * The confirmation line for a call: who, their number, when, exactly what Marina will say and
+ * ask (echoed word for word — the owner confirms the words). The code is appended by the agent.
+ */
+export function callCustomerProposal(
+  request: Pick<OwnerCallRequestRow, "id" | "contact_id">,
+  who: string,
+  phone: string,
+  brief: { purpose: string; askFor: string | null },
+  whenLabel: string,
+): { summary: string; payload: OwnerCommandPayload } {
+  // A 60-char name keeps the whole text (brief caps + code + instruction) under the SMS limit.
+  const name = who.length > 60 ? `${who.slice(0, 59).trimEnd()}…` : who;
+  const ask = brief.askFor ? ` Ask: "${brief.askFor}"` : "";
+  const line = `Call ${name} (${phone}) ${whenLabel} and say: "${brief.purpose}"${ask}`;
+  return {
+    summary: /\?"$/.test(line) ? line : `${line}?`,
+    payload: { action: "call_customer", requestId: request.id, contactId: request.contact_id, who: name },
+  };
 }
 
 export function cancelProposal(booking: Pick<Tables<"bookings">, "id" | "scheduled_for" | "title">, who: string, timeZone: string): { summary: string; payload: OwnerCommandPayload } {

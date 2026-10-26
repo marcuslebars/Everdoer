@@ -371,6 +371,11 @@ otherwise it's an answer and goes to the conversation.
 
 ### Commands (owner-channel/agent.ts, tools.ts, owner-commands.ts)
 
+> Front Desk owners can also have Marina **call** a customer with a message and a question
+> ("call Dave, tell him the lift is fixed and ask if Thursday still works") — tools
+> `call_customer` / `cancel_customer_call`, confirmed with a code like `text_customer`, result
+> texted back after the call. See docs/owner-call-requests.md.
+
 A small Claude tool-use loop (≤ 6 rounds, `AI_MODEL_OWNER_AGENT`), usage recorded with
 `recordAiUsageSafe`. Tools — all strictly scoped to one company that phone owns:
 

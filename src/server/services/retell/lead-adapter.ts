@@ -32,6 +32,7 @@ import {
 } from "./tenant";
 import { answerCallMatches, isVerifiedAnswerTenant, readAnswerMetadata, type VerifiedAnswerTenant } from "@/server/services/voice/ai-answer";
 import { handleAnsweredCall } from "@/server/services/voice/post-call";
+import { recordOwnerCallOutcome } from "@/server/services/owner-channel/calls";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The custom_analysis_data field-name contract.
@@ -308,9 +309,11 @@ async function upsertRetellCall(
     rawPayload: unknown;
     leadId?: string | null;
     contactId?: string | null;
+    /** An owner call request this call belongs to (stamped on the usage row's metadata). */
+    ownerCallRequestId?: string | null;
   },
 ): Promise<void> {
-  const { callId, tenant, fields, rawPayload, leadId, contactId } = args;
+  const { callId, tenant, fields, rawPayload, leadId, contactId, ownerCallRequestId } = args;
   const row: Inserts<"retell_calls"> = {
     organization_id: tenant.organizationId,
     company_id: tenant.companyId,
@@ -360,7 +363,7 @@ async function upsertRetellCall(
         provider: "retell",
         providerRef: callId,
         occurredAt: fields.endTimestamp ?? undefined,
-        metadata: { direction: fields.direction, callId },
+        metadata: { direction: fields.direction, callId, ...(ownerCallRequestId ? { source: "owner_call_request", ownerCallRequestId } : {}) },
       });
     } catch (err) {
       console.error("[retell] failed to meter voice minutes:", err instanceof Error ? err.message : err);
@@ -800,6 +803,8 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
   const contactId = typeof meta.contactId === "string" ? meta.contactId : null;
   const organizationId = typeof meta.organizationId === "string" ? meta.organizationId : null;
   const companyId = typeof meta.companyId === "string" ? meta.companyId : null;
+  // A call the owner asked for by text (docs/owner-call-requests.md): the row id we set when dialing.
+  const ownerCallRequestId = typeof meta.ownerCallRequestId === "string" && UUID_RE.test(meta.ownerCallRequestId) ? meta.ownerCallRequestId : null;
 
   const callId = fields.callId ?? `retell_nocid_${randomBytes(8).toString("hex")}`;
 
@@ -810,6 +815,7 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
     fields,
     rawPayload,
     contactId,
+    ownerCallRequestId,
   });
 
   // Log the outcome on the contact's timeline (best-effort; no new lead).
@@ -831,13 +837,34 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
           userSentiment: fields.userSentiment,
           inVoicemail: fields.inVoicemail,
           toNumber: fields.toNumber,
+          ...(ownerCallRequestId ? { ownerCallRequestId } : {}),
         },
       });
     } catch (err) {
       console.error("[retell:outbound] failed to log call outcome:", err);
     }
   }
+
+  // Tell the owner how their call went. Only call_analyzed reaches ingest (webhook route), so
+  // this is the post-call payload; a no-answer call carries no duration and reads as "no
+  // answer". The row is pinned by the organization we sent; the owner is texted once.
+  if (ownerCallRequestId && organizationId) {
+    await recordOwnerCallOutcome(admin, {
+      requestId: ownerCallRequestId,
+      organizationId,
+      callId: fields.callId,
+      callSuccessful: fields.callSuccessful,
+      inVoicemail: fields.inVoicemail,
+      disconnectionReason: fields.disconnectionReason ?? null,
+      callSummary: fields.callSummary,
+      userSentiment: fields.userSentiment,
+      durationMs: fields.durationMs,
+      customAnalysisData: fields.customAnalysisData,
+    });
+  }
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Mid-call custom-function path: ingest a capture-lead tool invocation. */
 export async function captureRetellLead(payload: unknown): Promise<RetellIngestResult> {
