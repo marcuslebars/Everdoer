@@ -333,9 +333,9 @@ describe("parsing", () => {
 
 describe("settings", () => {
   it("on for done-for-you, off for house orgs unless switched on; merge only touches email_clerk", () => {
-    expect(readEmailClerkSettings({}, { doneForYou: true })).toMatchObject({ enabled: true, draftReplies: true, digest: true, digestTime: "16:00", enabledIsDefault: true });
-    expect(readEmailClerkSettings({}, { doneForYou: false }).enabled).toBe(false);
-    expect(readEmailClerkSettings({ email_clerk: { digest_time: "03:00" } }, { doneForYou: true }).digestTime).toBe("16:00");
+    expect(readEmailClerkSettings({}, { doneForYou: true, tier: null })).toMatchObject({ enabled: true, draftReplies: true, digest: true, digestTime: "16:00", enabledIsDefault: true });
+    expect(readEmailClerkSettings({}, { doneForYou: false, tier: null }).enabled).toBe(false);
+    expect(readEmailClerkSettings({ email_clerk: { digest_time: "03:00" } }, { doneForYou: true, tier: null }).digestTime).toBe("16:00");
     expect(mergeEmailClerkSettings({ sms_agent: { autonomy: "ask_first" } }, { enabled: true, digest: false, digestTime: "17:30", draftReplies: false })).toEqual({
       sms_agent: { autonomy: "ask_first" },
       email_clerk: { enabled: true, digest: false, digest_time: "17:30", draft_replies: false, any_on: true },

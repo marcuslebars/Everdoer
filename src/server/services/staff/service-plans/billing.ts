@@ -153,6 +153,9 @@ async function planCheckoutUrl(admin: AdminClient, input: PlanCheckoutInput): Pr
       }
     }
     const meta = { org_id: input.organizationId, company_id: input.companyId, invoice_id: invoice.id, plan_agreement_id: input.agreementId, method: "card" };
+    // Everdoer's platform fee on the payment (billing/platform-fee.ts; 0 = none).
+    const { feeIntentFields, feeKeySuffix, platformFeeFor } = await import("@/server/services/billing/platform-fee");
+    const fee = await platformFeeFor(admin, input.organizationId, invoice.total_cents);
     const session = await stripe.checkout.sessions.create(
       {
         mode: "payment",
@@ -170,6 +173,7 @@ async function planCheckoutUrl(admin: AdminClient, input: PlanCheckoutInput): Pr
         payment_intent_data: {
           description: invoice.title ?? "Service plan",
           ...(brand.statementDescriptorSuffix ? { statement_descriptor_suffix: brand.statementDescriptorSuffix } : {}),
+          ...feeIntentFields(fee),
           metadata: meta,
         },
         metadata: meta,
@@ -177,7 +181,7 @@ async function planCheckoutUrl(admin: AdminClient, input: PlanCheckoutInput): Pr
         success_url: `${input.returnUrl}?paid=1`,
         cancel_url: input.returnUrl,
       },
-      { ...acct, idempotencyKey: `plan-pay-${invoice.id}-${invoice.total_cents}-${previous ?? "first"}` },
+      { ...acct, idempotencyKey: `plan-pay-${invoice.id}-${invoice.total_cents}-${previous ?? "first"}${feeKeySuffix(fee)}` },
     );
     if (session.status !== "open" || !session.url) return null;
     await db.from("invoices").update({ stripe_checkout_session_id: session.id }).eq("organization_id", input.organizationId).eq("id", invoice.id);

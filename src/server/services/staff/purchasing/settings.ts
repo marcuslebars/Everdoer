@@ -11,6 +11,7 @@
  *     any_on                         // marker for the sweeps' server-side filter (house orgs that opted in)
  *   }
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db, Fulfilment } from "./db-types";
@@ -49,16 +50,16 @@ const intIn = (value: unknown, min: number, max: number): number | null =>
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : null;
 
 /** companies.ai_settings (any shape) → the Purchasing section with defaults. PURE. */
-export function readPurchasingSettings(aiSettings: unknown, org: { doneForYou: boolean }): PurchasingSettings {
+export function readPurchasingSettings(aiSettings: unknown, org: StaffOrg): PurchasingSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const enabled = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: enabled ?? org.doneForYou,
+    enabled: enabled ?? staffDefaultOn("purchasing", org),
     leadDays: intIn(s.lead_days, 1, 14) ?? DEFAULT_LEAD_DAYS,
     maxPerDay: intIn(s.max_per_day, 1, 20) ?? DEFAULT_MAX_PER_DAY,
     defaultFulfilment: s.default_fulfilment === "delivery" ? "delivery" : "pickup",
     aiEstimate: typeof s.ai_estimate === "boolean" ? s.ai_estimate : true,
-    defaultEnabled: org.doneForYou,
+    defaultEnabled: staffDefaultOn("purchasing", org),
     enabledIsDefault: enabled === null,
   };
 }
@@ -122,7 +123,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): PurchasingCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): PurchasingCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -136,7 +137,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): PurchasingCom
     industryPack: row.industry_pack ?? null,
     serviceArea: typeof row.service_area === "string" ? row.service_area : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readPurchasingSettings(row.ai_settings, { doneForYou }),
+    settings: readPurchasingSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -146,8 +147,8 @@ export async function loadPurchasingCompany(admin: AdminClient, organizationId: 
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Is Purchasing on for this company? (Gates its tools, prompt notes and briefing items.) Never throws. */
@@ -181,10 +182,11 @@ async function readAll<T>(make: (from: number, to: number) => PromiseLike<{ data
  */
 export async function loadPurchasingCompanies(admin: AdminClient): Promise<PurchasingCompany[]> {
   const db = admin as Db;
-  const orgs = await readAll<{ id: string; platform_brand: string | null }>((from, to) =>
-    db.from("organizations").select("id, platform_brand").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  const orgs = await readAll<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>((from, to) =>
+    db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
   );
   const brands = new Map(orgs.map((o) => [o.id, o.platform_brand]));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, CompanyRow>();
   const ids = [...brands.keys()];
   for (let i = 0; i < ids.length; i += 200) {
@@ -197,13 +199,16 @@ export async function loadPurchasingCompanies(admin: AdminClient): Promise<Purch
   );
   const optedInOrgs = [...new Set(optedIn.map((r) => r.organization_id).filter((id) => !brands.has(id)))];
   for (let i = 0; i < optedInOrgs.length; i += 200) {
-    const { data } = await db.from("organizations").select("id, platform_brand").in("id", optedInOrgs.slice(i, i + 200));
-    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null }>) brands.set(o.id, o.platform_brand);
+    const { data } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", optedInOrgs.slice(i, i + 200));
+    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>) {
+      brands.set(o.id, o.platform_brand);
+      tiers.set(o.id, tierOf(o.crankleads_tier));
+    }
   }
   for (const r of optedIn) rows.set(r.id, r);
   const out: PurchasingCompany[] = [];
   for (const r of rows.values()) {
-    const company = toCompany(r, brands.get(r.organization_id) ?? null);
+    const company = toCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
     if (company.active && company.settings.enabled) out.push(company);
   }
   return out;

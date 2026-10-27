@@ -271,9 +271,9 @@ describe("what's due (pure)", () => {
 
 describe("settings and the registry", () => {
   it("on by default for done-for-you, off for house orgs; merge touches only `fleet`", () => {
-    expect(readFleetSettings({}, { doneForYou: true })).toMatchObject({ enabled: true, reminders: true, enabledIsDefault: true });
-    expect(readFleetSettings({}, { doneForYou: false })).toMatchObject({ enabled: false, defaultEnabled: false });
-    expect(readFleetSettings({ fleet: { enabled: true, reminders: false } }, { doneForYou: false })).toMatchObject({ enabled: true, reminders: false });
+    expect(readFleetSettings({}, { doneForYou: true, tier: null })).toMatchObject({ enabled: true, reminders: true, enabledIsDefault: true });
+    expect(readFleetSettings({}, { doneForYou: false, tier: null })).toMatchObject({ enabled: false, defaultEnabled: false });
+    expect(readFleetSettings({ fleet: { enabled: true, reminders: false } }, { doneForYou: false, tier: null })).toMatchObject({ enabled: true, reminders: false });
     expect(mergeFleetSettings({ sms_agent: { x: 1 }, fleet: { reminders: false } }, { enabled: false })).toEqual({ sms_agent: { x: 1 }, fleet: { reminders: false, enabled: false } });
   });
 

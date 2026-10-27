@@ -7263,6 +7263,128 @@ export type Database = {
         ]
       }
       onboarding_events: {
+          id: string;
+          organization_id: string;
+          company_id: string;
+          contact_id: string;
+          approval_id: string | null;
+          requested_by_phone: string;
+          brief: Json;
+          status: string;
+          run_at: string;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          retell_call_id: string | null;
+          placed_at: string | null;
+          outcome: Json | null;
+          owner_notified_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          company_id: string;
+          contact_id: string;
+          approval_id?: string | null;
+          requested_by_phone: string;
+          brief?: Json;
+          status?: string;
+          run_at?: string;
+          claimed_at?: string | null;
+          claimed_by?: string | null;
+          retell_call_id?: string | null;
+          placed_at?: string | null;
+          outcome?: Json | null;
+          owner_notified_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          company_id?: string;
+          contact_id?: string;
+          approval_id?: string | null;
+          requested_by_phone?: string;
+          brief?: Json;
+          status?: string;
+          run_at?: string;
+          claimed_at?: string | null;
+          claimed_by?: string | null;
+          retell_call_id?: string | null;
+          placed_at?: string | null;
+          outcome?: Json | null;
+          owner_notified_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      voice_overage_charges: {
+        Row: {
+          id: string;
+          organization_id: string;
+          month: string;
+          scope: string;
+          included_minutes: number;
+          used_minutes: number;
+          overage_minutes: number;
+          detail: Json;
+          status: string;
+          attempts: number;
+          stripe_customer_id: string | null;
+          stripe_price_id: string | null;
+          stripe_invoice_item_id: string | null;
+          charged_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          month: string;
+          scope: string;
+          included_minutes: number;
+          used_minutes: number;
+          overage_minutes: number;
+          detail?: Json;
+          status: string;
+          attempts?: number;
+          stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          charged_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          month?: string;
+          scope?: string;
+          included_minutes?: number;
+          used_minutes?: number;
+          overage_minutes?: number;
+          detail?: Json;
+          status?: string;
+          attempts?: number;
+          stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          charged_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      owner_phone_verifications: {
         Row: {
           company_id: string | null
           event: string
@@ -12403,6 +12525,27 @@ export type Database = {
         ComputedFields: never
         Relationships: []
       }
+          approved_at: string | null;
+          approved_cents: number | null;
+          auto_generated: boolean | null;
+          automation_involved: boolean | null;
+          company_id: string | null;
+          contact_id: string | null;
+          deal_kind: string | null;
+          deposit_cents: number | null;
+          first_touch_at: string | null;
+          first_touch_channel: string | null;
+          first_touch_source: string | null;
+          invoice_id: string | null;
+          invoice_paid_cents: number | null;
+          organization_id: string | null;
+          paid_at: string | null;
+          paid_cents: number | null;
+          quote_id: string | null;
+          voice_ai_involved: boolean | null;
+        };
+        Relationships: [];
+      };
       ui_contact_list_v: {
         Row: {
           bookings_count: number | null

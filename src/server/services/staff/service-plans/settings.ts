@@ -11,6 +11,7 @@
  * The role only works for a company once it has an active plan (servicePlansActiveFor): until
  * the owner creates one, nothing is offered to the SMS agent or the owner agent.
  */
+import { ORG_STAFF_COLUMNS, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -47,12 +48,13 @@ function record(value: unknown): Record<string, unknown> {
 const bool = (value: unknown): boolean | null => (typeof value === "boolean" ? value : null);
 
 /** companies.ai_settings (any shape) → the service-plans section with defaults. PURE. */
-export function readServicePlansSettings(aiSettings: unknown, org: { doneForYou: boolean }): ServicePlansSettings {
+export function readServicePlansSettings(aiSettings: unknown, org: StaffOrg): ServicePlansSettings {
   const section = record(record(aiSettings)[SETTINGS_KEY]);
   const available = org.doneForYou;
   return {
-    // House orgs (A1 …) are always off, whatever is stored.
-    enabled: available && (bool(section.enabled) ?? true),
+    // House orgs (A1 …) are always off, whatever is stored; done-for-you orgs start off
+    // (staff/tiers.ts) until the owner switches it on.
+    enabled: available && (bool(section.enabled) ?? staffDefaultOn("service_plans", org)),
     headsUp: { enabled: bool(record(section.heads_up).enabled) ?? true },
     renewals: { enabled: bool(record(section.renewals).enabled) ?? true },
     available,
@@ -110,7 +112,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-export function toPlanCompany(row: CompanyRow, platformBrand: string | null): PlanCompany {
+export function toPlanCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): PlanCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -121,7 +123,7 @@ export function toPlanCompany(row: CompanyRow, platformBrand: string | null): Pl
     platformBrand,
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readServicePlansSettings(row.ai_settings, { doneForYou }),
+    settings: readServicePlansSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -131,8 +133,8 @@ export async function loadPlanCompany(admin: AdminClient, organizationId: string
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toPlanCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toPlanCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, tierOf(record(org).crankleads_tier));
 }
 
 /** Companies by id (the sweeps: only the companies that have agreements in play). */
@@ -146,10 +148,12 @@ export async function loadPlanCompanies(admin: AdminClient, companyIds: string[]
     if (error) throw error;
     const rows = (data ?? []) as CompanyRow[];
     const orgIds = [...new Set(rows.map((r) => r.organization_id))];
-    const { data: orgs, error: orgError } = orgIds.length ? await db.from("organizations").select("id, platform_brand").in("id", orgIds) : { data: [], error: null };
+    const { data: orgs, error: orgError } = orgIds.length ? await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", orgIds) : { data: [], error: null };
     if (orgError) throw orgError;
-    const brands = new Map(((orgs ?? []) as Array<{ id: string; platform_brand: string | null }>).map((o) => [o.id, o.platform_brand]));
-    for (const r of rows) out.set(r.id, toPlanCompany(r, brands.get(r.organization_id) ?? null));
+    const orgRows = (orgs ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier: string | null }>;
+    const brands = new Map(orgRows.map((o) => [o.id, o.platform_brand]));
+    const tiers = new Map(orgRows.map((o) => [o.id, tierOf(o.crankleads_tier)]));
+    for (const r of rows) out.set(r.id, toPlanCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null));
   }
   return out;
 }

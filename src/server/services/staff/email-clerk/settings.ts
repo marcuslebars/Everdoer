@@ -13,6 +13,7 @@
  * The server side: INBOUND_EMAIL_DOMAIN + RESEND_WEBHOOK_SECRET. Without either the role is inert
  * (no inbox address, no sweeps, no tools) and Settings says it isn't set up on this server yet.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -53,15 +54,15 @@ export function validDigestTime(value: unknown): value is string {
 }
 
 /** companies.ai_settings (any shape) → the Email inbox section with defaults. PURE. */
-export function readEmailClerkSettings(aiSettings: unknown, org: { doneForYou: boolean }): EmailClerkSettings {
+export function readEmailClerkSettings(aiSettings: unknown, org: StaffOrg): EmailClerkSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const enabled = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: enabled ?? org.doneForYou,
+    enabled: enabled ?? staffDefaultOn("email_clerk", org),
     draftReplies: typeof s.draft_replies === "boolean" ? s.draft_replies : true,
     digest: typeof s.digest === "boolean" ? s.digest : true,
     digestTime: validDigestTime(s.digest_time) ? s.digest_time : DEFAULT_DIGEST_TIME,
-    defaultEnabled: org.doneForYou,
+    defaultEnabled: staffDefaultOn("email_clerk", org),
     enabledIsDefault: enabled === null,
   };
 }
@@ -167,7 +168,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): EmailClerkCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): EmailClerkCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -180,7 +181,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): EmailClerkCom
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     ownerEmail: row.owner_email?.trim() || null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readEmailClerkSettings(row.ai_settings, { doneForYou }),
+    settings: readEmailClerkSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -190,8 +191,8 @@ export async function loadEmailClerkCompany(admin: AdminClient, organizationId: 
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Feature on for this company (ignores the server config). */
@@ -239,9 +240,13 @@ export async function loadEmailClerkCompanies(admin: AdminClient): Promise<Email
   if (inboxes.length === 0) return [];
   const orgIds = [...new Set(inboxes.map((i) => i.organization_id))];
   const brands = new Map<string, string | null>();
+  const tiers = new Map<string, string | null>();
   for (let i = 0; i < orgIds.length; i += 200) {
-    const { data } = await db.from("organizations").select("id, platform_brand").in("id", orgIds.slice(i, i + 200));
-    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null }>) brands.set(o.id, o.platform_brand);
+    const { data } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", orgIds.slice(i, i + 200));
+    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>) {
+      brands.set(o.id, o.platform_brand);
+      tiers.set(o.id, tierOf(o.crankleads_tier));
+    }
   }
   const companyIds = [...new Set(inboxes.map((i) => i.company_id))];
   const out: EmailClerkCompany[] = [];
@@ -249,7 +254,7 @@ export async function loadEmailClerkCompanies(admin: AdminClient): Promise<Email
     const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).in("id", companyIds.slice(i, i + 200));
     if (error) throw error;
     for (const r of (data ?? []) as CompanyRow[]) {
-      const company = toCompany(r, brands.get(r.organization_id) ?? null);
+      const company = toCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
       if (emailClerkOn(company)) out.push(company);
     }
   }

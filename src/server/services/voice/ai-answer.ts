@@ -32,6 +32,7 @@ import { businessTypeSuffix } from "@/server/services/voice/message-agent";
 import { readCallAnsweringSettings, type CallAnsweringSettings } from "@/server/services/voice/answering-settings";
 import { aiCallTimeLimitSeconds, loadMinuteAllowance, MAX_AI_CALL_SECONDS, MIN_AI_CALL_SECONDS, type MinuteAllowance } from "@/server/services/voice/minutes";
 import type { createSupabaseAdminClient } from "@/server/supabase/admin";
+import { overageHeadroomMinutes } from "@/server/services/billing/voice-overage";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -396,7 +397,7 @@ async function receptionistAgentId(admin: AdminClient, organizationId: string, c
 
 export interface CompanyAnsweringState {
   company: CompanyFacts;
-  org: Pick<Tables<"organizations">, "plan" | "platform_brand" | "crankleads_tier">;
+  org: Pick<Tables<"organizations">, "plan" | "platform_brand" | "crankleads_tier" | "stripe_customer_id">;
   settings: CallAnsweringSettings;
 }
 
@@ -408,7 +409,7 @@ export async function loadAnsweringState(admin: AdminClient, organizationId: str
       .eq("organization_id", organizationId)
       .eq("id", companyId)
       .maybeSingle(),
-    admin.from("organizations").select("plan, platform_brand, crankleads_tier").eq("id", organizationId).maybeSingle(),
+    admin.from("organizations").select("plan, platform_brand, crankleads_tier, stripe_customer_id").eq("id", organizationId).maybeSingle(),
   ]);
   if (companyError) throw companyError;
   if (orgError) throw orgError;
@@ -457,7 +458,10 @@ export async function decideCallAnswering(admin: AdminClient, input: DecideInput
       },
       now,
     );
-    if (allowance.remainingMinutes !== null && allowance.remainingMinutes <= 0) {
+    // Past the allowance: voicemail — unless this org is billed for overage and some answering
+    // headroom is configured (billing/voice-overage.ts → VOICE_OVERAGE_ANSWER_MINUTES).
+    const headroom = overageHeadroomMinutes(state.org);
+    if (allowance.remainingMinutes !== null && allowance.remainingMinutes + headroom <= 0) {
       return { kind: "voicemail", reason: "minutes_exhausted", allowance, timeZone };
     }
 
@@ -468,7 +472,7 @@ export async function decideCallAnswering(admin: AdminClient, input: DecideInput
 
     // Concurrent AI calls: each one in progress may still use up to a full call's minutes, so
     // reserve that before handing over another (the overrun can't exceed the allowance).
-    let remaining = allowance.remainingMinutes;
+    let remaining = allowance.remainingMinutes === null ? null : allowance.remainingMinutes + headroom;
     if (remaining !== null) {
       const inFlight = await aiCallsInFlight(admin, allowance.scope === "organization" ? { organizationId: input.organizationId } : { organizationId: input.organizationId, companyId: input.companyId }, now);
       remaining -= inFlight * (MAX_AI_CALL_SECONDS / 60);

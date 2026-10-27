@@ -25,6 +25,7 @@ import { platformNumbers } from "@/server/services/staff/porting/guards";
 import { readPortingSettings, type RingSettings } from "@/server/services/staff/porting/settings";
 import { VOICE_BUSINESS_LINE_PATH as BUSINESS_LINE_PATH, VOICE_INBOUND_PATH as INBOUND_PATH } from "@/server/services/twilio/voice-config";
 import { DEFAULT_SAY_VOICE, escapeXml } from "@/server/services/twilio/voice-twiml";
+import { ORG_STAFF_COLUMNS, orgTier } from "@/server/services/staff/tiers";
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8"?>';
 /** Twilio allows up to 10 <Number>s in one <Dial>; we ring at most this many. */
@@ -88,8 +89,8 @@ export async function resolveBusinessLineTenant(admin: AdminClient, calledNumber
   const company = companyData as { name: string | null; owner_phone_e164: string | null; owner_phone_verified_at: string | null; ai_settings: unknown } | null;
   // Only a VERIFIED owner cell is rung (an unverified one might not be the owner's at all).
   const ownerPhone = company?.owner_phone_e164 && company.owner_phone_verified_at ? company.owner_phone_e164 : null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", number.organization_id).maybeSingle();
-  const ring = readPortingSettings(company?.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand) }).ring;
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", number.organization_id).maybeSingle();
+  const ring = readPortingSettings(company?.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand), tier: orgTier(org) }).ring;
 
   let crewPhones: Array<string | null> = [];
   if (ring.crew) {

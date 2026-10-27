@@ -10,6 +10,7 @@ import { agingSummary, loadOpenInvoicesWithNames } from "./ar";
 import { loadCompanyCtx, todayIn } from "./context";
 import type { Db } from "./db-types";
 import { mergeCollectionsSettings, type CollectionsPatch, type CollectionsSettings } from "./settings";
+import { staffDefaultOn } from "@/server/services/staff/tiers";
 
 export interface CollectionsView {
   companyId: string;
@@ -39,7 +40,7 @@ export async function getCollectionsView(admin: AdminClient, organizationId: str
     companyId,
     companyName: ctx.name,
     settings: ctx.settings,
-    defaultEnabled: ctx.doneForYou,
+    defaultEnabled: staffDefaultOn("bookkeeper", ctx),
     emailReminders: ctx.emailReminders,
     ownerPhoneOnFile: Boolean(ctx.ownerPhone),
     stats: {

@@ -8,6 +8,7 @@ import { isDoneForYou } from "@/lib/product-line";
 import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { mergeEstimatorSettings, readEstimatorSettings, type EstimatorSettingsPatch } from "@/server/services/staff/estimator/settings";
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn } from "@/server/services/staff/tiers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -34,9 +35,10 @@ export async function getEstimatorView(admin: AdminClient, organizationId: strin
   const { data: company } = await db.from("companies").select("id, organization_id, ai_settings").eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   const row = company as { id: string; ai_settings: unknown } | null;
   if (!row) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const doneForYou = isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand);
-  const settings = readEstimatorSettings(row.ai_settings, { doneForYou });
+  const staffOrg = { doneForYou, tier: orgTier(org) };
+  const settings = readEstimatorSettings(row.ai_settings, staffOrg);
   const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
   const scoped = (table: string) => db.from(table).select("id").eq("organization_id", organizationId).eq("company_id", companyId);
   const [waitingOnYou, sent30d, followingUp] = await Promise.all([
@@ -50,7 +52,7 @@ export async function getEstimatorView(admin: AdminClient, organizationId: strin
     followUps: settings.followUps,
     cadenceDays: settings.cadenceDays,
     enabledIsDefault: settings.enabledIsDefault,
-    defaultEnabled: doneForYou,
+    defaultEnabled: staffDefaultOn("estimator", staffOrg),
     stats: { waitingOnYou, sent30d, followingUp },
   };
 }
