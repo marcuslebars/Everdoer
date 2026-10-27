@@ -27,6 +27,7 @@
 import type Stripe from "stripe";
 
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
+import { feeIntentFields, feeKeySuffix, platformFeeFor } from "@/server/services/billing/platform-fee";
 import { getPlatformStripe, onAccount, requireChargeableCompany } from "./company-stripe";
 import { sendDepositReceiptEmail } from "./notify";
 import { recordPublicEvent } from "./public-service";
@@ -228,6 +229,8 @@ export async function createDepositCheckoutSession(
 
   const customerId = await ensureContactCustomer(quote, stripe, acct);
   const quoteUrl = `${opts.baseUrl.replace(/\/$/, "")}/q/${token}`;
+  // Everdoer's platform fee on the deposit (billing/platform-fee.ts; 0 = none).
+  const fee = await platformFeeFor(createSupabaseAdminClient(), quote.organization_id, amount);
 
   const session = await stripe.checkout.sessions.create(
     {
@@ -264,6 +267,7 @@ export async function createDepositCheckoutSession(
         ...(brand.statementDescriptorSuffix
           ? { statement_descriptor_suffix: brand.statementDescriptorSuffix }
           : {}),
+        ...feeIntentFields(fee),
         metadata: { org_id: quote.organization_id, company_id: quote.company_id, quote_id: quote.id },
       },
       metadata: { org_id: quote.organization_id, company_id: quote.company_id, quote_id: quote.id },
@@ -276,7 +280,7 @@ export async function createDepositCheckoutSession(
     },
     // Keyed by quote + amount: a retry returns the same session, but a reissued
     // amount legitimately creates a new one.
-    { ...acct, idempotencyKey: `quote-deposit-${quote.id}-${amount}` },
+    { ...acct, idempotencyKey: `quote-deposit-${quote.id}-${amount}${feeKeySuffix(fee)}` },
   );
 
   await db

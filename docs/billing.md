@@ -88,6 +88,38 @@ billing worker** on `checkout.session.completed` — see
 - The billing worker therefore now also needs `APP_BASE_URL`, `RESEND_API_KEY`,
   `OUTBOUND_FROM_EMAIL`, `OWNER_EMAIL`, `TWILIO_*` (recipe activation only) and `STRIPE_PRICE_EVERDOER_*` (old `STRIPE_PRICE_CL_*` still read).
 
+## Platform fee (money tenants collect)
+
+Everdoer can take a percentage of the money a tenant collects **through** Everdoer — quote
+deposits (`quotes/checkout.ts`), invoice payments by card or bank debit (`invoices/public.ts`)
+and service-plan payments (`staff/service-plans/billing.ts`). All three are direct charges on the
+tenant's own Standard connected account, so the fee is Stripe's `application_fee_amount` on the
+PaymentIntent: the customer pays the same total; the tenant receives it minus Stripe's processing
+fee minus the platform fee; the fee lands in the platform balance and shows on the tenant's own
+Stripe dashboard as an "application fee". Code: `src/server/services/billing/platform-fee.ts`.
+
+- **Off until you set it.** `PLATFORM_FEE_BPS` (web) in basis points — `100` = 1%. Unset or `0`
+  sends no fee and the Stripe requests are byte-identical to before. Capped at 500 (5%).
+- **House tenants are never charged** (plan `internal`: the A1 brands, boatnames, blairspm).
+- **Per org:** a `feature_flags` row `platform_fee_bps` (`enabled = true`, `limit_value` = bps)
+  replaces the default for that org — `0` waives it (founding customers), any other value is that
+  org's rate, and it works even with the deployment default off (a pilot).
+  ```sql
+  insert into public.feature_flags (organization_id, feature, enabled, limit_value)
+  values ('<org uuid>', 'platform_fee_bps', true, 0)          -- waive for this org
+  on conflict (organization_id, feature) do update set enabled = excluded.enabled, limit_value = excluded.limit_value;
+  ```
+- **Never blocks a payment:** if the plan / flag lookup fails, that charge goes through with no fee
+  (logged `[platform-fee]`).
+- The fee is part of the Checkout idempotency key, so changing the rate mints a fresh session
+  instead of Stripe rejecting a replayed key with different parameters. An open session created
+  before a rate change keeps its old fee until it's used or expires.
+- **Before switching it on for a tenant, put it in their terms** (and in the done-for-you
+  checkout copy). It is visible to them in Stripe.
+
+The fee is not applied to Everdoer's own subscription charges (done-for-you checkout, plan
+checkout) — those are platform-account charges, not Connect.
+
 ## Environment variables (per service)
 
 Traced from the code, not assumed. Legend: ✅ required · ➕ recommended · ○ optional · — not needed.

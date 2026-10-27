@@ -15,6 +15,7 @@
  *
  * Listed in docs/EVERDOER_RUNBOOK.md (service-role surfaces).
  */
+import { feeIntentFields, feeKeySuffix, platformFeeFor } from "@/server/services/billing/platform-fee";
 import type Stripe from "stripe";
 
 import { getCompanyStripeConfig, getPlatformStripe, onAccount, requireChargeableCompany } from "@/server/services/quotes/company-stripe";
@@ -311,6 +312,8 @@ export async function createInvoiceCheckout(token: string, method: OnlineMethod)
   const pageUrl = invoicePublicUrl(company, token);
   const meta = { org_id: invoice.organization_id, company_id: invoice.company_id, invoice_id: invoice.id, method };
   const isBusiness = Boolean(invoice.customer_account_id);
+  // Everdoer's platform fee on the payment (billing/platform-fee.ts; 0 = none).
+  const fee = await platformFeeFor(createSupabaseAdminClient(), invoice.organization_id, amount);
 
   let session: Stripe.Checkout.Session;
   try {
@@ -351,6 +354,7 @@ export async function createInvoiceCheckout(token: string, method: OnlineMethod)
           description: `Invoice ${invoice.invoice_number ?? invoice.id}`,
           // The descriptor suffix is a card concept; bank debits use the account's own.
           ...(method === "card" && brand.statementDescriptorSuffix ? { statement_descriptor_suffix: brand.statementDescriptorSuffix } : {}),
+          ...feeIntentFields(fee),
           metadata: meta,
         },
         metadata: meta,
@@ -362,7 +366,7 @@ export async function createInvoiceCheckout(token: string, method: OnlineMethod)
       // double-tap returns the same session, but switching method, retrying after a
       // bounced debit, or paying again after a refund always gets a fresh one —
       // never a replayed expired/completed session.
-      { ...acct, idempotencyKey: `invoice-pay-${invoice.id}-${method}-${amount}-${invoice.amount_paid_cents}-${previousSessionId ?? "first"}` },
+      { ...acct, idempotencyKey: `invoice-pay-${invoice.id}-${method}-${amount}-${invoice.amount_paid_cents}-${previousSessionId ?? "first"}${feeKeySuffix(fee)}` },
     );
   } catch (err) {
     // Our mirror of the account's capabilities can lag Stripe (a capability pulled,
