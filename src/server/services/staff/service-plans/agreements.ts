@@ -22,7 +22,7 @@ import { randomBytes } from "node:crypto";
 import { addDays, localDate } from "@/server/services/booking-windows";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { isQuietHours, sendOwnerSms, type OwnerSmsInput } from "@/server/services/owner-channel/common";
-import { clearUntouchedFutureVisits, createRecurringJob, generateVisits } from "@/server/services/recurring/service";
+import { clearUntouchedFutureVisits, createRecurringJob, generateVisits, type RecurringSeries } from "@/server/services/recurring/service";
 import type { Tables } from "@/server/db/database.types";
 import { createPlanApproval, defaultPlanApprovalDeps, PLAN_SIGNUP_KIND, supersedeApproval, type PlanApprovalDeps } from "./approval-kinds";
 import { defaultPlanBillingDeps, invoiceStates, isPaid, moneyIn, type IssuedInvoice, type PlanBillingDeps } from "./billing";
@@ -348,7 +348,7 @@ async function extendSeries(admin: AdminClient, agreement: ServiceAgreementRow, 
     .select("*");
   if (error) throw error;
   const updated = ((data ?? []) as Series[])[0];
-  if (updated) await generateVisits(tenant(admin, agreement.organization_id), updated as Tables<"recurring_jobs">, new Date(nowMs));
+  if (updated) await generateVisits(tenant(admin, agreement.organization_id), updated as RecurringSeries, new Date(nowMs));
 }
 
 async function endSeriesById(admin: AdminClient, organizationId: string, companyId: string, seriesId: string, nowMs: number, keepThrough: string | null, today: string): Promise<number> {

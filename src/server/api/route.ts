@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { ZodError } from "zod";
 
 import { GENERIC_ERROR_MESSAGE, UserFacingError } from "@/server/errors";
+import { captureServerError } from "@/server/observability/sentry";
 import { TooManyRequestsError, ValidationError } from "@/server/organizations/context";
 
 /**
@@ -18,7 +19,7 @@ import { TooManyRequestsError, ValidationError } from "@/server/organizations/co
  *   • Anything else — a database error, a Stripe error, a bug: logged here with the
  *     route and a short error id, and the client gets a generic apology plus that
  *     `errorId`, so support can find the log line without the user ever seeing
- *     internals.
+ *     internals. Also reported to Sentry when SENTRY_DSN is set (errorId as a tag).
  *
  * `label` names the route in the log; it defaults to the request's method + path
  * when a Request is passed instead.
@@ -52,6 +53,7 @@ export function errorResponse(error: unknown, label?: string | Request): NextRes
   const errorId = newErrorId();
   const where = typeof label === "string" ? label : label ? `${label.method} ${safePath(label.url)}` : "api";
   console.error(`[api] ${where} failed (errorId ${errorId}):`, error);
+  captureServerError(error, { where, errorId });
   return NextResponse.json({ error: GENERIC_ERROR_MESSAGE, errorId }, { status: 500 });
 }
 

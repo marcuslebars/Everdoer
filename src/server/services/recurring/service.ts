@@ -18,8 +18,11 @@ import { localDate, zonedInstant } from "@/server/services/booking-windows";
 import { cleanChecklistLabels } from "@/server/services/crew/logic";
 import { assertCompanyInOrganization, assertContactInOrganization, type TenantServiceContext } from "@/server/services/shared";
 import { addDaysYmd, describeRule, nextOccurrence, occurrencesBetween, type RecurrenceRule } from "./rule";
+import type { Frequency } from "@/lib/recurrence";
 
-type Series = Tables<"recurring_jobs">;
+/** recurring_jobs with its CHECK-constrained columns narrowed (the generated types say `string`). */
+export type RecurringSeries = Omit<Tables<"recurring_jobs">, "frequency" | "status"> & { frequency: Frequency; status: "active" | "paused" | "ended" };
+type Series = RecurringSeries;
 
 export const HORIZON_DAYS = 60;
 /** Never create more than this many visits in one pass (daily cleaning for 60 days is 60). */

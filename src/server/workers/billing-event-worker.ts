@@ -1,5 +1,6 @@
 import { processBillingEventJob } from "@/server/services/billing/events";
 import { claimBillingEventJobs } from "@/server/services/billing/jobs";
+import { captureServerError, flushSentry, initServerSentry } from "@/server/observability/sentry";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 
 function getNumberEnv(name: string, fallback: number): number {
@@ -24,6 +25,7 @@ function sleep(durationMs: number): Promise<void> {
  * `npm run worker:billing-events` (see railway.billing-worker.json).
  */
 async function main(): Promise<void> {
+  initServerSentry("billing-worker");
   const supabase = createSupabaseAdminClient();
   const workerId = process.env.BILLING_EVENT_WORKER_ID ?? `billing-worker-${process.pid}`;
   const claimLimit = getNumberEnv("BILLING_EVENT_WORKER_BATCH_SIZE", 10);
@@ -51,12 +53,15 @@ async function main(): Promise<void> {
           error: error instanceof Error ? error.message : error,
           jobId: job.id,
         });
+        captureServerError(error, { where: "billing-event-worker job", extra: { jobId: job.id } });
       }
     }
   }
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("billing-event-worker crashed", error);
+  captureServerError(error, { where: "billing-event-worker crash" });
+  await flushSentry();
   process.exit(1);
 });

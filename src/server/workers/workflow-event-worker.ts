@@ -1,3 +1,4 @@
+import { captureServerError, flushSentry, initServerSentry } from "@/server/observability/sentry";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 import { processInboundWebhookJobs } from "@/server/services/inbound-webhook-jobs";
 import {
@@ -22,6 +23,7 @@ function sleep(durationMs: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  initServerSentry("workflow-worker");
   const supabase = createSupabaseAdminClient();
   const workerId = process.env.WORKFLOW_EVENT_WORKER_ID ?? `workflow-worker-${process.pid}`;
   const claimLimit = getNumberEnv("WORKFLOW_EVENT_WORKER_BATCH_SIZE", 10);
@@ -45,6 +47,7 @@ async function main(): Promise<void> {
           error: error instanceof Error ? error.message : error,
           jobId: job.id,
         });
+        captureServerError(error, { where: "workflow-event-worker job", extra: { jobId: job.id } });
       }
     }
 
@@ -61,6 +64,7 @@ async function main(): Promise<void> {
       console.error("inbound-webhook drain failed", {
         error: error instanceof Error ? error.message : error,
       });
+      captureServerError(error, { where: "inbound-webhook drain" });
     }
 
     // Resume durable waits whose resume_at is due (Task 9).
@@ -69,6 +73,7 @@ async function main(): Promise<void> {
       resumedRuns = await resumeDueWorkflowRuns(supabase, { batch: claimLimit, staleAfterSeconds });
     } catch (error) {
       console.error("workflow resume failed", { error: error instanceof Error ? error.message : error });
+      captureServerError(error, { where: "workflow resume" });
     }
 
     // Scheduler pass on its own cadence (default every 60s): materialize + process
@@ -80,6 +85,7 @@ async function main(): Promise<void> {
         await runScheduler(supabase, { workerId });
       } catch (error) {
         console.error("workflow scheduler failed", { error: error instanceof Error ? error.message : error });
+        captureServerError(error, { where: "workflow scheduler" });
       }
     }
 
@@ -89,7 +95,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("workflow-event-worker crashed", error);
+  captureServerError(error, { where: "workflow-event-worker crash" });
+  await flushSentry();
   process.exit(1);
 });

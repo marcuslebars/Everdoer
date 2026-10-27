@@ -4,6 +4,8 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
+import { everdoerPlugin } from "./eslint/service-role-rule.mjs";
+
 export default tseslint.config(
   { ignores: ["dist"] },
   {
@@ -19,6 +21,7 @@ export default tseslint.config(
     plugins: {
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
+      everdoer: everdoerPlugin,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -33,6 +36,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unsafe-function-type": "warn",
       "@typescript-eslint/no-empty-object-type": "warn",
+      // The service-role (RLS-bypassing) client: allowlisted importers only (eslint/service-role-allowlist.mjs).
+      "everdoer/service-role-import": "error",
     },
   },
 );
