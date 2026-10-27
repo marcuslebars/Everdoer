@@ -4629,9 +4629,13 @@ export interface Database {
           automation_involved: boolean | null;
           company_id: string | null;
           contact_id: string | null;
+          deal_kind: string | null;
+          deposit_cents: number | null;
           first_touch_at: string | null;
           first_touch_channel: string | null;
           first_touch_source: string | null;
+          invoice_id: string | null;
+          invoice_paid_cents: number | null;
           organization_id: string | null;
           paid_at: string | null;
           paid_cents: number | null;
