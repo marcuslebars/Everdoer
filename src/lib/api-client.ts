@@ -1004,6 +1004,8 @@ export interface MonthlyUsage {
   emailsSent: number;
   aiCostCents: number;
   totalCostCents: number;
+  /** The latest month whose AI call minutes over the allowance were billed ('YYYY-MM-01'), or null. */
+  lastOverageCharge: { month: string; minutes: number } | null;
 }
 
 export function fetchMonthlyUsage(orgId: string): Promise<MonthlyUsage> {

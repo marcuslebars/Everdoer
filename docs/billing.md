@@ -100,6 +100,8 @@ Traced from the code, not assumed. Legend: ✅ required · ➕ recommended · �
 | `STRIPE_PRICE_LAUNCH` / `_OPERATE` / `_FRONT_DESK` | ✅ | ✅ | ➕ | — |
 | `STRIPE_SETUP_FEE_*` | ○ | — | — | — |
 | `BILLING_PAST_DUE_GRACE_DAYS` (def 7) | ○ | — | — | — |
+| `VOICE_OVERAGE_BILLING`, `STRIPE_PRICE_VOICE_OVERAGE` ([Voice overage](#voice-overage); also on the voice-overage cron) | ○ | — | — | — |
+| `VOICE_OVERAGE_ANSWER_MINUTES` (def 0) | ○ | — | — | — |
 | `STRIPE_PRICE_EVERDOER_CATCH` / `_CLOSE` / `_FRONT_DESK` (old `STRIPE_PRICE_CL_*` still read for one release) | ✅ (done-for-you) | ✅ (done-for-you) | ➕ | — |
 | `STRIPE_SETUP_FEE_EVERDOER_*`, `STRIPE_COUPON_EVERDOER_FOUNDING`, `EVERDOER_SITE_ORIGINS`, `EVERDOER_CANCEL_URL` (old `STRIPE_SETUP_FEE_CL_*` / `STRIPE_COUPON_CL_FOUNDING` / `CRANKLEADS_*` names still read for one release), `STRIPE_AUTOMATIC_TAX` | ✅/○ (done-for-you) | — | — | — |
 | `RESEND_API_KEY`, `OUTBOUND_FROM_EMAIL`, `OWNER_EMAIL`, `TWILIO_*` | ✅ | ✅ (done-for-you provisioning) | — | ✅ |
@@ -125,6 +127,33 @@ Why the non-obvious cells:
   unrelated) — don't add Stripe keys to it.
 
 See `.env.example` for the annotated, copy-ready list.
+
+---
+
+## Voice overage
+
+AI call minutes are metered as `voice_minutes` usage events and counted against an allowance (`voice/minutes.ts` → `loadMinuteAllowance`). On **Front Desk** the allowance is the plan's org-wide minutes (`marina_reception`, 500, or a `feature_flags` override). On **Catch / Close** it is each company's `call_answering.included_minutes` (default 100). Going over shows as "N min over cap" in Settings → Billing. `billing/voice-overage.ts` bills it:
+
+- **When:** a daily cron service, `railway.voice-overage.json` (`npm run job:voice-overage -- --run`, 12:00 UTC), bills the Toronto month that just closed, starting from 06:00 on the 1st so late usage events can land. It is a cron of its own because it needs `STRIPE_SECRET_KEY`, which the workflow worker doesn't carry. It exits 1 when an org failed.
+- **What:** for every org over its allowance, one `voice_overage_charges` row (unique per org + month, which also serves as the claim) and one Stripe **invoice item**: `STRIPE_PRICE_VOICE_OVERAGE` × the minutes over, rounded up. A pending invoice item is added to the customer's next subscription invoice. Catch / Close overage is the sum of every company's overage, with the per-company split in `detail`.
+- **Who:** never `internal` (house) plans. An org with no `stripe_customer_id` gets a `skipped` row.
+- **Safety:** the invoice item carries the idempotency key `voice-overage-{org}-{month}-{minutes}`. A failed charge is recorded (`failed`, `last_error`) and retried on later passes, up to 3 tries. A `charging` row left behind by a crash is taken over after 15 minutes.
+- **The billing panel** says "N min over the allowance in September 2026 were added to your next invoice" for the latest charged month.
+
+| Env | Where | Meaning |
+| --- | --- | --- |
+| `VOICE_OVERAGE_BILLING` | [voice-overage cron] + [web] | unset / `off` (default): nothing. `record`: rows only, a dry run that is never charged later. `charge`: rows + Stripe; without the price id it records only. |
+| `STRIPE_PRICE_VOICE_OVERAGE` | [voice-overage cron] + [web] | A per-minute Price id (`price_…`, recurring usage or one-time per unit). The amount lives in Stripe. |
+| `VOICE_OVERAGE_ANSWER_MINUTES` | [web] | Default 0. In `charge` mode, how many minutes past the allowance the AI keeps answering forwarded calls for an org that will be billed, instead of voicemail. 0 keeps the current behaviour. |
+| `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | [voice-overage cron] | Same values as the web service. |
+
+Rollout:
+1. Create the price in Stripe test mode.
+2. Run `npm run job:voice-overage` to preview last month (`-- --month 2026-09` for another month). It writes nothing.
+3. Optionally set `VOICE_OVERAGE_BILLING=record` for a month and compare the rows with the preview.
+4. Create the cron service from `railway.voice-overage.json` with the env above, then set `charge`.
+
+Rollback: unset `VOICE_OVERAGE_BILLING`. Invoice items already added stay in Stripe; delete pending ones there if needed. Migration `20261027100000_voice_overage_charges.sql`, rollback `supabase/rollback/20261027100000_voice_overage_charges.down.sql`.
 
 ---
 

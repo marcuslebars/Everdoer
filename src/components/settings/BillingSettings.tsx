@@ -97,8 +97,19 @@ function ThisMonthPanel({ organizationId }: { organizationId: string }) {
           <UsageStat label="AI cost (est.)" value={money(data.aiCostCents)} />
         </div>
       )}
+      {data?.lastOverageCharge && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {data.lastOverageCharge.minutes} min over the allowance in {overageMonthLabel(data.lastOverageCharge.month)} were added to your next invoice.
+        </p>
+      )}
     </div>
   );
+}
+
+/** "2026-09-01" → "September 2026". */
+function overageMonthLabel(month: string): string {
+  const [year, m] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, (m || 1) - 1, 15)));
 }
 
 export function BillingSettings() {

@@ -573,6 +573,66 @@ export interface Database {
         };
         Relationships: [];
       };
+      voice_overage_charges: {
+        Row: {
+          id: string;
+          organization_id: string;
+          month: string;
+          scope: string;
+          included_minutes: number;
+          used_minutes: number;
+          overage_minutes: number;
+          detail: Json;
+          status: string;
+          attempts: number;
+          stripe_customer_id: string | null;
+          stripe_price_id: string | null;
+          stripe_invoice_item_id: string | null;
+          charged_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          month: string;
+          scope: string;
+          included_minutes: number;
+          used_minutes: number;
+          overage_minutes: number;
+          detail?: Json;
+          status: string;
+          attempts?: number;
+          stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          charged_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          month?: string;
+          scope?: string;
+          included_minutes?: number;
+          used_minutes?: number;
+          overage_minutes?: number;
+          detail?: Json;
+          status?: string;
+          attempts?: number;
+          stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          charged_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       owner_phone_verifications: {
         Row: {
           id: string;
