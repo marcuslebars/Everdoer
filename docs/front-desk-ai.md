@@ -551,7 +551,10 @@ receptionist agent** (`voice_numbers` provider `retell`), with the same metadata
   answering minutes for October are used up…"*), queued for 08:00–21:00 local and claimed in
   `call_answering_notices`.
 - Front Desk calls to the **Retell number directly** (not via a catcher) are not gated
-  (existing policy: inbound receptionist calls are never refused; overage shows in billing).
+  (existing policy: inbound receptionist calls are never refused; overage shows in billing and,
+  with `VOICE_OVERAGE_BILLING=charge`, is billed monthly — docs/billing.md → "Voice overage").
+- With overage charging on and `VOICE_OVERAGE_ANSWER_MINUTES` > 0, an org that will be billed
+  keeps getting AI answering for that many minutes past the allowance before voicemail.
 
 ### Settings
 

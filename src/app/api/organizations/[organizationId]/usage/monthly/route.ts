@@ -33,6 +33,15 @@ export async function GET(request: Request, context: RouteContext): Promise<Next
 
     const voiceMinutes = sumQuantity("voice_minutes");
     const voiceMinutesCap = await orgLimit(supabase, organization.organizationId, "marina_reception");
+    // The latest month whose overage was billed (billing/voice-overage.ts); members read their org's rows.
+    const { data: charge } = await supabase
+      .from("voice_overage_charges")
+      .select("month, overage_minutes")
+      .eq("organization_id", organization.organizationId)
+      .eq("status", "charged")
+      .order("month", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     return NextResponse.json({
       data: {
@@ -45,6 +54,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Next
         emailsSent: Math.round(sumQuantity("email_sent")),
         aiCostCents: sumCost(["ai_input_tokens", "ai_output_tokens", "ai_cache_read_tokens"]),
         totalCostCents: rows.reduce((total, row) => total + row.costCents, 0),
+        lastOverageCharge: charge ? { month: charge.month, minutes: charge.overage_minutes } : null,
       },
     });
   });
