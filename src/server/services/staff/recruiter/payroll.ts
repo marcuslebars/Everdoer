@@ -39,6 +39,7 @@ import {
   type PersonHours,
 } from "./periods";
 import { isDoneForYouOrg, loadRecruiterCompany, readRecruiterSettings, type RecruiterCompany } from "./settings";
+import { ORG_STAFF_COLUMNS, orgTier } from "@/server/services/staff/tiers";
 
 /** The approval goes out from 08:00 local the day after the period ends … */
 export const PAYROLL_HOUR = 8;
@@ -96,9 +97,9 @@ export async function generalTimeCompanyId(admin: AdminClient, organizationId: s
     .order("created_at", { ascending: true })
     .order("id", { ascending: true })
     .limit(200);
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const doneForYou = isDoneForYouOrg(org);
-  const first = ((data ?? []) as Array<{ id: string; ai_settings: unknown }>).find((c) => readRecruiterSettings(c.ai_settings, { doneForYou }).payroll.enabled);
+  const first = ((data ?? []) as Array<{ id: string; ai_settings: unknown }>).find((c) => readRecruiterSettings(c.ai_settings, { doneForYou, tier: orgTier(org) }).payroll.enabled);
   return first?.id ?? null;
 }
 

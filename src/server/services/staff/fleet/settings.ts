@@ -10,6 +10,7 @@
  * `enabled` defaults ON for done-for-you orgs (inert until a vehicle, machine or rental is added) and
  * OFF for house orgs (A1 etc.). `reminders` defaults on and only matters while `enabled`.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -35,13 +36,13 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** companies.ai_settings (any shape) → the Fleet section with defaults. PURE. */
-export function readFleetSettings(aiSettings: unknown, org: { doneForYou: boolean }): FleetSettings {
+export function readFleetSettings(aiSettings: unknown, org: StaffOrg): FleetSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const enabled = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: enabled ?? org.doneForYou,
+    enabled: enabled ?? staffDefaultOn("fleet", org),
     reminders: typeof s.reminders === "boolean" ? s.reminders : true,
-    defaultEnabled: org.doneForYou,
+    defaultEnabled: staffDefaultOn("fleet", org),
     enabledIsDefault: enabled === null,
   };
 }
@@ -94,7 +95,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): FleetCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): FleetCompany {
   return {
     organizationId: row.organization_id,
     companyId: row.id,
@@ -103,7 +104,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): FleetCompany 
     platformBrand,
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readFleetSettings(row.ai_settings, { doneForYou: isDoneForYou(platformBrand) }),
+    settings: readFleetSettings(row.ai_settings, { doneForYou: isDoneForYou(platformBrand), tier }),
   };
 }
 
@@ -113,8 +114,8 @@ export async function loadFleetCompany(admin: AdminClient, scope: { organization
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Several companies by id (the sweep), each with its own org's brand. */
@@ -127,10 +128,12 @@ export async function loadFleetCompanies(admin: AdminClient, companyIds: string[
     if (error) throw error;
     const rows = (data ?? []) as CompanyRow[];
     const orgIds = [...new Set(rows.map((r) => r.organization_id))];
-    const { data: orgs, error: orgError } = orgIds.length ? await db.from("organizations").select("id, platform_brand").in("id", orgIds) : { data: [], error: null };
+    const { data: orgs, error: orgError } = orgIds.length ? await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", orgIds) : { data: [], error: null };
     if (orgError) throw orgError;
-    const brand = new Map(((orgs ?? []) as Array<{ id: string; platform_brand: string | null }>).map((o) => [o.id, o.platform_brand]));
-    out.push(...rows.map((r) => toCompany(r, brand.get(r.organization_id) ?? null)));
+    const orgRows = (orgs ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>;
+    const brand = new Map(orgRows.map((o) => [o.id, o.platform_brand]));
+    const tiers = new Map(orgRows.map((o) => [o.id, tierOf(o.crankleads_tier)]));
+    out.push(...rows.map((r) => toCompany(r, brand.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null)));
   }
   return out;
 }

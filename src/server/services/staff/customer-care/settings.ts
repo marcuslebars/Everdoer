@@ -17,6 +17,7 @@
  * The role only works where the SMS agent is on too (replies to check-ins and visit offers come
  * back through it): careActiveFor = enabled + SMS agent active + company active.
  */
+import { ORG_STAFF_COLUMNS, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { readSmsAgentSettings, smsAgentActive } from "@/server/services/sms-agent/settings";
@@ -68,13 +69,13 @@ function termsText(value: unknown): string | null {
 }
 
 /** companies.ai_settings (any shape) → the Customer care section with defaults. PURE. */
-export function readCustomerCareSettings(aiSettings: unknown, org: { doneForYou: boolean }): CustomerCareSettings {
+export function readCustomerCareSettings(aiSettings: unknown, org: StaffOrg): CustomerCareSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const c = record(s.checkins);
   const w = record(s.warranty);
   const enabled = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: enabled ?? org.doneForYou,
+    enabled: enabled ?? staffDefaultOn("customer_care", org),
     checkins: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : true,
       time: checkinTime(c.time) ?? DEFAULT_CHECKIN_TIME,
@@ -85,7 +86,7 @@ export function readCustomerCareSettings(aiSettings: unknown, org: { doneForYou:
       months: intIn(w.months, 0, MAX_WARRANTY_MONTHS) ?? DEFAULT_WARRANTY_MONTHS,
       terms: termsText(w.terms),
     },
-    defaultEnabled: org.doneForYou,
+    defaultEnabled: staffDefaultOn("customer_care", org),
     enabledIsDefault: enabled === null,
   };
 }
@@ -155,7 +156,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-export function toCareCompany(row: CompanyRow, platformBrand: string | null): CareCompany {
+export function toCareCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): CareCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -167,7 +168,7 @@ export function toCareCompany(row: CompanyRow, platformBrand: string | null): Ca
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
     smsAgentOn: smsAgentActive(readSmsAgentSettings(row.ai_settings, { doneForYou })),
-    settings: readCustomerCareSettings(row.ai_settings, { doneForYou }),
+    settings: readCustomerCareSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -182,8 +183,8 @@ export async function loadCareCompany(admin: AdminClient, organizationId: string
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCareCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCareCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, tierOf(record(org).crankleads_tier));
 }
 
 /** Is Customer care on for this company? (Gates its tools, prompt notes and briefing items.) Never throws. */
@@ -217,10 +218,11 @@ async function readAll<T>(make: (from: number, to: number) => PromiseLike<{ data
  */
 export async function loadCareCompanies(admin: AdminClient): Promise<CareCompany[]> {
   const db = admin as Db;
-  const orgs = await readAll<{ id: string; platform_brand: string | null }>((from, to) =>
-    db.from("organizations").select("id, platform_brand").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  const orgs = await readAll<{ id: string; platform_brand: string | null; crankleads_tier: string | null }>((from, to) =>
+    db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
   );
   const brands = new Map(orgs.map((o) => [o.id, o.platform_brand]));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, CompanyRow>();
   const ids = [...brands.keys()];
   for (let i = 0; i < ids.length; i += 200) {
@@ -233,13 +235,16 @@ export async function loadCareCompanies(admin: AdminClient): Promise<CareCompany
   );
   const optedInOrgs = [...new Set(optedIn.map((r) => r.organization_id).filter((id) => !brands.has(id)))];
   for (let i = 0; i < optedInOrgs.length; i += 200) {
-    const { data } = await db.from("organizations").select("id, platform_brand").in("id", optedInOrgs.slice(i, i + 200));
-    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null }>) brands.set(o.id, o.platform_brand);
+    const { data } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", optedInOrgs.slice(i, i + 200));
+    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier: string | null }>) {
+      brands.set(o.id, o.platform_brand);
+      tiers.set(o.id, tierOf(o.crankleads_tier));
+    }
   }
   for (const r of optedIn) rows.set(r.id, r);
   const out: CareCompany[] = [];
   for (const r of rows.values()) {
-    const company = toCareCompany(r, brands.get(r.organization_id) ?? null);
+    const company = toCareCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
     if (careWorks(company)) out.push(company);
   }
   return out;

@@ -8,6 +8,7 @@
  *   cadence_days — days after the quote was sent for each nudge (1–3 nudges, ascending, 1–30).
  *                  Default [2, 5, 10]; the last one offers a call or the booking link.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 
@@ -46,12 +47,12 @@ export function normalizeCadence(value: unknown): number[] | null {
 }
 
 /** PURE: companies.ai_settings (any shape) → the estimator section with defaults applied. */
-export function readEstimatorSettings(aiSettings: unknown, org: { doneForYou: boolean }): EstimatorSettings {
+export function readEstimatorSettings(aiSettings: unknown, org: StaffOrg): EstimatorSettings {
   const section = asRecord(asRecord(aiSettings)[ESTIMATOR_SETTINGS_KEY]);
   const explicit = typeof section.enabled === "boolean" ? section.enabled : null;
-  const followUps = typeof section.follow_ups === "boolean" ? section.follow_ups : org.doneForYou;
+  const followUps = typeof section.follow_ups === "boolean" ? section.follow_ups : staffDefaultOn("estimator.follow_ups", org);
   return {
-    enabled: explicit ?? org.doneForYou,
+    enabled: explicit ?? staffDefaultOn("estimator", org),
     followUps,
     cadenceDays: normalizeCadence(section.cadence_days) ?? [...DEFAULT_CADENCE_DAYS],
     enabledIsDefault: explicit === null,
@@ -90,9 +91,9 @@ export async function loadEstimatorSettings(admin: AdminClient, companyId: strin
   if (error) throw error;
   const row = company as { id: string; organization_id: string; ai_settings: unknown } | null;
   if (!row) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", row.organization_id).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", row.organization_id).maybeSingle();
   const doneForYou = isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand);
-  return { ...readEstimatorSettings(row.ai_settings, { doneForYou }), organizationId: row.organization_id, companyId: row.id, doneForYou };
+  return { ...readEstimatorSettings(row.ai_settings, { doneForYou, tier: orgTier(org) }), organizationId: row.organization_id, companyId: row.id, doneForYou };
 }
 
 /**

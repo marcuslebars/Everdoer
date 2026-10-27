@@ -279,10 +279,10 @@ afterEach(() => {
 
 describe("estimator settings", () => {
   it("default ON for done-for-you, OFF for house orgs (A1) unless switched on", () => {
-    expect(readEstimatorSettings({}, { doneForYou: true })).toEqual({ enabled: true, followUps: true, cadenceDays: [2, 5, 10], enabledIsDefault: true });
-    expect(readEstimatorSettings({}, { doneForYou: false })).toMatchObject({ enabled: false, followUps: false, enabledIsDefault: true });
-    expect(readEstimatorSettings({ estimator: { enabled: true, follow_ups: true } }, { doneForYou: false })).toMatchObject({ enabled: true, followUps: true, enabledIsDefault: false });
-    expect(readEstimatorSettings({ estimator: { cadence_days: [3, 1] } }, { doneForYou: true }).cadenceDays).toEqual([2, 5, 10]);
+    expect(readEstimatorSettings({}, { doneForYou: true, tier: null })).toEqual({ enabled: true, followUps: true, cadenceDays: [2, 5, 10], enabledIsDefault: true });
+    expect(readEstimatorSettings({}, { doneForYou: false, tier: null })).toMatchObject({ enabled: false, followUps: false, enabledIsDefault: true });
+    expect(readEstimatorSettings({ estimator: { enabled: true, follow_ups: true } }, { doneForYou: false, tier: null })).toMatchObject({ enabled: true, followUps: true, enabledIsDefault: false });
+    expect(readEstimatorSettings({ estimator: { cadence_days: [3, 1] } }, { doneForYou: true, tier: null }).cadenceDays).toEqual([2, 5, 10]);
   });
 
   it("estimatorActiveFor: on for a done-for-you company, off for a house org, another org, or a missing company", async () => {

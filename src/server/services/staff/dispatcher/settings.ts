@@ -15,6 +15,7 @@
  * owner turns it on. Weather sensitivity defaults by trade: outdoor trades → all jobs, indoor
  * trades and snow removal → none.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { parseAppliedIndustryPack } from "@/server/services/packs/types";
@@ -120,7 +121,7 @@ function readSensitivity(raw: unknown): WeatherSensitivity | null {
   return null;
 }
 
-export interface DispatchSettingsContext {
+export interface DispatchSettingsContext extends StaffOrg {
   doneForYou: boolean;
   industryPack?: unknown;
   /** Business name, done-for-you business type … (for the trade default). */
@@ -135,7 +136,7 @@ export function readDispatchSettings(aiSettings: unknown, ctx: DispatchSettingsC
   const crew = asRecord(section.crew_texts);
   const gap = asRecord(section.fill_gap);
   const hours = asRecord(section.customer_hours);
-  const on = ctx.doneForYou;
+  const on = staffDefaultOn("dispatcher", ctx);
   const sensitive = readSensitivity(weather.sensitive);
   return {
     weather: {
@@ -249,10 +250,10 @@ export async function dispatcherActiveFor(admin: AdminClient, scope: { organizat
       .eq("id", scope.companyId)
       .maybeSingle();
     if (!company) return false;
-    const { data: org } = await db.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
+    const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
     const doneForYou = isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand);
     const c = company as { name: string; ai_settings: unknown; industry_pack: unknown };
-    return dispatcherAnyOn(readDispatchSettings(c.ai_settings, { doneForYou, industryPack: c.industry_pack, hints: [c.name] }));
+    return dispatcherAnyOn(readDispatchSettings(c.ai_settings, { doneForYou, tier: orgTier(org), industryPack: c.industry_pack, hints: [c.name] }));
   } catch {
     return false;
   }
