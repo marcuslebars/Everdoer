@@ -2,6 +2,10 @@
 const nextConfig = {
   experimental: {
     typedRoutes: false,
+    // src/instrumentation.ts: starts error reporting (Sentry) when SENTRY_DSN is set.
+    instrumentationHook: true,
+    // Loaded with require() at runtime instead of bundled (it uses node: built-ins webpack can't read).
+    serverComponentsExternalPackages: ["@sentry/node"],
   },
   // Next type-checks only the server/API tree (the Vite SPA client is checked by
   // `npm run typecheck` via tsconfig.app.json). See tsconfig.next.json.

@@ -5,11 +5,10 @@
  * that series' own organization_id (every query filters by it). No request input.
  * Listed in docs/EVERDOER_RUNBOOK.md (service-role surfaces).
  */
-import type { Tables } from "@/server/db/database.types";
 import type { TenantServiceContext } from "@/server/services/shared";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 import { addDaysYmd } from "./rule";
-import { generateVisits, HORIZON_DAYS } from "./service";
+import { generateVisits, HORIZON_DAYS, type RecurringSeries } from "./service";
 
 export interface RecurringSweepResult {
   scanned: number;
@@ -30,7 +29,7 @@ export async function sweepRecurringJobs(now = new Date(), limit = 2000): Promis
   if (error) throw error;
 
   const result: RecurringSweepResult = { scanned: data?.length ?? 0, visitsCreated: 0, failed: [] };
-  for (const series of (data ?? []) as Tables<"recurring_jobs">[]) {
+  for (const series of (data ?? []) as RecurringSeries[]) {
     const ctx = { organizationId: series.organization_id, actorProfileId: null, supabase: admin } as unknown as TenantServiceContext;
     try {
       result.visitsCreated += (await generateVisits(ctx, series, now)).length;

@@ -12,10 +12,19 @@
  *             `supabase gen types typescript --local`
  *             Introspects the local dev stack (requires `supabase start` first).
  *
- * See docs/EMPIREVU_RUNBOOK.md (section "Generating database types").
+ *   file    — `node scripts/gen-types.mjs --from-file <path>`: post-process output that was
+ *             generated elsewhere (e.g. postgres-meta against a throwaway Postgres with every
+ *             migration applied — no Docker needed; see docs/EVERDOER_RUNBOOK.md).
+ *
+ * The raw output is post-processed (postProcess below): the generator's own generic helpers
+ * are replaced by the app's aliases (Tables / Inserts / Updates / DbEnum / TableName / EnumName)
+ * that the code imports, and the PostgREST version marker is kept. Writing the raw CLI output
+ * used to break the build, which is how the file drifted (64 tables missing by Oct 2026).
+ *
+ * See docs/EVERDOER_RUNBOOK.md (section "Generating database types").
  */
 import { spawnSync } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +36,48 @@ const OUT = resolve(
   "db",
   "database.types.ts",
 );
+
+const APP_HELPERS = `
+type PublicSchema = Database["public"];
+
+export type TableName = keyof PublicSchema["Tables"];
+export type EnumName = keyof PublicSchema["Enums"];
+
+export type Tables<T extends TableName> = PublicSchema["Tables"][T]["Row"];
+export type Inserts<T extends TableName> = PublicSchema["Tables"][T]["Insert"];
+export type Updates<T extends TableName> = PublicSchema["Tables"][T]["Update"];
+export type DbEnum<T extends EnumName> = PublicSchema["Enums"][T];
+`;
+
+/** Raw generator output → the file the app imports. Exported for tests. */
+export function postProcess(raw) {
+  let text = raw.replace(/\r\n/g, "\n");
+  // Drop the generator's generic helpers (they clash with the app's `Tables<T>` alias).
+  const cut = text.search(/\n(?:type DatabaseWithoutInternals|type DefaultSchema|export type Tables<)/);
+  if (cut > 0) text = text.slice(0, cut);
+  text = text.trimEnd() + "\n";
+  // Newer postgres-meta types NOT NULL jsonb as NonNullable<Json>; the app's convention (and the
+  // CLI output this file was first made from) is plain Json — the database still refuses null.
+  text = text.replace(/NonNullable<Json>/g, "Json");
+  if (!text.includes("__InternalSupabase")) {
+    text = text.replace(/export (type Database = \{|interface Database \{)\n/, (m) => `${m}  __InternalSupabase: {\n    PostgrestVersion: "12"\n  }\n`);
+  }
+  if (!/export (type Database =|interface Database)/.test(text)) throw new Error("no Database type in the generator output");
+  return `${text}${APP_HELPERS}`;
+}
+
+const fromFileAt = process.argv.indexOf("--from-file");
+if (fromFileAt >= 0) {
+  const source = process.argv[fromFileAt + 1];
+  if (!source) {
+    console.error("[gen:types] --from-file needs a path");
+    process.exit(1);
+  }
+  const out = postProcess(readFileSync(source, "utf8"));
+  writeFileSync(OUT, out);
+  console.error(`[gen:types] wrote ${out.length} bytes to database.types.ts (from ${source})`);
+  process.exit(0);
+}
 
 const projectRef = process.env.SUPABASE_PROJECT_REF?.trim();
 const modeArgs = projectRef ? `--project-id ${projectRef}` : "--local";
@@ -71,5 +122,5 @@ if (res.status !== 0 || !res.stdout || !res.stdout.trim()) {
 }
 
 mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, res.stdout);
+writeFileSync(OUT, postProcess(res.stdout));
 console.error(`[gen:types] wrote ${res.stdout.length} bytes to database.types.ts`);
