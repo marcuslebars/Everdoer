@@ -13,6 +13,23 @@ Everdoer replaces everyone in the office except the owner. The AI front desk (do
 
 Roles: Estimator, Bookkeeper, Dispatcher, Marketer — each section below is written by that role's builder.
 
+## Tiers
+
+Which roles come switched on with which done-for-you plan (`organizations.crankleads_tier`) is one table: `STAFF_DEFAULT_TIER` in `src/server/services/staff/tiers.ts`. Every role's settings reader takes a `StaffOrg` (`{ doneForYou, tier }`, both required, so the compiler finds a loader that forgot the tier) and asks `staffDefaultOn(feature, org)` for its default.
+
+| Plan | On by default |
+| --- | --- |
+| Catch | Office manager (morning briefing), Customer import |
+| Close | + Estimator (and quote follow-ups), Bookkeeper, Customer care, Marketer review replies |
+| Front Desk | + Dispatcher, Receipts & HST |
+| Any plan, only when the owner switches it on | Marketer win-back and Google posts, Keep your number, Hiring & payroll, Service plans, Compliance, Purchasing, Email inbox, Profit advisor, Fleet |
+
+- **This sets defaults, not a lock.** An owner's explicit switch in Settings wins on every plan, and house / standard orgs are unchanged (every role off unless switched on). The settings views report the tier-aware default as `defaultEnabled`, so "Off for this business" shows where the plan doesn't include a role.
+- **Off until `STAFF_TIER_GATING=1`** ([web] + [worker]). Without it every role defaults on for every done-for-you org, exactly as before, so merging changes nobody's staff.
+- **Grandfathered:** a done-for-you org with no recorded tier (bought before tiers existed) keeps every role on, flag or not.
+- **Turning it on** changes the defaults of existing paying orgs whose plan doesn't include a role and who never touched its switch: the role's sweeps stop for them and its tools and prompt notes go away. Owners can switch any role back on in Settings. Check who is affected first: done-for-you orgs on `catch` / `close` that have never saved the role's section in `companies.ai_settings`.
+- Loaders read the tier with `ORG_STAFF_COLUMNS` (`platform_brand, crankleads_tier`) and `tierOf` / `orgTier`. A new role adds its feature to `StaffFeature` + `STAFF_DEFAULT_TIER` and reads its default through `staffDefaultOn`.
+
 ## Estimator
 
 Prices the jobs the price list can't, and follows every front-desk quote up until it's booked.

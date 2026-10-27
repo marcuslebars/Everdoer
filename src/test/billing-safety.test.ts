@@ -231,6 +231,30 @@ describe("bank debit at checkout", () => {
     await expect(createInvoiceCheckout(TOKEN, "card")).resolves.toEqual({ url: "https://checkout.stripe.test/cs_1" });
   });
 
+  it("adds Everdoer's platform fee to a paying tenant's charge (and a new idempotency key), never a house tenant's", async () => {
+    process.env.PLATFORM_FEE_BPS = "100";
+    try {
+      h.db!.tables.organizations = [{ id: ORG, plan: "operate" }];
+      h.db!.tables.feature_flags = [];
+      h.db!.tables.invoices.push(invoice());
+      h.createSession.mockResolvedValue({ id: "cs_1", status: "open", url: "https://checkout.stripe.test/cs_1" });
+      await createInvoiceCheckout(TOKEN, "card");
+      const [params, opts] = h.createSession.mock.calls[0] as [{ payment_intent_data: Record<string, unknown> }, { stripeAccount: string; idempotencyKey: string }];
+      expect(params.payment_intent_data.application_fee_amount).toBe(1695); // 1% of $1,695.00
+      expect(opts.stripeAccount).toBe("acct_brand"); // still a direct charge on the tenant's account
+      expect(opts.idempotencyKey).toMatch(/-f1695$/);
+
+      h.createSession.mockClear();
+      h.db!.tables.organizations = [{ id: ORG, plan: "internal" }];
+      h.db!.tables.invoices[0].stripe_checkout_session_id = null;
+      await createInvoiceCheckout(TOKEN, "card");
+      const [houseParams] = h.createSession.mock.calls[0] as [{ payment_intent_data: Record<string, unknown> }];
+      expect(houseParams.payment_intent_data).not.toHaveProperty("application_fee_amount");
+    } finally {
+      delete process.env.PLATFORM_FEE_BPS;
+    }
+  });
+
   it("masks an unexpected card-side Stripe error as a generic 500 with an error id", async () => {
     h.db!.tables.invoices.push(invoice());
     h.createSession.mockRejectedValue(Object.assign(new Error("Invalid API Key provided: sk_live_****"), { type: "StripeAuthenticationError" }));

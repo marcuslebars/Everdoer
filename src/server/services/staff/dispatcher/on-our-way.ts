@@ -9,6 +9,7 @@
  * One text per booking (dispatch_messages unique key = booking id).
  */
 import { isDoneForYou } from "@/lib/product-line";
+import { ORG_STAFF_COLUMNS, orgTier } from "@/server/services/staff/tiers";
 import type { Json, Tables } from "@/server/db/database.types";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { DispatchCompany } from "./company";
@@ -65,9 +66,9 @@ export async function dispatcherOnOurWayActive(db: AdminClient, scope: { organiz
       .eq("id", scope.companyId)
       .maybeSingle();
     if (!company) return false;
-    const { data: org } = await (db as Db).from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
+    const { data: org } = await (db as Db).from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
     const c = company as { name: string; ai_settings: unknown; industry_pack: unknown };
-    const settings = readDispatchSettings(c.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand?: string | null } | null)?.platform_brand), industryPack: c.industry_pack, hints: [c.name] });
+    const settings = readDispatchSettings(c.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand?: string | null } | null)?.platform_brand), tier: orgTier(org), industryPack: c.industry_pack, hints: [c.name] });
     return settings.onOurWay.enabled && !(await enRouteAutomationActive(db, scope));
   } catch {
     return false;

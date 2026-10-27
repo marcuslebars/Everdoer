@@ -7,6 +7,7 @@
  *
  * PURE apart from loadImportCompany / importerActiveFor.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -28,10 +29,10 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** companies.ai_settings (any shape) → the import section with defaults. PURE. */
-export function readImportSettings(aiSettings: unknown, org: { doneForYou: boolean }): ImportSettings {
+export function readImportSettings(aiSettings: unknown, org: StaffOrg): ImportSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const explicit = typeof s.enabled === "boolean" ? s.enabled : null;
-  return { enabled: explicit ?? org.doneForYou, enabledIsDefault: explicit === null };
+  return { enabled: explicit ?? staffDefaultOn("importer", org), enabledIsDefault: explicit === null };
 }
 
 /** The new ai_settings with ONLY `import` changed. PURE. */
@@ -50,6 +51,8 @@ export interface ImportCompany {
   name: string;
   timeZone: string;
   doneForYou: boolean;
+  /** organizations.crankleads_tier (staff/tiers.ts); null for house orgs. */
+  tier: string | null;
   platformBrand: string;
   /** The VERIFIED owner cell, else null (no owner texts). */
   ownerPhone: string | null;
@@ -72,19 +75,21 @@ export async function loadImportCompany(admin: AdminClient, organizationId: stri
     .maybeSingle();
   if (!data) return null;
   const c = data as Record<string, unknown>;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const platformBrand = str(record(org).platform_brand) ?? "empirevu";
   const doneForYou = isDoneForYou(platformBrand);
+  const tier = orgTier(org);
   return {
     organizationId,
     companyId,
     name: str(c.brand_from_name) ?? str(c.name) ?? "your business",
     timeZone: str(c.timezone) ?? "America/Toronto",
     doneForYou,
+    tier,
     platformBrand,
     ownerPhone: str(c.owner_phone_e164) && c.owner_phone_verified_at ? str(c.owner_phone_e164) : null,
     invoiceSettings: c.invoice_settings ?? null,
-    settings: readImportSettings(c.ai_settings, { doneForYou }),
+    settings: readImportSettings(c.ai_settings, { doneForYou, tier }),
   };
 }
 
