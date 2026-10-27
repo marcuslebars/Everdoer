@@ -208,20 +208,20 @@ afterEach(() => {
 
 describe("settings", () => {
   it("every switch defaults on for done-for-you and off for house orgs; explicit choices win", () => {
-    const dfySettings = readDispatchSettings({}, { doneForYou: true, industryPack: { id: "roofing", version: 1 } });
+    const dfySettings = readDispatchSettings({}, { doneForYou: true, tier: null, industryPack: { id: "roofing", version: 1 } });
     expect([dfySettings.weather.enabled, dfySettings.onOurWay.enabled, dfySettings.crewTexts.enabled, dfySettings.fillGap.enabled]).toEqual([true, true, true, true]);
     expect(dfySettings.weather.thresholds).toEqual({ rainProbability: 60, rainMm: 2, windKmh: 50, minTempC: -25, maxTempC: 35 });
     expect(dfySettings.crewTexts.time).toBe("18:00");
     expect(dfySettings.customerHours).toEqual({ from: "09:00", until: "20:00" });
-    const house = readDispatchSettings({}, { doneForYou: false });
+    const house = readDispatchSettings({}, { doneForYou: false, tier: null });
     expect([house.weather.enabled, house.onOurWay.enabled, house.crewTexts.enabled, house.fillGap.enabled]).toEqual([false, false, false, false]);
     // Crew texts go out until 21:00, so 21:00 or later isn't a valid send time.
-    expect(readDispatchSettings({ dispatch: { crew_texts: { time: "21:30" } } }, { doneForYou: true }).crewTexts.time).toBe("18:00");
-    expect(readDispatchSettings({ dispatch: { crew_texts: { time: "20:30" } } }, { doneForYou: true }).crewTexts.time).toBe("20:30");
-    const optedIn = readDispatchSettings({ dispatch: { on_our_way: { enabled: true }, crew_texts: { time: "17:00" } } }, { doneForYou: false });
+    expect(readDispatchSettings({ dispatch: { crew_texts: { time: "21:30" } } }, { doneForYou: true, tier: null }).crewTexts.time).toBe("18:00");
+    expect(readDispatchSettings({ dispatch: { crew_texts: { time: "20:30" } } }, { doneForYou: true, tier: null }).crewTexts.time).toBe("20:30");
+    const optedIn = readDispatchSettings({ dispatch: { on_our_way: { enabled: true }, crew_texts: { time: "17:00" } } }, { doneForYou: false, tier: null });
     expect(optedIn.onOurWay.enabled).toBe(true);
     expect(optedIn.crewTexts).toEqual({ enabled: false, time: "17:00" });
-    expect(readDispatchSettings({ dispatch: { weather: { enabled: false, rain_probability: 999 } } }, { doneForYou: true }).weather).toMatchObject({ enabled: false, thresholds: { rainProbability: 60 } });
+    expect(readDispatchSettings({ dispatch: { weather: { enabled: false, rain_probability: 999 } } }, { doneForYou: true, tier: null }).weather).toMatchObject({ enabled: false, thresholds: { rainProbability: 60 } });
   });
 
   it("weather sensitivity defaults by trade: outdoor → all jobs, indoor and snow removal → none", () => {

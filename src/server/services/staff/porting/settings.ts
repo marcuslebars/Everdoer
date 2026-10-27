@@ -15,6 +15,7 @@
  * `enabled` defaults ON for done-for-you orgs and OFF for house orgs (A1 etc.). The ring settings
  * only ever matter for a company with a ported business line, so they default on everywhere.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 
@@ -49,13 +50,13 @@ export function clampRingSeconds(value: unknown): number {
   return Math.min(MAX_RING_SECONDS, Math.max(MIN_RING_SECONDS, n));
 }
 
-export function readPortingSettings(aiSettings: unknown, ctx: { doneForYou: boolean }): PortingSettings {
+export function readPortingSettings(aiSettings: unknown, ctx: StaffOrg): PortingSettings {
   const section = asRecord(asRecord(aiSettings).porting);
   const ring = asRecord(section.ring);
   return {
-    enabled: bool(section.enabled, ctx.doneForYou),
+    enabled: bool(section.enabled, staffDefaultOn("porting", ctx)),
     enabledIsDefault: typeof section.enabled !== "boolean",
-    defaultEnabled: ctx.doneForYou,
+    defaultEnabled: staffDefaultOn("porting", ctx),
     ring: {
       enabled: bool(ring.enabled, true),
       seconds: clampRingSeconds(ring.seconds),
@@ -126,7 +127,7 @@ export async function loadPortingCompany(admin: AdminClient, scope: { organizati
     ai_settings: unknown;
   } | null;
   if (!c) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
   const platformBrand = (org as { platform_brand: string | null } | null)?.platform_brand ?? null;
   return {
     organizationId: scope.organizationId,
@@ -139,7 +140,7 @@ export async function loadPortingCompany(admin: AdminClient, scope: { organizati
     businessPhoneKind: c.business_phone_kind,
     businessPhoneCarrier: c.business_phone_carrier,
     platformBrand,
-    settings: readPortingSettings(c.ai_settings, { doneForYou: isDoneForYou(platformBrand) }),
+    settings: readPortingSettings(c.ai_settings, { doneForYou: isDoneForYou(platformBrand), tier: orgTier(org) }),
     aiSettings: c.ai_settings,
   };
 }

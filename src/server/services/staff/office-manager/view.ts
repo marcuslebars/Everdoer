@@ -11,6 +11,7 @@ import { loadCollectionsSettings } from "@/server/services/staff/bookkeeper/sett
 import { resolveOwnerContacts } from "@/server/services/workflow-engine/messaging";
 import type { Db, OwnerBriefingRow } from "./db-types";
 import { loadBriefingCompany, mergeOfficeManagerSettings, type OfficeManagerPatch, type OfficeManagerSettings } from "./settings";
+import { staffDefaultOn } from "@/server/services/staff/tiers";
 
 export interface OfficeManagerView {
   companyId: string;
@@ -44,7 +45,7 @@ export async function getOfficeManagerView(admin: AdminClient, organizationId: s
     companyId,
     companyName: company.name,
     settings: { ...company.settings, emailCopy: company.settings.channels.includes("email") },
-    defaultEnabled: company.doneForYou,
+    defaultEnabled: staffDefaultOn("office_manager", company),
     ownerPhoneOnFile: Boolean(company.ownerPhone),
     ownerEmailOnFile: Boolean(owner.email),
     foldsMoneyAlert: Boolean(collections?.enabled && collections.dailyAlert),

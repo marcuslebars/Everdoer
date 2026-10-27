@@ -12,6 +12,7 @@
  *   review_replies.enabled  ON for done-for-you, OFF for house orgs
  *   google_posts.enabled    ON for done-for-you, OFF for house orgs
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db, SendWindow } from "@/server/services/staff/marketer/db-types";
@@ -61,7 +62,7 @@ function bool(value: unknown, fallback: boolean): boolean {
 }
 
 /** PURE: companies.ai_settings (any shape) → the Marketer's settings with defaults. */
-export function readMarketingSettings(aiSettings: unknown, org: { doneForYou: boolean }): MarketingSettings {
+export function readMarketingSettings(aiSettings: unknown, org: StaffOrg): MarketingSettings {
   const section = asRecord(asRecord(aiSettings).marketing);
   const wb = asRecord(section.win_back);
   const monthsMin = int(wb.months_min, MARKETING_DEFAULTS.monthsMin, 1, 23);
@@ -73,7 +74,7 @@ export function readMarketingSettings(aiSettings: unknown, org: { doneForYou: bo
     : [...MARKETING_DEFAULTS.days];
   return {
     winBack: {
-      enabled: bool(wb.enabled, org.doneForYou),
+      enabled: bool(wb.enabled, staffDefaultOn("marketer.win_back", org)),
       monthsMin,
       monthsMax,
       weeklyCap: int(wb.weekly_cap, MARKETING_DEFAULTS.weeklyCap, 1, 2000),
@@ -82,8 +83,8 @@ export function readMarketingSettings(aiSettings: unknown, org: { doneForYou: bo
       endHour,
       days: days.length ? days : [...MARKETING_DEFAULTS.days],
     },
-    reviewReplies: { enabled: bool(asRecord(section.review_replies).enabled, org.doneForYou) },
-    googlePosts: { enabled: bool(asRecord(section.google_posts).enabled, org.doneForYou) },
+    reviewReplies: { enabled: bool(asRecord(section.review_replies).enabled, staffDefaultOn("marketer.review_replies", org)) },
+    googlePosts: { enabled: bool(asRecord(section.google_posts).enabled, staffDefaultOn("marketer.google_posts", org)) },
   };
 }
 
@@ -146,7 +147,8 @@ export function isCompanyHeld(company: Pick<MarketingCompany, "stage" | "ownerPa
   return company.stage === "paused" || company.stage === "archived" || company.ownerPaused;
 }
 
-export function toMarketingCompany(row: Record<string, unknown>, doneForYou: boolean): MarketingCompany {
+export function toMarketingCompany(row: Record<string, unknown>, org: StaffOrg): MarketingCompany {
+  const { doneForYou } = org;
   const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   return {
     organizationId: String(row.organization_id),
@@ -160,7 +162,7 @@ export function toMarketingCompany(row: Record<string, unknown>, doneForYou: boo
     googlePlaceId: text(row.google_place_id),
     googleRating: typeof row.google_rating === "number" ? row.google_rating : null,
     googleReviewCount: typeof row.google_review_count === "number" ? row.google_review_count : null,
-    settings: readMarketingSettings(row.ai_settings, { doneForYou }),
+    settings: readMarketingSettings(row.ai_settings, org),
     raw: row,
   };
 }
@@ -176,8 +178,8 @@ export async function loadMarketingCompany(admin: AdminClient, scope: { organiza
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
-  return toMarketingCompany(data as Record<string, unknown>, isDoneForYou((org as { platform_brand?: string | null } | null)?.platform_brand));
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
+  return toMarketingCompany(data as Record<string, unknown>, { doneForYou: isDoneForYou((org as { platform_brand?: string | null } | null)?.platform_brand), tier: orgTier(org) });
 }
 
 /**
@@ -189,13 +191,17 @@ export async function listMarketingCompanies(admin: AdminClient): Promise<Market
   const rows = await pageAll<Record<string, unknown>>(() => db.from("companies").select(COMPANY_COLUMNS).order("id", { ascending: true }));
   const orgIds = [...new Set(rows.map((r) => String(r.organization_id)))];
   const brands = new Map<string, string | null>();
+  const tiers = new Map<string, string | null>();
   for (let i = 0; i < orgIds.length; i += 200) {
-    const { data, error } = await db.from("organizations").select("id, platform_brand").in("id", orgIds.slice(i, i + 200));
+    const { data, error } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", orgIds.slice(i, i + 200));
     if (error) throw error;
-    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null }>) brands.set(o.id, o.platform_brand);
+    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>) {
+      brands.set(o.id, o.platform_brand);
+      tiers.set(o.id, tierOf(o.crankleads_tier));
+    }
   }
   return rows
-    .map((row) => toMarketingCompany(row, isDoneForYou(brands.get(String(row.organization_id)))))
+    .map((row) => toMarketingCompany(row, { doneForYou: isDoneForYou(brands.get(String(row.organization_id))), tier: tiers.get(String(row.organization_id)) ?? null }))
     .filter((c) => c.stage !== "paused" && c.stage !== "archived")
     .filter((c) => c.settings.winBack.enabled || c.settings.reviewReplies.enabled || c.settings.googlePosts.enabled);
 }

@@ -3,6 +3,7 @@
  * sweep). Service role; every later query is scoped by organization_id + company_id.
  */
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
+import { ORG_STAFF_COLUMNS, tierOf } from "@/server/services/staff/tiers";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { quotePublicBaseUrlFor } from "@/server/services/quotes/config";
 import type { Db } from "./db-types";
@@ -69,8 +70,9 @@ async function selectIn<T>(admin: AdminClient, table: string, columns: string, c
 async function build(admin: AdminClient, rows: CompanyRow[]): Promise<DispatchCompany[]> {
   if (rows.length === 0) return [];
   const orgIds = [...new Set(rows.map((r) => r.organization_id))];
-  const orgs = await selectIn<{ id: string; platform_brand: string | null }>(admin, "organizations", "id, platform_brand", "id", orgIds);
+  const orgs = await selectIn<{ id: string; platform_brand: string | null; crankleads_tier: string | null }>(admin, "organizations", `id, ${ORG_STAFF_COLUMNS}`, "id", orgIds);
   const brandOf = new Map(orgs.map((o) => [o.id, o.platform_brand ?? "empirevu"]));
+  const tierOfOrg = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   // The done-for-you business type is only a hint for companies without an industry pack.
   const needType = rows.filter((r) => isDoneForYou(brandOf.get(r.organization_id)) && !r.industry_pack).map((r) => r.id);
   const purchases = needType.length
@@ -87,7 +89,7 @@ async function build(admin: AdminClient, rows: CompanyRow[]): Promise<DispatchCo
       timeZone: zoneOf(r.timezone),
       platformBrand,
       doneForYou,
-      settings: readDispatchSettings(r.ai_settings, { doneForYou, industryPack: r.industry_pack, hints: [r.name, typeOf.get(r.id) ?? null] }),
+      settings: readDispatchSettings(r.ai_settings, { doneForYou, tier: tierOfOrg.get(r.organization_id) ?? null, industryPack: r.industry_pack, hints: [r.name, typeOf.get(r.id) ?? null] }),
       latitude: typeof r.latitude === "number" ? r.latitude : null,
       longitude: typeof r.longitude === "number" ? r.longitude : null,
       locationCheckedAt: r.location_checked_at ?? null,

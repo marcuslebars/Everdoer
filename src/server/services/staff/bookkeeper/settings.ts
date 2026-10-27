@@ -12,6 +12,7 @@
  *
  * PURE apart from loadCollectionsSettings.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -53,11 +54,11 @@ export function normalizeReminderDays(value: unknown): number[] | null {
 const bool = (value: unknown, fallback: boolean) => (typeof value === "boolean" ? value : fallback);
 
 /** companies.ai_settings (any shape) → the Bookkeeper section with defaults. PURE. */
-export function readCollectionsSettings(aiSettings: unknown, org: { doneForYou: boolean }): CollectionsSettings {
+export function readCollectionsSettings(aiSettings: unknown, org: StaffOrg): CollectionsSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const explicit = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: explicit ?? org.doneForYou,
+    enabled: explicit ?? staffDefaultOn("bookkeeper", org),
     enabledIsDefault: explicit === null,
     textReminders: bool(s.textReminders, true),
     reminderDays: normalizeReminderDays(s.reminderDays) ?? DEFAULT_REMINDER_DAYS,
@@ -92,9 +93,9 @@ export async function loadCollectionsSettings(admin: AdminClient, organizationId
   const db = admin as Db;
   const { data } = await db.from("companies").select("id, organization_id, ai_settings").eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const doneForYou = isDoneForYouOrg(org);
-  return { ...readCollectionsSettings((data as { ai_settings: unknown }).ai_settings, { doneForYou }), organizationId, companyId, doneForYou };
+  return { ...readCollectionsSettings((data as { ai_settings: unknown }).ai_settings, { doneForYou, tier: orgTier(org) }), organizationId, companyId, doneForYou };
 }
 
 /** organizations row → done-for-you? (platform_brand 'crankleads', like the front desk's readers). PURE. */
@@ -140,6 +141,8 @@ export interface ActiveCompany {
   companyId: string;
   timeZone: string | null;
   doneForYou: boolean;
+  /** organizations.crankleads_tier (staff/tiers.ts); null for house orgs. */
+  tier: string | null;
   settings: CollectionsSettings;
 }
 
@@ -151,8 +154,11 @@ export interface ActiveCompany {
 export async function loadActiveCompanies(admin: AdminClient): Promise<ActiveCompany[]> {
   const db = admin as Db;
   const columns = "id, organization_id, timezone, ai_settings";
-  const orgs = await readAllPages<{ id: string }>((from, to) => db.from("organizations").select("id").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to));
+  const orgs = await readAllPages<{ id: string; crankleads_tier: string | null }>((from, to) =>
+    db.from("organizations").select("id, crankleads_tier").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  );
   const doneForYouOrgs = new Set(orgs.map((o) => o.id));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, { id: string; organization_id: string; timezone: string | null; ai_settings: unknown }>();
   for (const ids of chunks([...doneForYouOrgs])) {
     const page = await readAllPages<{ id: string; organization_id: string; timezone: string | null; ai_settings: unknown }>((from, to) =>
@@ -167,8 +173,9 @@ export async function loadActiveCompanies(admin: AdminClient): Promise<ActiveCom
   const out: ActiveCompany[] = [];
   for (const r of rows.values()) {
     const doneForYou = doneForYouOrgs.has(r.organization_id);
-    const settings = readCollectionsSettings(r.ai_settings, { doneForYou });
-    if (settings.enabled) out.push({ organizationId: r.organization_id, companyId: r.id, timeZone: r.timezone, doneForYou, settings });
+    const tier = tiers.get(r.organization_id) ?? null;
+    const settings = readCollectionsSettings(r.ai_settings, { doneForYou, tier });
+    if (settings.enabled) out.push({ organizationId: r.organization_id, companyId: r.id, timeZone: r.timezone, doneForYou, tier, settings });
   }
   return out;
 }

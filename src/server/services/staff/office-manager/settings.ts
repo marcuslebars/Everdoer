@@ -11,6 +11,7 @@
  *
  * PURE apart from the loaders at the bottom.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { chunks, isDoneForYouOrg, readAllPages } from "@/server/services/staff/bookkeeper/settings";
@@ -74,11 +75,11 @@ function normalizeChannels(value: unknown): BriefingChannel[] {
 }
 
 /** companies.ai_settings (any shape) → the Office manager section with defaults. PURE. */
-export function readOfficeManagerSettings(aiSettings: unknown, org: { doneForYou: boolean }): OfficeManagerSettings {
+export function readOfficeManagerSettings(aiSettings: unknown, org: StaffOrg): OfficeManagerSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const explicit = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: explicit ?? org.doneForYou,
+    enabled: explicit ?? staffDefaultOn("office_manager", org),
     enabledIsDefault: explicit === null,
     time: isBriefingTime(s.time) ? s.time : DEFAULT_TIME,
     days: normalizeDays(s.days) ?? DEFAULT_DAYS,
@@ -161,6 +162,8 @@ export interface BriefingCompany {
   name: string;
   timeZone: string;
   doneForYou: boolean;
+  /** organizations.crankleads_tier (staff/tiers.ts); null for house orgs. */
+  tier: string | null;
   platformBrand: string;
   /** The VERIFIED owner cell, else null (no briefing). */
   ownerPhone: string | null;
@@ -173,7 +176,7 @@ function text(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-export function toBriefingCompany(row: BriefingCompanyRow, platformBrand: string): BriefingCompany {
+export function toBriefingCompany(row: BriefingCompanyRow, platformBrand: string, tier: string | null): BriefingCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -181,11 +184,12 @@ export function toBriefingCompany(row: BriefingCompanyRow, platformBrand: string
     name: text(row.brand_from_name) ?? text(row.name) ?? "your business",
     timeZone: text(row.timezone) ?? process.env.BUSINESS_TIMEZONE?.trim() ?? "America/Toronto",
     doneForYou,
+    tier,
     platformBrand,
     ownerPhone: text(row.owner_phone_e164) && row.owner_phone_verified_at ? text(row.owner_phone_e164) : null,
     ownerEmail: text(row.owner_email),
     active: row.stage !== "paused" && row.stage !== "archived",
-    settings: readOfficeManagerSettings(row.ai_settings, { doneForYou }),
+    settings: readOfficeManagerSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -195,9 +199,9 @@ export async function loadBriefingCompany(admin: AdminClient, organizationId: st
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const brand = text((org as Record<string, unknown> | null)?.platform_brand) ?? "empirevu";
-  return toBriefingCompany(data as BriefingCompanyRow, isDoneForYouOrg(org) ? "crankleads" : brand);
+  return toBriefingCompany(data as BriefingCompanyRow, isDoneForYouOrg(org) ? "crankleads" : brand, orgTier(org));
 }
 
 /**
@@ -208,8 +212,11 @@ export async function loadBriefingCompany(admin: AdminClient, organizationId: st
  */
 export async function loadBriefingCompanies(admin: AdminClient): Promise<BriefingCompany[]> {
   const db = admin as Db;
-  const orgs = await readAllPages<{ id: string }>((from, to) => db.from("organizations").select("id").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to));
+  const orgs = await readAllPages<{ id: string; crankleads_tier: string | null }>((from, to) =>
+    db.from("organizations").select("id, crankleads_tier").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  );
   const doneForYouOrgs = new Set(orgs.map((o) => o.id));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, BriefingCompanyRow>();
   for (const ids of chunks([...doneForYouOrgs])) {
     const page = await readAllPages<BriefingCompanyRow>((from, to) => db.from("companies").select(COMPANY_COLUMNS).in("organization_id", ids).order("id", { ascending: true }).range(from, to));
@@ -220,7 +227,7 @@ export async function loadBriefingCompanies(admin: AdminClient): Promise<Briefin
   );
   for (const r of optedIn) rows.set(r.id, r);
   return [...rows.values()]
-    .map((r) => toBriefingCompany(r, doneForYouOrgs.has(r.organization_id) ? "crankleads" : "empirevu"))
+    .map((r) => toBriefingCompany(r, doneForYouOrgs.has(r.organization_id) ? "crankleads" : "empirevu", tiers.get(r.organization_id) ?? null))
     .filter((c) => c.active && c.settings.enabled);
 }
 
@@ -252,7 +259,7 @@ export async function briefingTakesMoneyAlert(
   admin: AdminClient,
   scope: { organizationId: string; companyId: string },
   nowMs: number,
-  hint: { doneForYou?: boolean } = {},
+  hint: { doneForYou?: boolean; tier?: string | null } = {},
 ): Promise<boolean> {
   try {
     const db = admin as Db;
@@ -260,13 +267,15 @@ export async function briefingTakesMoneyAlert(
     if (error || !data) return false;
     const row = data as BriefingCompanyRow;
     let doneForYou = hint.doneForYou;
+    let tier = hint.tier ?? null;
     if (doneForYou === undefined) {
       const explicit = record(record(row.ai_settings)[SETTINGS_KEY]).enabled;
       if (explicit === false) return false;
-      const { data: org } = await db.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle();
+      const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", scope.organizationId).maybeSingle();
       doneForYou = isDoneForYouOrg(org);
+      tier = orgTier(org);
     }
-    const company = toBriefingCompany(row, doneForYou ? "crankleads" : "empirevu");
+    const company = toBriefingCompany(row, doneForYou ? "crankleads" : "empirevu", tier);
     if (!company.active || !company.ownerPhone || !briefingDay(company.settings, nowMs, company.timeZone)) return false;
     const today = localParts(nowMs, company.timeZone).date;
     const { data: brief, error: briefError } = await db

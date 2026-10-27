@@ -216,10 +216,10 @@ describe("money formatting", () => {
 
 describe("settings", () => {
   it("default ON for done-for-you, OFF for house orgs (A1) unless switched on", () => {
-    expect(readCollectionsSettings({}, { doneForYou: true })).toMatchObject({ enabled: true, enabledIsDefault: true, textReminders: true, finalNotice: true, dailyAlert: true, reminderDays: [3, 10, 20, 30] });
-    expect(readCollectionsSettings({}, { doneForYou: false })).toMatchObject({ enabled: false, enabledIsDefault: true });
-    expect(readCollectionsSettings({ collections: { enabled: true } }, { doneForYou: false }).enabled).toBe(true);
-    expect(readCollectionsSettings({ collections: { reminderDays: [30, 5, 5, 0, 500, 12] } }, { doneForYou: true }).reminderDays).toEqual([5, 12, 30]);
+    expect(readCollectionsSettings({}, { doneForYou: true, tier: null })).toMatchObject({ enabled: true, enabledIsDefault: true, textReminders: true, finalNotice: true, dailyAlert: true, reminderDays: [3, 10, 20, 30] });
+    expect(readCollectionsSettings({}, { doneForYou: false, tier: null })).toMatchObject({ enabled: false, enabledIsDefault: true });
+    expect(readCollectionsSettings({ collections: { enabled: true } }, { doneForYou: false, tier: null }).enabled).toBe(true);
+    expect(readCollectionsSettings({ collections: { reminderDays: [30, 5, 5, 0, 500, 12] } }, { doneForYou: true, tier: null }).reminderDays).toEqual([5, 12, 30]);
   });
 
   it("merge touches only ai_settings.collections", () => {

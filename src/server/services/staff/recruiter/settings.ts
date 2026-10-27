@@ -14,6 +14,7 @@
  * are always the 1st–15th and 16th–end of month. The CSV goes to `csv_email`, else the org
  * owner's email.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db, PayFrequency } from "./db-types";
@@ -65,11 +66,11 @@ export function isEmail(value: unknown): value is string {
 const bool = (value: unknown): boolean | null => (typeof value === "boolean" ? value : null);
 
 /** companies.ai_settings (any shape) → the Recruiter section with defaults. PURE. */
-export function readRecruiterSettings(aiSettings: unknown, org: { doneForYou: boolean }): RecruiterSettings {
+export function readRecruiterSettings(aiSettings: unknown, org: StaffOrg): RecruiterSettings {
   const section = record(record(aiSettings)[SETTINGS_KEY]);
   const payroll = record(section.payroll);
   const hiring = record(section.hiring);
-  const on = org.doneForYou;
+  const on = staffDefaultOn("recruiter", org);
   const frequency = PAY_FREQUENCIES.includes(payroll.frequency as PayFrequency) ? (payroll.frequency as PayFrequency) : DEFAULT_FREQUENCY;
   return {
     payroll: {
@@ -146,7 +147,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): RecruiterCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): RecruiterCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -157,7 +158,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): RecruiterComp
     platformBrand,
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readRecruiterSettings(row.ai_settings, { doneForYou }),
+    settings: readRecruiterSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -166,8 +167,8 @@ export async function loadRecruiterCompany(admin: AdminClient, organizationId: s
   const db = admin as Db;
   const { data } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Is any Recruiter feature on for this company? (Gates its tools and prompt notes.) Never throws. */
@@ -201,10 +202,11 @@ async function readAll<T>(make: (from: number, to: number) => PromiseLike<{ data
  */
 export async function loadRecruiterCompanies(admin: AdminClient): Promise<RecruiterCompany[]> {
   const db = admin as Db;
-  const orgs = await readAll<{ id: string; platform_brand: string | null }>((from, to) =>
-    db.from("organizations").select("id, platform_brand").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  const orgs = await readAll<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>((from, to) =>
+    db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
   );
   const brands = new Map(orgs.map((o) => [o.id, o.platform_brand]));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, CompanyRow>();
   const ids = [...brands.keys()];
   for (let i = 0; i < ids.length; i += 200) {
@@ -218,7 +220,7 @@ export async function loadRecruiterCompanies(admin: AdminClient): Promise<Recrui
   for (const r of optedIn) rows.set(r.id, r);
   const out: RecruiterCompany[] = [];
   for (const r of rows.values()) {
-    const company = toCompany(r, brands.get(r.organization_id) ?? null);
+    const company = toCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
     if (company.active && (company.settings.payroll.enabled || company.settings.hiring.enabled)) out.push(company);
   }
   return out;

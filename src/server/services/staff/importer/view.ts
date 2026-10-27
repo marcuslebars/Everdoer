@@ -10,6 +10,7 @@ import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write
 import { loadHeldBalances, pendingChase } from "./approvals";
 import { listBatches, type BatchSummary } from "./batches";
 import { loadImportCompany, mergeImportSettings, type ImportCompany, type ImportPatch, type ImportSettings } from "./settings";
+import { staffDefaultOn } from "@/server/services/staff/tiers";
 
 export interface ImportOverview {
   companyId: string;
@@ -33,7 +34,7 @@ export async function overviewFor(admin: AdminClient, company: ImportCompany): P
     companyId: company.companyId,
     companyName: company.name,
     settings: company.settings,
-    defaultEnabled: company.doneForYou,
+    defaultEnabled: staffDefaultOn("importer", company),
     ownerPhoneOnFile: Boolean(company.ownerPhone),
     batches,
     held: { count: held.count, totalCents: held.totalCents, pendingCode: pending?.short_code ?? null },
