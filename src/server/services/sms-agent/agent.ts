@@ -1,5 +1,5 @@
 /**
- * The SMS agent's tool-use loop — the first in the codebase.
+ * The SMS agent's tool-use loop — now a thin layer over the agent kernel (src/server/agent).
  *
  *   user turn (fenced conversation + photos) → model → tool calls → tool results → … → text
  *
@@ -7,30 +7,18 @@
  * (each call is aborted at the deadline), and tool errors come back to the model as readable
  * results rather than exceptions. The caller (entry.ts) owns what happens to the final text.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 
-import { extractAiUsage, type AiUsageMeta } from "@/server/ai/claude";
+import type { AiUsageMeta } from "@/server/ai/claude";
+import { AgentTimeoutError as KernelTimeoutError, defaultModelClient as kernelModelClient, runAgentLoop, type ModelClient, type ToolCallRecord } from "@/server/agent/runtime";
 import type { FetchedImage } from "@/server/services/sms-agent/media";
 import { allAgentTools, runTool, type TurnState } from "@/server/services/sms-agent/tools";
 
-/** The one Anthropic call the loop makes — injectable so tests can script a fake model. */
-export interface ModelClient {
-  createMessage(params: Anthropic.MessageCreateParamsNonStreaming, options: { signal: AbortSignal }): Promise<Anthropic.Message>;
-}
+export type { ModelClient, ToolCallRecord };
 
-/** The real client (reads ANTHROPIC_API_KEY), same SDK + zero-arg construction as ai/claude.ts. */
+/** The real client (reads ANTHROPIC_API_KEY); one SDK retry, as before. */
 export function defaultModelClient(): ModelClient {
-  const client = new Anthropic({ maxRetries: 1 });
-  return {
-    createMessage: (params, options) => client.messages.create(params, { signal: options.signal }) as Promise<Anthropic.Message>,
-  };
-}
-
-export interface ToolCallRecord {
-  name: string;
-  input: unknown;
-  result: unknown;
-  isError: boolean;
+  return kernelModelClient({ maxRetries: 1 });
 }
 
 export interface AgentTurnInput {
@@ -53,7 +41,7 @@ export interface AgentTurnOutput {
   toolCalls: ToolCallRecord[];
 }
 
-export class AgentTimeoutError extends Error {
+export class AgentTimeoutError extends KernelTimeoutError {
   constructor() {
     super("SMS agent turn timed out.");
     this.name = "AgentTimeoutError";
@@ -68,66 +56,37 @@ export function toolDefinitions(state?: Pick<TurnState, "roleTools">): Anthropic
   }));
 }
 
-function textOf(message: Anthropic.Message): string {
-  return message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
-}
-
+/**
+ * One customer turn on the agent kernel (src/server/agent/runtime.ts): the system prompt is
+ * cached (identical across a conversation's turns), thinking is off, tool results go back as
+ * plain JSON (is_error on failures), and any timeout throws AgentTimeoutError.
+ */
 export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutput> {
-  const tools = toolDefinitions(input.state);
-  const firstContent: Anthropic.ContentBlockParam[] = [
+  const content: Anthropic.ContentBlockParam[] = [
     ...input.images.map(
       (img): Anthropic.ImageBlockParam => ({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } }),
     ),
     { type: "text", text: input.userText },
   ];
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: firstContent }];
-  const usage: AiUsageMeta[] = [];
-  const toolCalls: ToolCallRecord[] = [];
-
-  for (let iteration = 1; iteration <= input.maxIterations; iteration++) {
-    const remaining = input.deadline - Date.now();
-    if (remaining <= 0) throw new AgentTimeoutError();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), remaining);
-    let response: Anthropic.Message;
-    try {
-      response = await input.client.createMessage(
-        {
-          model: input.model,
-          max_tokens: 1_024,
-          thinking: { type: "disabled" },
-          // The rules + facts are identical across a conversation's turns: cache them.
-          system: [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }],
-          tools,
-          messages,
-        },
-        { signal: controller.signal },
-      );
-    } catch (err) {
-      if (controller.signal.aborted) throw new AgentTimeoutError();
-      throw err;
-    } finally {
-      clearTimeout(timer);
-    }
-    usage.push(extractAiUsage(response, input.model));
-
-    const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
-      return { text: textOf(response) || null, stoppedReason: "final", iterations: iteration, usage, toolCalls };
-    }
-
-    messages.push({ role: "assistant", content: response.content as Anthropic.ContentBlockParam[] });
-    const results: Anthropic.ToolResultBlockParam[] = [];
-    for (const use of toolUses) {
-      const { result, isError } = await runTool(input.state, use.name, use.input);
-      toolCalls.push({ name: use.name, input: use.input, result, isError });
-      results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(result), ...(isError ? { is_error: true } : {}) });
-    }
-    messages.push({ role: "user", content: results });
+  let out;
+  try {
+    out = await runAgentLoop({
+      system: input.system,
+      cacheSystem: true,
+      disableThinking: true,
+      userContent: content,
+      tools: toolDefinitions(input.state),
+      runTool: (name, toolInput) => runTool(input.state, name, toolInput),
+      model: input.model,
+      client: input.client,
+      maxRounds: input.maxIterations,
+      deadline: input.deadline,
+    });
+  } catch (err) {
+    if (err instanceof KernelTimeoutError) throw new AgentTimeoutError();
+    throw err;
   }
-  return { text: null, stoppedReason: "max_iterations", iterations: input.maxIterations, usage, toolCalls };
+  if (out.stoppedReason === "timeout") throw new AgentTimeoutError();
+  if (out.stoppedReason === "final") return { text: out.text, stoppedReason: "final", iterations: out.rounds, usage: out.usage, toolCalls: out.toolCalls };
+  return { text: null, stoppedReason: "max_iterations", iterations: input.maxIterations, usage: out.usage, toolCalls: out.toolCalls };
 }

@@ -380,6 +380,31 @@ describe("runSmsAgent — price-list quote", () => {
     expect((contact.metadata as Row).service_address).toBe("12 Birch St, Barrie");
   });
 
+  it("each turn is written to the agent run log: tools in order, the reply that went out, the conversation as trigger", async () => {
+    const { sms } = inbound("Hi, how much for a seasonal snow contract? 12 Birch St, Barrie");
+    const model = scripted([
+      { tools: [{ name: "send_quote_link", input: { lines: [{ service_key: "seasonal_residential" }] } }] },
+      { text: "Our residential seasonal contract is $650 + HST. Here's your quote: https://quotes.northshore.example/q/tok1" },
+    ]);
+    await runSmsAgent(db.client, sms, deps(model.client));
+    const runs = (db.tables.agent_runs ?? []) as Row[];
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ channel: "customer_sms", status: "final", rounds: 2, tool_count: 1, trigger_ref: conversation().id, company_id: CO });
+    expect((runs[0].tool_calls as Row[])[0]).toMatchObject({ name: "send_quote_link", is_error: false });
+    expect(runs[0].reply).toBe(rec.texts[0].body);
+  });
+
+  it("a turn that fails is logged as an error (and still handed to the owner)", async () => {
+    const { sms } = inbound("Hi, what are your hours?");
+    const model = scripted([]);
+    const outcome = await runSmsAgent(db.client, sms, deps(model.client));
+    expect(outcome).toMatchObject({ replied: false, handedOff: true });
+    const runs = (db.tables.agent_runs ?? []) as Row[];
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ channel: "customer_sms", status: "error", reply: null });
+    expect(String(runs[0].error)).not.toBe("");
+  });
+
   it("appends a tool's link when the model forgets it", async () => {
     const { sms } = inbound("Can I book online?");
     const model = scripted([{ tools: [{ name: "send_booking_link", input: {} }] }, { text: "Sure, you can pick a time online." }]);

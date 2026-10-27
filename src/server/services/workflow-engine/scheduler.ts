@@ -11,6 +11,7 @@ import { processDueOwnerCalls } from "@/server/services/owner-channel/calls";
 import { sweepOwnerApprovals } from "@/server/services/owner-channel/notify";
 import { sweepUnansweredTexts } from "@/server/services/sms-agent/entry";
 import { processWeeklyReports } from "@/server/services/weekly-report/send";
+import { purgeAgentRuns } from "@/server/agent/run-log";
 import { runDoneForYouSweep } from "@/server/services/dfy/orchestrator";
 import { processSetupFollowups, SETUP_FOLLOWUP_INTERVAL_MS } from "@/server/services/done-for-you/setup-followups";
 import { runGeneratedSitesPass } from "@/server/services/dfy/site-generator";
@@ -320,6 +321,8 @@ let lastSetupFollowupRunMs = 0;
 /** Last recurring-jobs top-up in this worker process (the sweep itself is idempotent). */
 let lastRecurringRunMs = 0;
 const RECURRING_INTERVAL_MS = 60 * 60 * 1000;
+let lastAgentRunPurgeMs = 0;
+const AGENT_RUN_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 let lastReviewRunMs = 0;
 let lastHoldRunMs = 0;
 const REVIEW_INTERVAL_MS = 5 * 60 * 1000;
@@ -407,6 +410,13 @@ export async function runScheduler(
     await processOperatorHealth(admin, nowMs).catch((error) =>
       console.error("[scheduler] operator health failed", error instanceof Error ? error.message : error),
     );
+  }
+  // Agent run log retention (docs/agent-kernel.md): drop runs older than AGENT_RUN_RETENTION_DAYS
+  // (default 90), a bounded batch every 6 hours. purgeAgentRuns never throws.
+  if (nowMs - lastAgentRunPurgeMs >= AGENT_RUN_PURGE_INTERVAL_MS) {
+    lastAgentRunPurgeMs = nowMs;
+    const purged = await purgeAgentRuns(admin, nowMs);
+    if (purged) console.log(`[scheduler] agent runs purged: ${purged}`);
   }
   // Recurring jobs (docs/recurring-jobs.md): keep ~60 days of visits on the calendar.
   // Hourly; the sweep only touches series whose horizon is running out, and is idempotent.

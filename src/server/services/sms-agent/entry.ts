@@ -22,7 +22,8 @@ import { isAIConfigured, type AiUsageMeta } from "@/server/ai/claude";
 import { getSmsAgentModel } from "@/server/ai/config";
 import { SMS_AGENT_SENDER, type AdminClient, type InboundCustomerSms } from "@/server/services/front-desk/contracts";
 import { recordAiUsageSafe } from "@/server/services/usage";
-import { runAgentTurn, defaultModelClient, type ModelClient, type AgentTurnOutput } from "@/server/services/sms-agent/agent";
+import { AgentTimeoutError, runAgentTurn, defaultModelClient, type ModelClient, type AgentTurnOutput } from "@/server/services/sms-agent/agent";
+import { recordAgentRun } from "@/server/agent/run-log";
 import { createApproval, defaultApprovalDeps, type ApprovalDeps } from "@/server/services/sms-agent/approvals";
 import {
   claimTurn,
@@ -353,6 +354,26 @@ async function runOneTurn(
   let facts: BusinessFacts | null = null;
   const effects = newTurnEffects();
   let output: AgentTurnOutput | null = null;
+  const turnStartedAt = Date.now();
+  // The run log (agent/run-log.ts): every turn, how it ended and what went out. Never throws.
+  let logged = false;
+  const logRun = (status: "final" | "max_rounds" | "timeout" | "error", reply: string | null, error: string | null = null) => {
+    logged = true;
+    return recordAgentRun(admin, {
+      organizationId: conv.organization_id,
+      companyId: conv.company_id,
+      channel: "customer_sms",
+      triggerRef: conv.id,
+      model: deps.model(),
+      status,
+      rounds: output?.iterations ?? 0,
+      toolCalls: output?.toolCalls ?? [],
+      usage: output?.usage ?? [],
+      durationMs: Date.now() - turnStartedAt,
+      reply,
+      error,
+    });
+  };
   try {
     facts = await deps.loadFacts(admin, conv.company_id);
     // The texting AI's first text discloses it's automated — even after a phone-AI follow-up
@@ -470,6 +491,8 @@ async function runOneTurn(
       return { ran: true, replied: false, handedOff: false, failed: false };
     }
 
+    await logRun("final", reply || null);
+
     let sent = false;
     if (reply) {
       const delivery = await deps.services.textCustomer(admin, facts, contact, reply);
@@ -521,6 +544,7 @@ async function runOneTurn(
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error("[sms-agent] turn failed — handing to the owner:", reason);
+    if (!logged) await logRun(err instanceof AgentTimeoutError ? "timeout" : output?.stoppedReason === "max_iterations" ? "max_rounds" : "error", null, reason);
     const ref: CompanyRef = facts ?? (await companyRef(admin, conv));
     await markHandled({ state: "owner", owner_takeover_at: deps.services.now().toISOString(), last_error: reason.slice(0, 500) }).catch(() => undefined);
     await deps.services.alertOwner(

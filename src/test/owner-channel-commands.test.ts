@@ -150,6 +150,34 @@ describe("owner commands", () => {
     expect(db.tables.owner_command_log[0]).toMatchObject({ intent: "command", company_id: "co-1" });
   });
 
+  it("every command is written to the agent run log (tools, reply, tokens; the command log id as trigger)", async () => {
+    scriptModel([{ name: "list_bookings", input: { when: "tomorrow" } }], "Tomorrow: Thu 9am Dana Jones — Spring cleanup.");
+    await text("what's on tomorrow?");
+    const runs = db.tables.agent_runs ?? [];
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      organization_id: "org-1",
+      company_id: "co-1",
+      channel: "owner_sms",
+      status: "final",
+      rounds: 2,
+      tool_count: 1,
+      input_tokens: 20,
+      output_tokens: 10,
+      trigger_ref: db.tables.owner_command_log[0].id,
+      reply: "Tomorrow: Thu 9am Dana Jones — Spring cleanup.",
+    });
+    expect((runs[0].tool_calls as Array<Record<string, unknown>>)[0]).toMatchObject({ name: "list_bookings", is_error: false, input: { when: "tomorrow" } });
+  });
+
+  it("a proposal that needs a code stops the run there and logs it as stopped", async () => {
+    scriptModel([{ name: "propose_cancel", input: { booking_id: B_DANA } }], "never reached");
+    await text("cancel Dana tomorrow");
+    expect(anthropicCreate).toHaveBeenCalledTimes(1);
+    expect(db.tables.agent_runs?.[0]).toMatchObject({ status: "stopped", rounds: 1, tool_count: 1 });
+    expect(db.tables.agent_runs?.[0].reply).toMatch(/Reply \d{4} to confirm/);
+  });
+
   it("reschedule: asks to confirm the exact change with a 4-digit code; a bare Y doesn't do it", async () => {
     scriptModel([{ name: "propose_reschedule", input: { booking_id: B_DANA, date: "2026-10-09", time: "09:00" } }], "unused");
     await text("move Dana to Friday 9am");
