@@ -31,6 +31,7 @@ import type { FollowedQuote, QuoteFollowUpRow } from "@/server/services/staff/es
 import { ESTIMATOR_QUOTE_SOURCE, estimatorDeps, type EstimatorContact, type EstimatorDeps } from "@/server/services/staff/estimator/deps";
 import { followUpsActive, readEstimatorSettings } from "@/server/services/staff/estimator/settings";
 import { DEFAULT_TIMEZONE, firstName, withinCustomerHours } from "@/server/services/staff/estimator/text";
+import { ORG_STAFF_COLUMNS, orgTier } from "@/server/services/staff/tiers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -192,8 +193,8 @@ async function companyContext(admin: AdminClient, deps: EstimatorDeps, companyId
   const { data: company } = await db.from("companies").select("id, organization_id, timezone, ai_settings").eq("id", companyId).maybeSingle();
   const c = company as { id: string; organization_id: string; timezone: string | null; ai_settings: unknown } | null;
   if (!c) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", c.organization_id).maybeSingle();
-  const settings = readEstimatorSettings(c.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand) });
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", c.organization_id).maybeSingle();
+  const settings = readEstimatorSettings(c.ai_settings, { doneForYou: isDoneForYou((org as { platform_brand: string | null } | null)?.platform_brand), tier: orgTier(org) });
   if (!followUpsActive(settings)) return null;
   const { data: workflows } = await db
     .from("workflows")

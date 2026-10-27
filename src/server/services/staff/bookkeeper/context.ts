@@ -6,6 +6,7 @@ import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { invoicePublicUrl } from "@/server/services/invoices/common";
 import { parseInvoiceSettings } from "@/server/services/invoices/settings";
 import type { TenantServiceContext } from "@/server/services/shared";
+import { ORG_STAFF_COLUMNS, orgTier } from "@/server/services/staff/tiers";
 import { deliverMessage, type ConsentContact, type DeliverMessageResult } from "@/server/services/workflow-engine/messaging";
 import { CONTACT_COLUMNS, INVOICE_COLUMNS, type BookkeeperContact, type BookkeeperInvoice, type Db, type InvoiceCollectionsRow } from "./db-types";
 import { localParts } from "./format";
@@ -22,6 +23,8 @@ export interface CompanyCtx {
   name: string;
   timeZone: string;
   doneForYou: boolean;
+  /** organizations.crankleads_tier (staff/tiers.ts); null for house orgs. */
+  tier: string | null;
   platformBrand: string;
   /** The VERIFIED owner cell, else null (no owner texts). */
   ownerPhone: string | null;
@@ -60,8 +63,9 @@ export async function loadCompanyCtx(admin: AdminClient, organizationId: string,
     .maybeSingle();
   if (!data) return null;
   const c = data as Record<string, unknown>;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
   const doneForYou = isDoneForYouOrg(org);
+  const tier = orgTier(org);
   const platformBrand = str((org as Record<string, unknown> | null)?.platform_brand) ?? "empirevu";
   const invoiceSettings = parseInvoiceSettings(c.invoice_settings ?? null);
   return {
@@ -70,10 +74,11 @@ export async function loadCompanyCtx(admin: AdminClient, organizationId: string,
     name: str(c.brand_from_name) ?? str(c.name) ?? "us",
     timeZone: str(c.timezone) ?? process.env.BUSINESS_TIMEZONE?.trim() ?? "America/Toronto",
     doneForYou,
+    tier,
     platformBrand,
     ownerPhone: str(c.owner_phone_e164) && c.owner_phone_verified_at ? str(c.owner_phone_e164) : null,
     ownerFirstName: await ownerFirstName(db, organizationId),
-    settings: readCollectionsSettings(c.ai_settings, { doneForYou }),
+    settings: readCollectionsSettings(c.ai_settings, { doneForYou, tier }),
     quoteBaseCompany: { quote_public_base_url: str(c.quote_public_base_url), platform_brand: doneForYou ? "crankleads" : platformBrand },
     emailReminders: { enabled: invoiceSettings.remindersEnabled, days: invoiceSettings.reminderDays },
   };

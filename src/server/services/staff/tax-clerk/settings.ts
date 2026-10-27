@@ -18,6 +18,7 @@
  * HST reminders only run for a registrant (default: companies.tax_registration_number is set).
  * Defaults: quarterly, fiscal year ending Dec 31, corporation.
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db, FilerType, HstFrequency } from "./db-types";
@@ -72,12 +73,12 @@ const bool = (value: unknown): boolean | null => (typeof value === "boolean" ? v
 const month = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 12 ? value : null);
 
 /** companies.ai_settings (any shape) → the Tax Clerk section with defaults. PURE. */
-export function readTaxClerkSettings(aiSettings: unknown, org: { doneForYou: boolean; hasHstNumber: boolean }): TaxClerkSettings {
+export function readTaxClerkSettings(aiSettings: unknown, org: StaffOrg & { hasHstNumber: boolean }): TaxClerkSettings {
   const section = record(record(aiSettings)[SETTINGS_KEY]);
   const receipts = record(section.receipts);
   const hst = record(section.hst);
   const nudges = record(section.nudges);
-  const on = org.doneForYou;
+  const on = staffDefaultOn("tax_clerk", org);
   const registrantSetting = bool(hst.registrant);
   return {
     receipts: { enabled: bool(receipts.enabled) ?? on },
@@ -174,7 +175,7 @@ interface CompanyRow {
   created_at?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): TaxClerkCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): TaxClerkCompany {
   const doneForYou = isDoneForYou(platformBrand);
   const hstNumber = row.tax_registration_number?.trim() || null;
   return {
@@ -189,7 +190,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): TaxClerkCompa
     hstNumber,
     createdAt: row.created_at ?? null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readTaxClerkSettings(row.ai_settings, { doneForYou, hasHstNumber: Boolean(hstNumber) }),
+    settings: readTaxClerkSettings(row.ai_settings, { doneForYou, tier, hasHstNumber: Boolean(hstNumber) }),
   };
 }
 
@@ -198,8 +199,8 @@ export async function loadTaxClerkCompany(admin: AdminClient, organizationId: st
   const db = admin as Db;
   const { data } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Anything of the Tax Clerk on for this company? PURE. */
@@ -238,10 +239,11 @@ async function readAll<T>(make: (from: number, to: number) => PromiseLike<{ data
  */
 export async function loadTaxClerkCompanies(admin: AdminClient): Promise<TaxClerkCompany[]> {
   const db = admin as Db;
-  const orgs = await readAll<{ id: string; platform_brand: string | null }>((from, to) =>
-    db.from("organizations").select("id, platform_brand").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  const orgs = await readAll<{ id: string; platform_brand: string | null; crankleads_tier: string | null }>((from, to) =>
+    db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
   );
   const brands = new Map(orgs.map((o) => [o.id, o.platform_brand]));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, CompanyRow>();
   const ids = [...brands.keys()];
   for (let i = 0; i < ids.length; i += 200) {
@@ -254,13 +256,14 @@ export async function loadTaxClerkCompanies(admin: AdminClient): Promise<TaxCler
   );
   const unknownOrgs = [...new Set(optedIn.map((r) => r.organization_id).filter((id) => !brands.has(id)))];
   for (const id of unknownOrgs) {
-    const { data } = await db.from("organizations").select("id, platform_brand").eq("id", id).maybeSingle();
+    const { data } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).eq("id", id).maybeSingle();
     brands.set(id, (record(data).platform_brand as string | null) ?? null);
+    tiers.set(id, orgTier(data));
   }
   for (const r of optedIn) rows.set(r.id, r);
   const out: TaxClerkCompany[] = [];
   for (const r of rows.values()) {
-    const company = toCompany(r, brands.get(r.organization_id) ?? null);
+    const company = toCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
     if (company.active && taxClerkOn(company)) out.push(company);
   }
   return out;

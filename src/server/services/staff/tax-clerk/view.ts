@@ -60,7 +60,7 @@ export async function getTaxClerkView(admin: AdminClient, organizationId: string
     companyId,
     companyName: company.name,
     settings: company.settings,
-    defaultEnabled: company.doneForYou,
+    defaultEnabled: company.settings.defaultEnabled,
     hstNumberOnFile: Boolean(company.hstNumber),
     remindersActive: hstRemindersOn(company.settings),
     ownerPhoneOnFile: Boolean(company.ownerPhone),

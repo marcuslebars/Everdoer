@@ -10,6 +10,7 @@
  *     any_on                                 // marker for the sweeps' server-side filter (house orgs that opted in)
  *   }
  */
+import { ORG_STAFF_COLUMNS, orgTier, staffDefaultOn, tierOf, type StaffOrg } from "@/server/services/staff/tiers";
 import { isDoneForYou, PRODUCT_LINE_DB_VALUES } from "@/lib/product-line";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { Db } from "./db-types";
@@ -50,13 +51,13 @@ const bool = (value: unknown, fallback: boolean): boolean => (typeof value === "
 const timeOk = (value: unknown): value is string => typeof value === "string" && WEEKLY_TIMES.includes(value);
 
 /** companies.ai_settings (any shape) → the Profit advisor section with defaults. PURE. */
-export function readProfitAdvisorSettings(aiSettings: unknown, org: { doneForYou: boolean }): ProfitAdvisorSettings {
+export function readProfitAdvisorSettings(aiSettings: unknown, org: StaffOrg): ProfitAdvisorSettings {
   const s = record(record(aiSettings)[SETTINGS_KEY]);
   const weekly = record(s.weekly);
   const pricing = record(s.pricing_check);
   const enabled = typeof s.enabled === "boolean" ? s.enabled : null;
   return {
-    enabled: enabled ?? org.doneForYou,
+    enabled: enabled ?? staffDefaultOn("profit_advisor", org),
     weekly: {
       enabled: bool(weekly.enabled, true),
       day: intIn(weekly.day, 0, 6) ?? DEFAULT_WEEKLY_DAY,
@@ -64,7 +65,7 @@ export function readProfitAdvisorSettings(aiSettings: unknown, org: { doneForYou
     },
     pricingCheck: { enabled: bool(pricing.enabled, true) },
     tightCushionCents: intIn(s.tight_cushion_cents, 0, MAX_CUSHION_CENTS) ?? 0,
-    defaultEnabled: org.doneForYou,
+    defaultEnabled: staffDefaultOn("profit_advisor", org),
     enabledIsDefault: enabled === null,
   };
 }
@@ -127,7 +128,7 @@ interface CompanyRow {
   stage?: string | null;
 }
 
-function toCompany(row: CompanyRow, platformBrand: string | null): ProfitCompany {
+function toCompany(row: CompanyRow, platformBrand: string | null, tier: string | null): ProfitCompany {
   const doneForYou = isDoneForYou(platformBrand);
   return {
     organizationId: row.organization_id,
@@ -138,7 +139,7 @@ function toCompany(row: CompanyRow, platformBrand: string | null): ProfitCompany
     platformBrand,
     ownerPhone: row.owner_phone_verified_at && row.owner_phone_e164?.trim() ? row.owner_phone_e164.trim() : null,
     active: !row.stage || !["archived", "paused", "cancelled"].includes(row.stage),
-    settings: readProfitAdvisorSettings(row.ai_settings, { doneForYou }),
+    settings: readProfitAdvisorSettings(row.ai_settings, { doneForYou, tier }),
   };
 }
 
@@ -148,8 +149,8 @@ export async function loadProfitCompany(admin: AdminClient, organizationId: stri
   const { data, error } = await db.from("companies").select(COMPANY_COLUMNS).eq("organization_id", organizationId).eq("id", companyId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { data: org } = await db.from("organizations").select("platform_brand").eq("id", organizationId).maybeSingle();
-  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null);
+  const { data: org } = await db.from("organizations").select(ORG_STAFF_COLUMNS).eq("id", organizationId).maybeSingle();
+  return toCompany(data as CompanyRow, (record(org).platform_brand as string | null) ?? null, orgTier(org));
 }
 
 /** Is the Profit advisor on for this company? (Gates its tools, prompt notes and briefing items.) Never throws. */
@@ -183,10 +184,11 @@ export async function readAll<T>(make: (from: number, to: number) => PromiseLike
  */
 export async function loadProfitCompanies(admin: AdminClient): Promise<ProfitCompany[]> {
   const db = admin as Db;
-  const orgs = await readAll<{ id: string; platform_brand: string | null }>((from, to) =>
-    db.from("organizations").select("id, platform_brand").in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
+  const orgs = await readAll<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>((from, to) =>
+    db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("platform_brand", [...PRODUCT_LINE_DB_VALUES.done_for_you]).order("id", { ascending: true }).range(from, to),
   );
   const brands = new Map(orgs.map((o) => [o.id, o.platform_brand]));
+  const tiers = new Map(orgs.map((o) => [o.id, tierOf(o.crankleads_tier)]));
   const rows = new Map<string, CompanyRow>();
   const ids = [...brands.keys()];
   for (let i = 0; i < ids.length; i += 200) {
@@ -199,13 +201,16 @@ export async function loadProfitCompanies(admin: AdminClient): Promise<ProfitCom
   );
   const optedInOrgs = [...new Set(optedIn.map((r) => r.organization_id).filter((id) => !brands.has(id)))];
   for (let i = 0; i < optedInOrgs.length; i += 200) {
-    const { data } = await db.from("organizations").select("id, platform_brand").in("id", optedInOrgs.slice(i, i + 200));
-    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null }>) brands.set(o.id, o.platform_brand);
+    const { data } = await db.from("organizations").select(`id, ${ORG_STAFF_COLUMNS}`).in("id", optedInOrgs.slice(i, i + 200));
+    for (const o of (data ?? []) as Array<{ id: string; platform_brand: string | null; crankleads_tier?: string | null }>) {
+      brands.set(o.id, o.platform_brand);
+      tiers.set(o.id, tierOf(o.crankleads_tier));
+    }
   }
   for (const r of optedIn) rows.set(r.id, r);
   const out: ProfitCompany[] = [];
   for (const r of rows.values()) {
-    const company = toCompany(r, brands.get(r.organization_id) ?? null);
+    const company = toCompany(r, brands.get(r.organization_id) ?? null, tiers.get(r.organization_id) ?? null);
     if (company.active && company.settings.enabled) out.push(company);
   }
   return out;

@@ -60,7 +60,8 @@ export const PLAN_FEATURE_DEFAULTS: Record<BillingPlan, Record<BillingFeature, b
  * `front_desk.marina_reception = 500` is the included monthly voice-minutes allowance.
  * OUTBOUND calls (quick-call, the call_lead automation) are refused once it's exhausted;
  * INBOUND receptionist calls are never refused — crossing the cap surfaces an "overage"
- * state in billing instead (a stopped receptionist is worse than overage).
+ * state in billing instead (a stopped receptionist is worse than overage), billed monthly when
+ * VOICE_OVERAGE_BILLING=charge (billing/voice-overage.ts).
  */
 export const PLAN_FEATURE_LIMITS: Record<BillingPlan, Partial<Record<BillingFeature, number>>> = {
   internal: {},
