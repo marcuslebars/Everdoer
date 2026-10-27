@@ -36,7 +36,7 @@ counted in the period whose bounds contain `coalesce(approved_at, paid_at)`.
 | --- | --- |
 | `organization_id` | Owning org (RLS + explicit server filter). |
 | `company_id` | The quote's company (the drill-down / card filter). |
-| `quote_id` | `quotes.id`. One row per approved-or-paid quote. |
+| `quote_id` | `quotes.id`; null for an invoice-only deal. |
 | `contact_id` | The quote's contact (nullable). |
 | `auto_generated` | `quotes.auto_generated` — was the quote drafted by automation. |
 | `first_touch_source` | Source of the earliest touch (see below). `'manual'` when none. |
@@ -45,9 +45,12 @@ counted in the period whose bounds contain `coalesce(approved_at, paid_at)`.
 | `voice_ai_involved` | A `retell_calls` row exists for the contact at/before close. |
 | `automation_involved` | A **completed** `workflow_runs` row whose trigger targeted the contact exists at/before close. |
 | `approved_cents` | `quotes.approved_total_cents` — the value of the won quote. |
-| `paid_cents` | Deposit actually collected (see below); `0` until paid. |
+| `paid_cents` | Collected on the deal: deposit + succeeded invoice payments (see below); `0` until paid. |
 | `approved_at` | `quotes.approved_at`. |
-| `paid_at` | `quotes.deposit_paid_at`. |
+| `paid_at` | The first money in: `quotes.deposit_paid_at`, else the first succeeded invoice payment. |
+| `invoice_id` | The standalone invoice for `deal_kind = 'invoice'`; null for quote deals. |
+| `deal_kind` | `quote` \| `invoice`. |
+| `deposit_cents` / `invoice_paid_cents` | The two parts of `paid_cents`. |
 
 "Close" = `coalesce(approved_at, deposit_paid_at)` — the involvement checks use touches at or
 before this instant so a signal only counts if it happened before the quote closed.
@@ -68,23 +71,31 @@ Ordered `by ts asc, rnk asc, limit 1`. **On an exact-timestamp tie, `raw_leads` 
 (0 < 1 < 2). If the contact has no touch (or the quote has no contact), first-touch is the
 contact's own `created_at` with source/channel `manual`.
 
-### `paid_cents` — what "collected" counts (Amendment 2, traced not invented)
+### `paid_cents` — what "collected" counts
 
-The **only** event that marks a quote paid is Stripe **`checkout.session.completed` on the
-company's connected account**, handled by `markQuoteDepositPaid` in
-[`src/server/services/quotes/checkout.ts`](../src/server/services/quotes/checkout.ts), which
-is the sole writer of `quotes.deposit_paid_at`. That webhook path
-(`/api/webhooks/stripe/connect`) charges and records the **deposit**, so:
+Since `20261027110000_attribution_invoice_payments.sql`, collected is the deposit **plus** the money paid on the job's invoice:
 
 ```
-paid_cents = (deposit_paid_at is not null)
-             ? coalesce(approved_deposit_cents, deposit_cents)
-             : 0
+paid_cents = deposit_cents + invoice_paid_cents
+deposit_cents      = (quotes.deposit_paid_at is not null) ? coalesce(approved_deposit_cents, deposit_cents) : 0
+invoice_paid_cents = sum(invoice_payments.amount_cents)
+                     where status = 'succeeded', on the quote's live (not void) invoice(s)
 ```
 
-No other Stripe event (balance invoices, refunds, payment-intent events) is counted, and
-this task adds **no new Stripe handling**. If balance collection is later routed through our
-webhook, extend `paid_cents` here and update this note.
+- The deposit is still written only by `markQuoteDepositPaid` (Stripe `checkout.session.completed` on the connected account, [`quotes/checkout.ts`](../src/server/services/quotes/checkout.ts)).
+- `invoice_payments` covers both online card payments (the Connect webhook upserts a row per PaymentIntent) and payments staff record (e-Transfer, cheque, cash).
+- The invoice's `credit_cents` (the deposit carried onto it) is not a payment row, so the deposit is **never counted twice**.
+- `refunded`, `failed` and `pending` payments don't count. A void invoice's payments don't count.
+- `paid_at` = the first money in: `deposit_paid_at`, else the first succeeded invoice payment.
+
+**Deals, not only quotes.** A row is a *deal* (`deal_kind`):
+
+- `quote`: an approved or deposit-paid quote, **or** any quote whose invoice has received a succeeded payment. That covers a quote approved in person and paid on the invoice.
+- `invoice`: an invoice with **no quote** and at least one succeeded payment, such as a booked job invoiced directly or an online-booking deposit. Its `quote_id` is null, `invoice_id` is set, `approved_cents` = the invoice total, and first touch / involvement come from the invoice's contact. Unpaid standalone invoices aren't listed.
+
+**Period.** A deal is still counted in the period containing `coalesce(approved_at, paid_at)` (its close), with everything collected on it **to date**. So a quote approved in September and paid on its invoice in October shows its full amount under September. The tile and the table always agree.
+
+Added columns (at the end, so every reader keeps working): `invoice_id`, `deal_kind`, `deposit_cents`, `invoice_paid_cents`. Rollback `supabase/rollback/20261027110000_attribution_invoice_payments.down.sql` restores the deposits-only view. SQL test: `scripts/sql-tests/zz_attribution_invoice_payments.test.sql`.
 
 ## `ui_attribution_summary` (aggregate)
 
@@ -93,7 +104,7 @@ Filters the view to the org (+ optional company) and the period cohort
 
 | Field | Meaning |
 | --- | --- |
-| `quotes_count` | Quotes approved or paid in the period. |
+| `quotes_count` | Deals (approved / paid quotes + paid standalone invoices) closed in the period. |
 | `approved_cents_total` / `paid_cents_total` | Sum of `approved_cents` / `paid_cents`. |
 | `voice_ai_count` / `voice_ai_approved_cents` / `voice_ai_paid_cents` | Same, restricted to `voice_ai_involved`. |
 | `automation_count` / `automation_approved_cents` / `automation_paid_cents` | Same, restricted to `automation_involved`. |
@@ -105,7 +116,7 @@ Filters the view to the org (+ optional company) and the period cohort
 - **Dashboard card** — "Captured by Everdoer": collected-this-month headline (paid), with
   approved / quote / voice-AI / automation context. Links to the report.
 - **`/reports/attribution`** — summary tiles, a Recharts bar of collected-by-source, the
-  per-quote table, and **Export CSV** built from the already-fetched rows (no export API).
+  per-deal table ("Jobs"; invoice-only deals are marked "(invoice)", and hovering Collected shows the deposit / invoice split), and **Export CSV** built from the already-fetched rows (no export API).
 
 Naming is persona-agnostic on purpose (Amendment 1): the columns are `voice_ai_involved` /
 `automation_involved`, never a front-desk employee's name — owners rename that employee, the
