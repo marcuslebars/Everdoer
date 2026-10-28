@@ -24,6 +24,7 @@ import { SMS_AGENT_SENDER, type AdminClient, type InboundCustomerSms } from "@/s
 import { recordAiUsageSafe } from "@/server/services/usage";
 import { AgentTimeoutError, runAgentTurn, defaultModelClient, type ModelClient, type AgentTurnOutput } from "@/server/services/sms-agent/agent";
 import { recordAgentRun } from "@/server/agent/run-log";
+import { listNotes, notesBlock } from "@/server/agent/memory";
 import { createApproval, defaultApprovalDeps, type ApprovalDeps } from "@/server/services/sms-agent/approvals";
 import {
   claimTurn,
@@ -383,6 +384,9 @@ async function runOneTurn(
     const images = await deps.fetchImages(fresh.flatMap((m) => m.media));
     const historyAmounts = settings.autonomy === "ask_first" ? [] : history.filter((m) => m.from !== "customer").flatMap((m) => extractAmountsCents(m.body));
     const staffRoles = await activeRolesFor(admin, { organizationId: conv.organization_id, companyId: conv.company_id });
+    // Long-term memory (agent/memory.ts): what the owner asked us to keep about the business / this customer.
+    const memoryScope = { organizationId: conv.organization_id, companyId: conv.company_id };
+    const [businessNotes, customerNotes] = await Promise.all([listNotes(admin, memoryScope), listNotes(admin, memoryScope, { contactId: contact.id, limit: 10 })]);
     const turnState: TurnState = {
       admin,
       facts,
@@ -398,7 +402,13 @@ async function runOneTurn(
     };
     output = await runAgentTurn({
       state: turnState,
-      system: buildSystemPrompt(facts, { autonomy: settings.autonomy, firstAiMessage, now, roleNotes: staffRoles.flatMap((r) => r.agentPromptNotes) }),
+      system: buildSystemPrompt(facts, {
+        autonomy: settings.autonomy,
+        firstAiMessage,
+        now,
+        roleNotes: staffRoles.flatMap((r) => r.agentPromptNotes),
+        ownerNotes: businessNotes.length ? notesBlock("owner_notes", businessNotes, facts.timeZone) : null,
+      }),
       userText: buildConversationTurn({
         customerName: displayName(contact) === contact.phone ? null : displayName(contact),
         customerPhone: contact.phone,
@@ -406,6 +416,7 @@ async function runOneTurn(
         history,
         newMessages: fresh,
         summary: conv.summary,
+        customerNotes: customerNotes.length ? notesBlock("customer_notes", customerNotes, facts.timeZone) : null,
       }),
       images,
       model: deps.model(),
