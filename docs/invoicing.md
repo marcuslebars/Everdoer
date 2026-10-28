@@ -105,6 +105,24 @@ No new environment variables. Reminders run in the existing daily
 - Invoices and receipts are transactional messages: they're sent without marketing
   consent, but an SMS opt-out (STOP) is always honoured.
 
+## Autosave
+
+Nothing typed into the invoice editor (`components/invoices/InvoiceEditorDialog.tsx`) is lost to a stray key, a click outside the dialog, the back button, a refresh or a dropped connection.
+
+- **Drafts save themselves.** About 1.5 s after the last change, the draft is saved to the server (`PATCH /invoices/{id}`). It's also saved when the tab goes to the background and when the dialog closes, however it closes: Escape, a click outside, Close, or the browser back button.
+  - A **new** invoice becomes a draft (`POST /invoices`) as soon as it has something in it: a title, a customer, a line, a note… An empty "New invoice" that's closed leaves nothing behind.
+  - The status under the title shows "Saving draft…", "Draft saved 2:41 PM", "Not saved yet: …" (the form or the server refused it, e.g. a quantity that can't be read; no retry until the next change), or "Couldn't reach the server — kept on this device, retrying…" (retried after 3 s, 10 s, 30 s, then every 60 s).
+  - "Save draft" and "Save & send" wait for a running autosave, then save to the same draft, so autosave never creates a second invoice.
+- **Sent invoices are never autosaved.** Saving one changes the customer's copy and pay link, so that stays an explicit "Save changes". Unsaved edits to a sent invoice are kept on this device, the status says so, and closing the tab asks first.
+- **A copy on this device.** Every invoice being edited, sent ones included, is copied to this browser's localStorage as you type (`lib/invoice-draft-backup.ts`, key `everdoer_invoice_draft:{org}:{invoice id | new}`).
+  - When the server has the same thing, the copy is dropped.
+  - If the server never got it (offline, a refused save, unsaved edits to a sent invoice), reopening the invoice, or "New invoice" for an unsaved new one, shows "Unsaved changes from … were found on this device" with **Restore** / **Discard**.
+  - A copy older than the server's version, or older than 14 days, is ignored.
+  - Signing out clears every copy (`storage-keys.ts`), since they hold customer details.
+- **Activity stays readable.** Autosaving writes one "edited" entry per editing session (the same person within 15 minutes, `DRAFT_EDIT_COALESCE_MS`), not one per save. Every edit to a sent invoice is still recorded.
+
+The autosave engine is generic (`lib/autosave.ts`, `components/invoices/useAutosave.ts`), so other editors can use it.
+
 ## Known limits
 
 - One tax rate per invoice (no per-line tax / tax-exempt lines).

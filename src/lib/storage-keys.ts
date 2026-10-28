@@ -27,6 +27,8 @@ export const POST_AUTH_PATH_KEY: StorageKey = { key: "everdoer_post_auth_path", 
 /** Old per-device keys from earlier builds; nothing reads them, sign-out clears them. */
 const LEGACY_ACTIVE_ORG_KEY = "empirevu.activeOrganizationId";
 const LEGACY_ACTIVE_COMPANY_PREFIX = "empirevu.activeCompanyId.";
+/** Must match BACKUP_PREFIX in invoice-draft-backup.ts (kept literal so this file has no imports). */
+const INVOICE_DRAFT_BACKUP_PREFIX = "everdoer_invoice_draft:";
 
 type Kind = "local" | "session";
 
@@ -112,6 +114,8 @@ export function allAppLocalStorageKeys(): string[] {
     for (let i = 0; i < s.length; i++) {
       const key = s.key(i);
       if (key && key.startsWith(LEGACY_ACTIVE_COMPANY_PREFIX)) keys.push(key);
+      // Invoice editor backups (invoice-draft-backup.ts) hold customer details: cleared on sign-out.
+      if (key && key.startsWith(INVOICE_DRAFT_BACKUP_PREFIX)) keys.push(key);
     }
   } catch {
     /* storage unavailable */

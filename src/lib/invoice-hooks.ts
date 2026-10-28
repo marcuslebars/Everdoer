@@ -35,7 +35,8 @@ import {
 const INVOICES = "invoices";
 const ACCOUNTS = "customer-accounts";
 
-function useInvalidateInvoices() {
+/** Refetch every invoice / account query (after writes made outside these hooks, e.g. autosave). */
+export function useInvalidateInvoices() {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: [INVOICES] });
