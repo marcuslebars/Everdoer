@@ -140,15 +140,28 @@ function packNotesLines(notes: ReceptionistPackNotes): string[] {
   return lines;
 }
 
-function toolLines(tools: "marine" | "price_list"): string[] {
+/** The number a live transfer may ring: a valid E.164 number, else null. PURE. */
+export function transferableNumber(phone: string | null | undefined): string | null {
+  const p = (phone ?? "").trim();
+  return /^\+[1-9]\d{7,14}$/.test(p) ? p : null;
+}
+
+function toolLines(tools: "marine" | "price_list", canTransfer: boolean): string[] {
   const quoteTool = tools === "marine" ? "quote_shrink_wrap" : "quote_services";
   const bookTool = tools === "marine" ? "book_wrap_date" : "book_job";
   return [
     "Your tools (use them — don't guess):",
+    "- find_services: when the caller describes a problem or asks whether you do something. Recommend the matching service; only state prices exactly as it returns them (before HST).",
     `- ${quoteTool}: when the caller wants a price. It prices from the company's own price list and texts them the quote. If it asks a question (which service, how many, what size), ask the caller and call it again. Read back its \`say\` text.`,
     `- check_availability, then ${bookTool}: when a quoted caller wants to book. Only offer the windows it returns.`,
     "- send_deposit_link: to text the link that approves the quote and pays the deposit holding the booking. Never take card details on the phone.",
+    "- my_invoices and send_invoice_link: when an existing customer asks what they owe or wants their invoice. Never read amounts aloud — offer to text the invoice to the number on file.",
     "- capture_lead: as soon as you have their name and what they need, even if they don't want a quote.",
+    "- business_notes: the owner's notes (closures, policies, what to tell callers) — check them when a question isn't answered above.",
+    canTransfer
+      ? "- transfer_call: when the caller asks for the owner or a person, or has an emergency and wants to talk to someone now. If the transfer doesn't connect, use message_owner."
+      : "- message_owner: when the caller asks for the owner or a person, or wants a callback about something you can't handle — it texts the owner right away.",
+    ...(canTransfer ? ["- message_owner: when they'd rather leave a message, or a transfer didn't connect — it texts the owner right away."] : []),
     "- alert_owner: right away for an emergency (flooding, no heat in winter, gas smell, anything unsafe), then confirm their number. If anyone is in danger or they smell gas, tell them to hang up and call 9-1-1 first.",
   ];
 }
@@ -173,8 +186,8 @@ export function buildReceptionistPrompt(ctx: ReceptionistContext, packNotes?: Re
   if (ctx.serviceArea) lines.push("", `Service area: ${ctx.serviceArea}.`);
   if (ctx.hoursText) lines.push("", `Business hours: ${ctx.hoursText}.`);
   if (ctx.bookingUrl) lines.push("", `To book, offer to text them the booking link: ${ctx.bookingUrl}.`);
-  if (ctx.transferNumber) lines.push("", `If the caller needs a human or has an urgent issue, offer to transfer them to ${ctx.transferNumber}.`);
-  if (ctx.tools) lines.push("", ...toolLines(ctx.tools));
+  if (ctx.tools) lines.push("", ...toolLines(ctx.tools, Boolean(transferableNumber(ctx.transferNumber))));
+  else lines.push("", "If the caller asks for a person, say the team will call them back as soon as they can, and make sure you have their number.");
   if (packNotes) lines.push(...packNotesLines(packNotes));
   lines.push(
     "",

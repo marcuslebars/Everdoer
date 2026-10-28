@@ -21,6 +21,7 @@ import { ensureLinks, moneyGuard, stripPlatformNames, toPlainText } from "@/serv
 import type { SmsAgentSettings } from "@/server/services/sms-agent/settings";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
 import type { AgentContact, AgentServices, OpenSlot, QuoteLine, SentQuote } from "@/server/services/sms-agent/services";
+import { skillAgentTools } from "@/server/services/sms-agent/skill-tools";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -672,7 +673,9 @@ export const AGENT_TOOLS: AgentTool<never>[] = [
 
 /** The front desk's tools plus the AI staff roles' (staff/registry.ts). */
 export function allAgentTools(state?: Pick<TurnState, "roleTools">): AgentTool<never>[] {
-  return [...AGENT_TOOLS, ...(state?.roleTools ?? roleAgentTools())];
+  const own = [...AGENT_TOOLS, ...(state?.roleTools ?? roleAgentTools())];
+  // The shared skills (agent/skills) that no tool above already covers.
+  return [...own, ...skillAgentTools(own.map((t) => t.name))];
 }
 
 /** Run one tool call: validate, run, and turn any failure into a result the model can read. */

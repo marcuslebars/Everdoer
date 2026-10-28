@@ -9,13 +9,33 @@
  * price-list `quote_services`. Pure apart from the header NAME, which follows
  * EVERDOER_WRITE_NEW_NAMES (retellFunctionSecretHeaderForWrite).
  */
+import { skillsFor } from "@/server/agent/skills/registry";
+
 import { retellFunctionSecretHeaderForWrite } from "./auth";
+import { transferableNumber } from "./provision";
 
 export interface ReceptionistToolsInput {
   /** Public origin of this app (APP_BASE_URL). */
   baseUrl: string;
   functionSecret: string;
   marine: boolean;
+  /**
+   * The owner's phone (E.164) for live transfers. With it the agent gets a `transfer_call` tool
+   * (a warm transfer that briefs the owner first); without it, message_owner only.
+   */
+  transferNumber?: string | null;
+}
+
+/** The skill route every phone skill posts to (agent/skills/registry.ts). */
+export const SKILL_TOOL_PATH = "/api/retell/functions/skill";
+
+/**
+ * Phone skills, by name (the receptionist's stale-tools check reads these). A function, not a
+ * constant: the skill modules and provisioning import each other, so nothing reads the registry
+ * while modules load.
+ */
+export function voiceSkillToolNames(): string[] {
+  return skillsFor("voice").map((s) => s.name);
 }
 
 export const RECEPTIONIST_TOOL_PATHS = {
@@ -25,7 +45,6 @@ export const RECEPTIONIST_TOOL_PATHS = {
   book_job: "/api/retell/functions/book",
   send_deposit_link: "/api/retell/functions/deposit-link",
   capture_lead: "/api/retell/functions/capture-lead",
-  alert_owner: "/api/retell/functions/urgent-alert",
 } as const;
 
 type Json = Record<string, unknown>;
@@ -58,6 +77,8 @@ const str = (description: string): Json => ({ type: "string", description });
 const num = (description: string): Json => ({ type: "number", description });
 
 export function buildReceptionistTools(input: ReceptionistToolsInput): Json[] {
+  const number = transferableNumber(input.transferNumber);
+  const transfer = number ? transferTool(number) : null;
   const quote = input.marine
     ? tool(
         input,
@@ -173,24 +194,52 @@ export function buildReceptionistTools(input: ReceptionistToolsInput): Json[] {
         required: ["caller_name"],
       },
     ),
-    tool(
-      input,
-      "alert_owner",
-      "Alert the owner RIGHT NOW about an emergency while the caller is on the line. Call it once.",
-      {
-        type: "object",
-        properties: {
-          what: str("What's happening"),
-          address: str("Address or town"),
-          caller_name: str("Caller's name"),
-          callback_number: str("Callback number if different"),
-        },
-        required: ["what"],
-      },
-      { speakDuring: "Tell the caller you're alerting the team now.", timeoutMs: 8000 },
-    ),
+    ...skillTools(input),
+    ...(transfer ? [transfer] : []),
     { type: "end_call", name: "end_call", description: "End the call politely once the caller is done." },
   ];
+}
+
+/** Every phone skill as a Retell custom tool, all on the one skill route (the skill is picked by name). */
+export function skillTools(input: ReceptionistToolsInput): Json[] {
+  return skillsFor("voice").map((skill) => ({
+    type: "custom",
+    name: skill.name,
+    description: skill.description,
+    url: `${input.baseUrl.replace(/\/+$/, "")}${SKILL_TOOL_PATH}`,
+    method: "POST",
+    headers: { [retellFunctionSecretHeaderForWrite()]: input.functionSecret },
+    args_at_root: false,
+    speak_during_execution: Boolean(skill.voice?.speakDuring),
+    ...(skill.voice?.speakDuring ? { execution_message_description: skill.voice.speakDuring } : {}),
+    speak_after_execution: true,
+    timeout_ms: skill.voice?.timeoutMs ?? 10_000,
+    parameters: skill.parameters,
+  }));
+}
+
+/**
+ * A warm transfer to the owner: Retell rings them, briefs them privately on who's calling and
+ * why, then connects the caller. If they don't pick up, the call comes back to the agent, which
+ * takes a message (message_owner). PURE.
+ */
+export function transferTool(transferNumber: string): Json {
+  return {
+    type: "transfer_call",
+    name: "transfer_call",
+    description:
+      "Transfer the caller to the owner, live. Use only when the caller asks for the owner or a person, or for an emergency where they want to talk to someone now — and tell them you're trying to reach the owner first.",
+    transfer_destination: { type: "predefined", number: transferNumber },
+    transfer_option: {
+      type: "warm_transfer",
+      private_handoff_option: {
+        type: "prompt",
+        prompt: "Briefly tell the owner who is calling (name and number if known) and what they need, in one or two sentences, then connect them.",
+      },
+    },
+    speak_during_execution: true,
+    execution_message_description: "Tell the caller you're trying to reach the owner now and to hold for a moment.",
+  };
 }
 
 /** Post-call analysis the receptionist fills (lead-adapter + voice/post-call read these names). */

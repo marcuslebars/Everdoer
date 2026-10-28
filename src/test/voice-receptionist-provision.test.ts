@@ -7,8 +7,8 @@ import { createFakeDb, type FakeDb } from "./fake-supabase";
 vi.mock("@/server/services/company-voice-profiles", () => ({ upsertCompanyVoiceProfile: async () => ({}) }));
 
 import { provisionPhoneForCompany, isMarineCompany } from "@/server/services/onboarding-provision";
-import { buildReceptionistPrompt, provisionRetellAgent, receptionistBeginMessage, type RetellClient } from "@/server/services/retell/provision";
-import { buildReceptionistTools, RECEPTIONIST_TOOL_PATHS } from "@/server/services/retell/receptionist-tools";
+import { buildReceptionistPrompt, provisionRetellAgent, receptionistBeginMessage, transferableNumber, type RetellClient } from "@/server/services/retell/provision";
+import { buildReceptionistTools, RECEPTIONIST_TOOL_PATHS, SKILL_TOOL_PATH } from "@/server/services/retell/receptionist-tools";
 import { retellCountryFor } from "@/server/services/voice/canada";
 import { resyncReceptionistAgent } from "@/server/services/voice/resync";
 
@@ -92,13 +92,50 @@ describe("buildReceptionistTools", () => {
   it("wires every tool to our routes with the function secret; generic trades get quote_services", () => {
     const tools = buildReceptionistTools({ baseUrl: BASE, functionSecret: SECRET, marine: false });
     const names = tools.map((t) => t.name);
-    expect(names).toEqual(["quote_services", "check_availability", "book_job", "send_deposit_link", "capture_lead", "alert_owner", "end_call"]);
+    expect(names).toEqual([
+      "quote_services",
+      "check_availability",
+      "book_job",
+      "send_deposit_link",
+      "capture_lead",
+      "find_services",
+      "my_invoices",
+      "send_invoice_link",
+      "message_owner",
+      "alert_owner",
+      "business_notes",
+      "end_call",
+    ]);
     for (const t of tools.filter((t) => t.type === "custom")) {
       expect(t.headers).toEqual({ "x-empirevu-retell-secret": SECRET });
       expect(String(t.url).startsWith(`${BASE}/api/retell/functions/`)).toBe(true);
       expect(t.args_at_root).toBe(false);
     }
     expect(tools[0].url).toBe(`${BASE}${RECEPTIONIST_TOOL_PATHS.quote_services}`);
+  });
+
+  it("every phone skill posts to the one skill route; no transfer tool without a valid owner number", () => {
+    const tools = buildReceptionistTools({ baseUrl: `${BASE}/`, functionSecret: SECRET, marine: false, transferNumber: "705-555-0100" });
+    for (const name of ["find_services", "my_invoices", "send_invoice_link", "message_owner", "alert_owner", "business_notes"]) {
+      expect(tools.find((t) => t.name === name)).toMatchObject({ type: "custom", url: `${BASE}${SKILL_TOOL_PATH}`, method: "POST", args_at_root: false });
+    }
+    expect(tools.find((t) => t.name === "message_owner")).toMatchObject({ speak_during_execution: true, execution_message_description: "Say you're sending the message now." });
+    expect(tools.find((t) => t.name === "business_notes")).toMatchObject({ speak_during_execution: false });
+    expect(tools.some((t) => t.type === "transfer_call")).toBe(false);
+  });
+
+  it("a valid owner number adds a warm transfer that briefs the owner first", () => {
+    const tools = buildReceptionistTools({ baseUrl: BASE, functionSecret: SECRET, marine: false, transferNumber: "+17055550100" });
+    const transfer = tools.find((t) => t.type === "transfer_call");
+    expect(transfer).toMatchObject({
+      name: "transfer_call",
+      transfer_destination: { type: "predefined", number: "+17055550100" },
+      transfer_option: { type: "warm_transfer", private_handoff_option: { type: "prompt" } },
+    });
+    expect(tools[tools.length - 1].name).toBe("end_call");
+    expect(transferableNumber(" +17055550100 ")).toBe("+17055550100");
+    expect(transferableNumber("7055550100")).toBeNull();
+    expect(transferableNumber(null)).toBeNull();
   });
 
   it("marine keeps the existing quote_shrink_wrap / book_wrap_date contract", () => {
@@ -117,6 +154,16 @@ describe("receptionist prompt + greeting", () => {
     expect(prompt.split("\n")[1]).toMatch(/automated assistant and that the call may be recorded/);
     expect(prompt).toContain("- quote_services:");
     expect(prompt).toContain("Only say a price that is listed above or that your quote tool returned");
+    expect(prompt).toContain("- find_services:");
+    expect(prompt).toContain("Never read amounts aloud");
+    expect(prompt).toContain("- message_owner: when the caller asks for the owner");
+    expect(prompt).not.toContain("transfer_call");
+    const withTransfer = buildReceptionistPrompt({ companyName: "Northshore Plumbing", services: [], tools: "price_list", transferNumber: "+17055550100" });
+    expect(withTransfer).toContain("- transfer_call:");
+    expect(withTransfer).not.toContain("+17055550100");
+    const noTools = buildReceptionistPrompt({ companyName: "Northshore Plumbing", services: [], transferNumber: "+17055550100" });
+    expect(noTools).not.toMatch(/transfer/i);
+    expect(noTools).toContain("the team will call them back");
     expect(receptionistBeginMessage("Northshore Plumbing")).toBe(
       "Thanks for calling Northshore Plumbing. You've reached our automated assistant, and this call may be recorded. How can I help you today?",
     );

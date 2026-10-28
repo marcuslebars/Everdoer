@@ -105,7 +105,8 @@ export async function provisionPhoneForCompany(
   // serve them (public base URL + the shared function secret). Marine keeps its own quote tool.
   const functionSecret = process.env.RETELL_FUNCTION_SECRET?.trim() || null;
   const marine = isMarineCompany(appliedPack?.id ?? null, items.map((i) => i.service_key));
-  const tools = baseUrl && functionSecret ? buildReceptionistTools({ baseUrl, functionSecret, marine }) : null;
+  const transferNumber = input.transferNumber ?? company.owner_phone_e164;
+  const tools = baseUrl && functionSecret ? buildReceptionistTools({ baseUrl, functionSecret, marine, transferNumber }) : null;
   if (!tools) console.warn("[onboarding] APP_BASE_URL or RETELL_FUNCTION_SECRET unset — receptionist provisioned WITHOUT tools.");
 
   const prompt = buildReceptionistPrompt(
@@ -115,7 +116,7 @@ export async function provisionPhoneForCompany(
       hoursText: facts.hoursText,
       bookingUrl,
       serviceArea: company.service_area,
-      transferNumber: input.transferNumber ?? company.owner_phone_e164,
+      transferNumber,
       tools: tools ? (marine ? "marine" : "price_list") : null,
     },
     pack ? packReceptionistNotes(pack) : null,

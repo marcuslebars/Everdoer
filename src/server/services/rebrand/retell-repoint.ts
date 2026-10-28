@@ -20,6 +20,7 @@
 import { isOldPlatformHost } from "@/server/services/rebrand/platform-hosts";
 import { LEGACY_RETELL_FUNCTION_SECRET_HEADER, RETELL_FUNCTION_SECRET_HEADER, retellFunctionSecretHeaderForWrite } from "@/server/services/retell/auth";
 import type { RetellReader } from "@/server/services/retell/health";
+import { voiceSkillToolNames } from "@/server/services/retell/receptionist-tools";
 import type { TenantServiceContext } from "@/server/services/shared";
 import type { ResyncOutcome } from "@/server/services/voice/resync";
 
@@ -138,6 +139,12 @@ export async function inspectAgent(
       if (s) stale.push(s);
       const names = Object.keys(t.headers ?? {}).map((n) => n.toLowerCase());
       if (names.includes(otherHeader) && !names.includes(expected.headerName)) stale.push(`tool ${t.name ?? "?"} header ${otherHeader}`);
+    }
+    // A receptionist (it has a quote tool) built before phone skills existed: resync to add them.
+    const toolNames = new Set(tools.map((t) => t.name ?? ""));
+    if (toolNames.has("quote_services") || toolNames.has("quote_shrink_wrap")) {
+      const missing = voiceSkillToolNames().filter((n) => !toolNames.has(n));
+      if (missing.length > 0) stale.push(`missing tools ${missing.join(", ")}`);
     }
   }
 
