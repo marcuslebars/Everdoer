@@ -251,6 +251,32 @@ export async function createInvoice(ctx: TenantServiceContext, input: InvoiceWri
 
 export type InvoiceUpdateInput = Partial<Omit<InvoiceWriteInput, "companyId" | "quoteId" | "bookingId">>;
 
+/** Draft edits by the same person within this window share one "edited" activity entry. */
+export const DRAFT_EDIT_COALESCE_MS = 15 * 60_000;
+
+/** Is the invoice's latest activity an "edited" by this same person, within the window? Never throws. */
+async function editedRecently(ctx: TenantServiceContext, invoiceId: string): Promise<boolean> {
+  try {
+    const { data } = await ctx.supabase
+      .from("invoice_events")
+      .select("event_type, actor_profile_id, created_at")
+      .eq("organization_id", ctx.organizationId)
+      .eq("invoice_id", invoiceId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const last = data as { event_type: string; actor_profile_id: string | null; created_at: string } | null;
+    return Boolean(
+      last &&
+        last.event_type === "edited" &&
+        (last.actor_profile_id ?? null) === (ctx.actorProfileId ?? null) &&
+        Date.now() - Date.parse(last.created_at) < DRAFT_EDIT_COALESCE_MS,
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function updateInvoice(ctx: TenantServiceContext, invoiceId: string, input: InvoiceUpdateInput): Promise<InvoiceRow> {
   const existing = await requireInvoice(ctx, invoiceId);
   if (!EDITABLE_STATUSES.includes(existing.status) || existing.amount_paid_cents > 0 || existing.pending_payment_cents > 0) {
@@ -316,13 +342,17 @@ export async function updateInvoice(ctx: TenantServiceContext, invoiceId: string
 
   // The customer may have the pay page open on the old amount.
   await expireOpenInvoiceCheckout(invoiceId);
-  await recordInvoiceEvent(ctx.supabase, {
-    organizationId: ctx.organizationId,
-    invoiceId,
-    eventType: "edited",
-    actorProfileId: ctx.actorProfileId,
-    metadata: { fromTotalCents: existing.total_cents, toTotalCents: data.total_cents },
-  });
+  // Drafts autosave every few seconds while being typed: one "edited" entry per editing
+  // session (same person, DRAFT_EDIT_COALESCE_MS), not one per save.
+  if (!(draft && (await editedRecently(ctx, invoiceId)))) {
+    await recordInvoiceEvent(ctx.supabase, {
+      organizationId: ctx.organizationId,
+      invoiceId,
+      eventType: "edited",
+      actorProfileId: ctx.actorProfileId,
+      metadata: { fromTotalCents: existing.total_cents, toTotalCents: data.total_cents },
+    });
+  }
   return data.status === "draft" ? data : refreshInvoiceBalance(ctx.supabase, invoiceId);
 }
 

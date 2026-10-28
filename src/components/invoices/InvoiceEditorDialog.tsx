@@ -2,15 +2,35 @@
  * Create / edit an invoice (drafts, and sent invoices with no money against them).
  * Totals are previewed client-side with the same rounding the server uses; the
  * server is authoritative and its validation messages are shown as-is.
+ *
+ * Nothing typed is lost (docs/invoicing.md → "Autosave"):
+ *   • a DRAFT saves itself to the server a moment after each change (a new invoice
+ *     becomes a draft as soon as it has something in it), when the tab is hidden, and
+ *     when the dialog closes — Escape, a click outside, the back button;
+ *   • every invoice, sent ones too, is also copied to this browser as you type, and
+ *     offered back ("Restore") if the server never got it;
+ *   • a sent invoice is never autosaved (that would change the customer's copy).
  */
-import { useEffect, useMemo, useState } from "react";
-import { Building2, Loader2, Plus, Search, Send, Trash2, User, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, Check, CloudOff, Loader2, Plus, Search, Send, Trash2, User, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import { toast } from "@/components/ui/sonner";
 import { useCompanies, useCRMContacts } from "@/lib/api-hooks";
-import { useCreateInvoice, useCustomerAccounts, useUpdateInvoice } from "@/lib/invoice-hooks";
-import { formatCents, type Invoice, type InvoiceWritePayload } from "@/lib/invoices-api";
+import { ApiError } from "@/lib/api-client";
+import { AutosaveSkip, type AutosaveState } from "@/lib/autosave";
+import { useCreateInvoice, useCustomerAccounts, useInvalidateInvoices, useUpdateInvoice } from "@/lib/invoice-hooks";
+import {
+  backupKey,
+  clearBackup,
+  fingerprint as formFingerprint,
+  hasContent,
+  readBackup,
+  writeBackup,
+  type InvoiceBackup,
+  type InvoiceFormSnapshot,
+} from "@/lib/invoice-draft-backup";
+import { createInvoice as createInvoiceRequest, formatCents, updateInvoice as updateInvoiceRequest, type Invoice, type InvoiceWritePayload } from "@/lib/invoices-api";
 import { useOrg } from "@/lib/org-context";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +44,7 @@ import {
   secondaryBtnCls,
   selectCls,
 } from "./invoice-ui";
+import { useAutosave } from "./useAutosave";
 
 // ─── Money preview (mirrors src/server/services/invoices/math.ts) ────────────
 
@@ -178,18 +199,69 @@ export function ContactSearch({
   );
 }
 
+// ─── Autosave helpers ────────────────────────────────────────────────────────
+
+function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** The line under the title: what autosave is doing. */
+function AutosaveStatusLine({ state, isDraft, started, localOnly }: { state: AutosaveState; isDraft: boolean; started: boolean; localOnly: boolean }) {
+  if (!isDraft) {
+    return localOnly ? (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="autosave-status">
+        Unsaved changes are kept on this device until you save.
+      </span>
+    ) : null;
+  }
+  if (!started && state.status === "idle") return null;
+  const base = "inline-flex items-center gap-1 text-[11px]";
+  switch (state.status) {
+    case "pending":
+    case "saving":
+      return (
+        <span className={cn(base, "text-muted-foreground")} data-testid="autosave-status">
+          <Loader2 className="w-3 h-3 animate-spin" /> Saving draft…
+        </span>
+      );
+    case "saved":
+      return (
+        <span className={cn(base, "text-muted-foreground")} data-testid="autosave-status">
+          <Check className="w-3 h-3" /> Draft saved{state.savedAt ? ` ${clockTime(state.savedAt)}` : ""}
+        </span>
+      );
+    case "invalid":
+      return (
+        <span className={cn(base, "text-amber-500")} data-testid="autosave-status">
+          Not saved yet: {state.message}
+        </span>
+      );
+    case "error":
+      return (
+        <span className={cn(base, "text-amber-500")} data-testid="autosave-status">
+          <CloudOff className="w-3 h-3" /> Couldn&apos;t reach the server — kept on this device, retrying…
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
 // ─── Dialog ──────────────────────────────────────────────────────────────────
 
 export function InvoiceEditorDialog({
   invoice,
   onClose,
   onSaved,
+  autosaveDelayMs = 1_500,
 }: {
   /** Present when editing; absent when creating. */
   invoice?: Invoice;
   onClose: () => void;
   /** Called with the saved invoice; `send` when the user chose "Save & send". */
   onSaved: (invoice: Invoice, opts: { send: boolean }) => void;
+  /** Quiet period before a draft autosaves (tests shorten it). */
+  autosaveDelayMs?: number;
 }) {
   const { organizationId: orgId, companyId: ctxCompanyId } = useOrg();
   const { data: companies } = useCompanies(orgId);
@@ -229,6 +301,38 @@ export function InvoiceEditorDialog({
   const [billToAddress, setBillToAddress] = useState(originalAddress);
   const [error, setError] = useState<string | null>(null);
   const [sendIntent, setSendIntent] = useState(false);
+  const invalidateInvoices = useInvalidateInvoices();
+
+  // ── Autosave + local backup ──
+  /** The draft this dialog saves to: the invoice being edited, or the one autosave created. */
+  const [draftId, setDraftId] = useState<string | null>(invoice?.id ?? null);
+  const draftIdRef = useRef<string | null>(invoice?.id ?? null);
+  /** Autosave created a new draft in this dialog (closing then says where it went). */
+  const createdByAutosave = useRef(false);
+  const snapshot = useMemo<InvoiceFormSnapshot>(
+    () => ({
+      companyId,
+      customerType,
+      contactId,
+      contactLabel,
+      accountId,
+      title,
+      lines: lines.map(({ label, description, showDetails, quantity, unitPrice }) => ({ label, description, showDetails, quantity, unitPrice })),
+      taxPct,
+      credit,
+      terms,
+      dueDate,
+      notes,
+      internalNotes,
+      billToAddress,
+    }),
+    [companyId, customerType, contactId, contactLabel, accountId, title, lines, taxPct, credit, terms, dueDate, notes, internalNotes, billToAddress],
+  );
+  const fp = formFingerprint(snapshot);
+  const [initialFp] = useState(fp);
+  const changed = fp !== initialFp;
+  const currentKey = backupKey(orgId, draftId);
+  const autosaveOn = isDraft && (draftId !== null || hasContent(snapshot));
 
   // Default to the first company once they load.
   useEffect(() => {
@@ -341,6 +445,124 @@ export function InvoiceEditorDialog({
     return payload;
   }
 
+  // The latest form, for saves that run from a timer.
+  const latest = useRef({ build: buildPayload, companyId, snapshot, fp });
+  latest.current = { build: buildPayload, companyId, snapshot, fp };
+
+  /**
+   * One autosave: create the draft the first time, then update it. The server refusing the
+   * draft (a 4xx with a reason) is shown as "not saved yet: …" and not retried until the next
+   * change; anything else (offline, 5xx) is retried with backoff.
+   */
+  async function autosaveDraft(): Promise<void> {
+    try {
+      await autosaveOnce();
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status >= 400 && status < 500 && status !== 408 && status !== 429) throw new AutosaveSkip(errorMessage(err, "The server couldn't save this draft."));
+      throw err;
+    }
+  }
+
+  async function autosaveOnce(): Promise<void> {
+    const { build, companyId: company } = latest.current;
+    const built = build("draft");
+    if (typeof built === "string") throw new AutosaveSkip(built);
+    const id = draftIdRef.current;
+    if (id) {
+      await updateInvoiceRequest(orgId, id, built);
+      return;
+    }
+    const created = await createInvoiceRequest(orgId, { ...built, companyId: company });
+    draftIdRef.current = created.id;
+    createdByAutosave.current = true;
+    setDraftId(created.id);
+    // The backup now belongs to the draft, not to "new".
+    clearBackup(backupKey(orgId, null));
+    invalidateInvoices();
+  }
+
+  const autosave = useAutosave({
+    enabled: autosaveOn,
+    fingerprint: fp,
+    save: autosaveDraft,
+    delayMs: autosaveDelayMs,
+    // A sent invoice isn't autosaved; ask before the tab closes on unsaved edits to it.
+    warnOnLeave: !isDraft && changed,
+  });
+
+  // Copy the form to this browser as it changes (sent invoices too). A draft's copy is dropped
+  // once the server has the same thing.
+  useEffect(() => {
+    const worthKeeping = draftId === null ? hasContent(snapshot) : changed;
+    if (!worthKeeping) return;
+    const t = setTimeout(() => writeBackup(currentKey, { form: snapshot, savedAt: Date.now(), invoiceId: draftIdRef.current }), 300);
+    return () => clearTimeout(t);
+  }, [fp, changed, currentKey, draftId, snapshot]);
+  useEffect(() => {
+    if (isDraft && autosave.state.status === "saved" && !autosave.controller.dirty) clearBackup(backupKey(orgId, draftIdRef.current));
+  }, [autosave.state, autosave.controller, isDraft, orgId]);
+
+  // A copy left on this device from an earlier session (the server never got it): offer it back.
+  const [restoreOffer, setRestoreOffer] = useState<InvoiceBackup | null>(() => {
+    const found = readBackup(backupKey(orgId, invoice?.id ?? null));
+    if (!found || formFingerprint(found.form) === initialFp || !hasContent(found.form)) return null;
+    if (invoice && Date.parse(invoice.updated_at) > found.savedAt) return null; // the server has newer
+    return found;
+  });
+
+  function applySnapshot(form: InvoiceFormSnapshot) {
+    setCompanyId(form.companyId);
+    setCustomerType(form.customerType);
+    setContactId(form.contactId);
+    setContactLabel(form.contactLabel);
+    setAccountId(form.accountId);
+    setTitle(form.title);
+    setLines(form.lines.length ? form.lines.map((l) => ({ ...l, key: nextKey() })) : [blankLine()]);
+    setTaxPct(form.taxPct);
+    setCredit(form.credit);
+    setTerms(form.terms as TermsChoice);
+    setDueDate(form.dueDate);
+    setNotes(form.notes);
+    setInternalNotes(form.internalNotes);
+    setBillToAddress(form.billToAddress);
+  }
+
+  function restore() {
+    if (!restoreOffer) return;
+    if (!invoice && restoreOffer.invoiceId) {
+      // Autosave had already made this draft: keep saving to it, not to a new one.
+      draftIdRef.current = restoreOffer.invoiceId;
+      setDraftId(restoreOffer.invoiceId);
+    }
+    applySnapshot(restoreOffer.form);
+    setRestoreOffer(null);
+  }
+
+  function discardRestore() {
+    if (restoreOffer) clearBackup(backupKey(orgId, invoice?.id ?? null));
+    setRestoreOffer(null);
+  }
+
+  /** Every way out of the dialog: save what's left first, then say where it went. */
+  async function close() {
+    if (isDraft) await autosave.flush();
+    const status = autosave.controller.getState().status;
+    if (isDraft && autosave.controller.dirty) {
+      toast.warning(
+        status === "invalid"
+          ? `Draft not saved to the server (${autosave.controller.getState().message ?? "check the form"}). Your changes are kept on this device.`
+          : "Couldn't reach the server — your changes are kept on this device and will be offered next time.",
+      );
+    } else if (createdByAutosave.current) {
+      toast.success("Draft saved — it's under Invoices → Drafts.");
+    } else if (!isDraft && changed) {
+      toast.message("Your unsaved changes are kept on this device — open Edit again to restore them.");
+    }
+    invalidateInvoices();
+    onClose();
+  }
+
   async function submit(send: boolean) {
     setError(null);
     const built = buildPayload(send ? "send" : "draft");
@@ -350,10 +572,17 @@ export function InvoiceEditorDialog({
     }
     setSendIntent(send);
     try {
-      const saved = invoice
-        ? await updateInvoice.mutateAsync({ invoiceId: invoice.id, payload: built })
+      // Let a running autosave finish, so this never creates a second draft.
+      if (isDraft) await autosave.flush();
+      const targetId = draftIdRef.current ?? invoice?.id ?? null;
+      const saved = targetId
+        ? await updateInvoice.mutateAsync({ invoiceId: targetId, payload: built })
         : await createInvoice.mutateAsync({ ...built, companyId });
-      if (!send) toast.success(invoice ? "Invoice saved" : "Draft invoice created");
+      draftIdRef.current = saved.id;
+      autosave.markSaved(fp);
+      clearBackup(backupKey(orgId, null));
+      clearBackup(backupKey(orgId, saved.id));
+      if (!send) toast.success(invoice || createdByAutosave.current ? "Invoice saved" : "Draft invoice created");
       onSaved(saved, { send });
     } catch (err) {
       const msg = errorMessage(err, "Couldn't save the invoice.");
@@ -365,7 +594,7 @@ export function InvoiceEditorDialog({
   const companyName = companies?.find((c) => c.id === companyId)?.name;
 
   return (
-    <Modal onClose={onClose} size="2xl">
+    <Modal onClose={() => void close()} size="2xl">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div>
           <h2 className="text-base font-semibold text-foreground">
@@ -374,13 +603,32 @@ export function InvoiceEditorDialog({
           <p className="text-xs text-muted-foreground mt-0.5">
             {isEdit && !isDraft
               ? "This invoice has been sent — saving updates the customer's copy and pay link."
-              : "Save a draft any time, even half-finished, and send it when it’s ready."}
+              : "Drafts save automatically as you type. Send it when it’s ready."}
           </p>
+          <div className="mt-1 min-h-[1rem]">
+            <AutosaveStatusLine state={autosave.state} isDraft={isDraft} started={autosaveOn} localOnly={!isDraft && changed} />
+          </div>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors" aria-label="Close">
+        <button onClick={() => void close()} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors" aria-label="Close">
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {restoreOffer && (
+        <div className="mx-4 sm:mx-6 mt-4 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm flex flex-col sm:flex-row sm:items-center gap-2" role="status">
+          <span className="flex-1 text-foreground">
+            Unsaved changes from {new Date(restoreOffer.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} were found on this device.
+          </span>
+          <div className="flex gap-2">
+            <button type="button" onClick={restore} className={cn(primaryBtnCls, "py-1.5")}>
+              Restore
+            </button>
+            <button type="button" onClick={discardRestore} className={cn(secondaryBtnCls, "py-1.5")}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       <form
         onSubmit={(e) => {
@@ -707,8 +955,8 @@ export function InvoiceEditorDialog({
         )}
 
         <div className="flex flex-col-reverse sm:flex-row gap-2 pt-1">
-          <button type="button" onClick={onClose} className={cn(secondaryBtnCls, "sm:flex-1")}>
-            Cancel
+          <button type="button" onClick={() => void close()} className={cn(secondaryBtnCls, "sm:flex-1")}>
+            {isDraft ? "Close" : "Cancel"}
           </button>
           <button type="submit" disabled={isPending} className={cn(secondaryBtnCls, "sm:flex-1")}>
             {isPending && !sendIntent ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
