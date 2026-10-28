@@ -31,6 +31,7 @@ import {
 import { contactName, findScopedBooking, findScopedContact, openTimesForBooking, type CompanyScope } from "./schedule";
 import { formatNanp } from "@/server/services/dfy/intake";
 import { requireReceptionistMinutes } from "@/server/services/voice/minutes";
+import { addNote, forgetNote, listNotes } from "@/server/agent/memory";
 
 export interface ToolRunState {
   admin: AdminClient;
@@ -46,6 +47,8 @@ export interface ToolRunState {
   roleOwnerTools?: RoleOwnerTool[];
   /** Marina can place calls for this owner (Retell outbound on + the plan has marina_reception). */
   callsEnabled?: boolean;
+  /** Earlier confirmations this run's proposal replaced (same action, same booking / customer). */
+  superseded?: number;
 }
 
 const CONFIRM_MINUTES = 30;
@@ -67,6 +70,50 @@ async function proposeConfirmation(state: ToolRunState, contactId: string | null
     notifiedTo: state.ownerPhone,
   });
   state.confirmationCode = confirm.code;
+  state.superseded = (state.superseded ?? 0) + (await supersedeEarlier(state, proposal.payload, state.confirmation.id));
+}
+
+/** The booking / customer a proposal is about (what "the same thing again" means). PURE. */
+export function proposalTarget(payload: Partial<OwnerCommandPayload> | Record<string, unknown>): string | null {
+  const p = payload as Record<string, unknown>;
+  if (p.action === "reschedule" || p.action === "cancel") return typeof p.bookingId === "string" ? `booking:${p.bookingId}` : null;
+  if (p.action === "text_customer") return typeof p.contactId === "string" ? `text:${p.contactId}` : null;
+  return null; // calls: one open call per customer (cancel_customer_call), never superseded here
+}
+
+/**
+ * "Actually make it 4pm": a new proposal for the same booking (move/cancel) or the same customer
+ * (text) replaces the confirmation still waiting for this owner, so only the latest code works.
+ * Returns how many were replaced. Never throws (a failure leaves both waiting).
+ */
+async function supersedeEarlier(state: ToolRunState, payload: OwnerCommandPayload, keepId: string): Promise<number> {
+  const target = proposalTarget(payload);
+  if (!target) return 0;
+  try {
+    const { data } = await state.admin
+      .from("owner_approvals")
+      .select("id, payload")
+      .eq("organization_id", state.scope.organizationId)
+      .eq("company_id", state.scope.companyId)
+      .eq("kind", OWNER_COMMAND_KIND)
+      .eq("status", "pending")
+      .eq("notified_to", state.ownerPhone)
+      .limit(20);
+    const ids = ((data ?? []) as Array<{ id: string; payload: Record<string, unknown> }>)
+      .filter((r) => r.id !== keepId && proposalTarget(r.payload ?? {}) === target)
+      .map((r) => r.id);
+    if (ids.length === 0) return 0;
+    const { data: done } = await state.admin
+      .from("owner_approvals")
+      .update({ status: "superseded", decided_at: new Date(state.nowMs).toISOString(), decided_via: "sms", decided_by: state.ownerPhone, result: { superseded_by: keepId } })
+      .in("id", ids)
+      .eq("status", "pending")
+      .select("id");
+    return ((done ?? []) as unknown[]).length;
+  } catch (err) {
+    console.error("[owner-channel] superseding an earlier confirmation failed:", err instanceof Error ? err.message : err);
+    return 0;
+  }
 }
 
 export const OWNER_TOOLS: Anthropic.Messages.Tool[] = [
@@ -149,6 +196,26 @@ export const OWNER_TOOLS: Anthropic.Messages.Tool[] = [
     name: "resume_all_texts",
     description: "Undo pause_all_texts.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "remember",
+    description:
+      "Save a note the owner asked you to keep: about one customer (give contact_id) or the business (no contact_id). One fact per note, in plain words (\"Prefers mornings; gate code is with the neighbour\", \"Closed Dec 24 - Jan 2\"). Used later by you and by the customer texting assistant.",
+    input_schema: {
+      type: "object",
+      properties: { note: { type: "string", description: "The fact, under 500 characters." }, contact_id: { type: "string" } },
+      required: ["note"],
+    },
+  },
+  {
+    name: "list_notes",
+    description: "The notes saved about one customer (contact_id) or, without contact_id, about the business. Newest first, with note ids.",
+    input_schema: { type: "object", properties: { contact_id: { type: "string" } } },
+  },
+  {
+    name: "forget_note",
+    description: "Forget (archive) one saved note by its note_id (from list_notes).",
+    input_schema: { type: "object", properties: { note_id: { type: "string" } }, required: ["note_id"] },
   },
 ];
 
@@ -436,6 +503,33 @@ async function setAiForCustomerTool(state: ToolRunState, input: Input) {
   return { ok: true, customer: contactName(contact), ai: on ? "on" : "off" };
 }
 
+// ── Memory (agent/memory.ts) ──────────────────────────────────────────────────
+
+async function rememberTool(state: ToolRunState, input: Input) {
+  const contactId = str(input.contact_id);
+  const contact = contactId ? await findScopedContact(state.admin, state.scope, contactId) : null;
+  if (contactId && !contact) return { error: "No such customer for this business." };
+  const saved = await addNote(state.admin, state.scope, { contactId: contact?.id ?? null, body: input.note, source: "owner_sms", createdBy: state.ownerPhone });
+  if (!saved.ok || !saved.note) return { ok: false, reason: saved.reason ?? "Couldn't save that." };
+  return { ok: true, saved: saved.note.body, about: contact ? contactName(contact) : "the business", note_id: saved.note.id };
+}
+
+async function listNotesTool(state: ToolRunState, input: Input) {
+  const contactId = str(input.contact_id);
+  const contact = contactId ? await findScopedContact(state.admin, state.scope, contactId) : null;
+  if (contactId && !contact) return { error: "No such customer for this business." };
+  const notes = await listNotes(state.admin, state.scope, { contactId: contact?.id, limit: 20 });
+  return {
+    about: contact ? contactName(contact) : "the business",
+    notes: notes.map((n) => ({ note_id: n.id, note: n.body, saved: shortWhen(n.createdAt, state.scope.timeZone) })),
+  };
+}
+
+async function forgetNoteTool(state: ToolRunState, input: Input) {
+  const ok = await forgetNote(state.admin, state.scope, input.note_id, state.nowMs);
+  return ok ? { ok: true } : { ok: false, reason: "No such note (check list_notes)." };
+}
+
 /** Run one tool call. Returns a JSON-able result for the model (never throws). */
 export async function runOwnerTool(state: ToolRunState, name: string, input: Input): Promise<Record<string, unknown>> {
   try {
@@ -480,6 +574,15 @@ export async function runOwnerTool(state: ToolRunState, name: string, input: Inp
         break;
       case "resume_all_texts":
         result = { ok: true, ...(await resumeAllTexts(state.admin, state.scope)) };
+        break;
+      case "remember":
+        result = await rememberTool(state, input);
+        break;
+      case "list_notes":
+        result = await listNotesTool(state, input);
+        break;
+      case "forget_note":
+        result = await forgetNoteTool(state, input);
         break;
       default: {
         const roleTool = (state.roleOwnerTools ?? roleOwnerTools()).find((t) => t.tool.name === name);

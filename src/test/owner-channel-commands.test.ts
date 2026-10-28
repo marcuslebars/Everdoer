@@ -62,6 +62,8 @@ function seed() {
       ],
       owner_approvals: [],
       owner_command_log: [],
+      agent_turns: [],
+      agent_notes: [],
       platform_sms_opt_outs: [],
       sms_conversations: [],
       ui_inbox_v: [],
@@ -274,6 +276,79 @@ describe("owner commands", () => {
     expect(db.tables.sms_conversations[0]).toMatchObject({ organization_id: "org-1", company_id: "co-1", contact_id: DANA, state: "owner" });
     expect(db.tables.sms_conversations[0].owner_takeover_at).toBeTruthy();
     expect(ownerReplies().at(-1)).toBe("CrankLeads: Sent to Dana Jones. The assistant will stay out of that conversation for now.");
+  });
+
+  it("memory: a follow-up sees the earlier text and what was done; the new proposal replaces the old code", async () => {
+    scriptModel([{ name: "text_customer", input: { contact_id: DANA, message: "We'll be there at 3." } }], "unused");
+    await text("tell Dana we'll be there at 3");
+    const firstCode = lastCode();
+    const firstReply = ownerReplies().at(-1)!.replace(/^CrankLeads: /, "");
+
+    vi.setSystemTime(NOW + 60_000);
+    scriptModel([{ name: "text_customer", input: { contact_id: DANA, message: "We'll be there at 4." } }], "unused");
+    await text("actually make it 4pm");
+    const params = anthropicCreate.mock.calls.at(-1)![0] as { system: Array<{ text: string }>; messages: Array<{ role: string; content: unknown }> };
+    expect(params.messages[0]).toEqual({ role: "user", content: "tell Dana we'll be there at 3" });
+    expect(params.messages[1]).toEqual({ role: "assistant", content: firstReply });
+    expect(params.system[0].text).toContain("<recent_actions>");
+    expect(params.system[0].text).toContain(DANA); // the id from the earlier text_customer
+    expect(ownerReplies().at(-1)).toMatch(/We'll be there at 4\..*Reply \d{4} to confirm.*\(This replaces the earlier one\.\)$/);
+    const secondCode = lastCode();
+
+    const [older, newer] = db.tables.owner_approvals;
+    expect(older.status).toBe("superseded");
+    expect(newer.status).toBe("pending");
+    // The first code no longer sends anything; the new one does.
+    await text(firstCode);
+    expect(ownerReplies().at(-1)).toMatch(/doesn't match anything waiting/);
+    expect(deliverMessage.mock.calls.some((c) => (c[0] as Record<string, unknown>).contactId === DANA)).toBe(false);
+    await text(secondCode);
+    expect(deliverMessage.mock.calls.map((c) => c[0] as Record<string, unknown>).find((m) => m.contactId === DANA)).toMatchObject({ body: "We'll be there at 4." });
+  });
+
+  it("memory: turns from more than 6 hours ago (or another business's) don't come back", async () => {
+    db.tables.agent_turns.push(
+      { id: "t-old", organization_id: "org-1", company_id: "co-1", channel: "owner_sms", thread_key: OWNER, user_text: "OLD TEXT", reply: "old reply", intent: "command", actions: [], created_at: new Date(NOW - 7 * 3_600_000).toISOString() },
+      { id: "t-other", organization_id: "org-9", company_id: "co-9", channel: "owner_sms", thread_key: OWNER, user_text: "OTHER BUSINESS", reply: "x", intent: "command", actions: [], created_at: new Date(NOW - 60_000).toISOString() },
+    );
+    scriptModel([], "Hi!");
+    await text("hello");
+    const params = anthropicCreate.mock.calls[0][0] as { messages: unknown[] };
+    expect(params.messages).toHaveLength(1);
+    expect(JSON.stringify(params)).not.toContain("OLD TEXT");
+    expect(JSON.stringify(params)).not.toContain("OTHER BUSINESS");
+  });
+
+  it("remember / list_notes / forget_note: notes about a customer or the business, scoped to this company", async () => {
+    scriptModel(
+      [
+        { name: "remember", input: { note: "Prefers mornings.", contact_id: DANA } },
+        { name: "remember", input: { note: "Closed Dec 24 - Jan 2." } },
+        { name: "remember", input: { note: "Nope", contact_id: OTHER_CONTACT } },
+      ],
+      "Got it.",
+    );
+    await text("remember Dana likes mornings, and we're closed Dec 24 to Jan 2");
+    expect(toolResult(3)).toContain("No such customer");
+    expect(db.tables.agent_notes.map((n) => [n.contact_id, n.body, n.source, n.created_by])).toEqual([
+      [DANA, "Prefers mornings.", "owner_sms", OWNER],
+      [null, "Closed Dec 24 - Jan 2.", "owner_sms", OWNER],
+    ]);
+    for (const n of db.tables.agent_notes) n.created_at = new Date(NOW).toISOString();
+
+    // The business note is in the next command's prompt; the customer's comes from list_notes.
+    scriptModel([{ name: "list_notes", input: { contact_id: DANA } }], "Dana prefers mornings.");
+    await text("what do we know about Dana?");
+    const params = anthropicCreate.mock.calls.at(-1)![0] as { system: Array<{ text: string }> };
+    const notesSection = /<owner_notes>([\s\S]*?)<\/owner_notes>/.exec(params.system[0].text)?.[1] ?? "";
+    expect(notesSection).toContain("Closed Dec 24 - Jan 2.");
+    expect(notesSection).not.toContain("Prefers mornings."); // a customer's note isn't a business note
+    expect(toolResult(1)).toContain("Prefers mornings.");
+
+    const noteId = db.tables.agent_notes[0].id as string;
+    scriptModel([{ name: "forget_note", input: { note_id: noteId } }], "Forgotten.");
+    await text("forget that");
+    expect(db.tables.agent_notes[0].archived_at).toBeTruthy();
   });
 
   it("another company's booking or customer is 'not found' — no change, no text, no leak", async () => {

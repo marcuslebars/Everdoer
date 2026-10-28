@@ -12,6 +12,7 @@ import { sweepOwnerApprovals } from "@/server/services/owner-channel/notify";
 import { sweepUnansweredTexts } from "@/server/services/sms-agent/entry";
 import { processWeeklyReports } from "@/server/services/weekly-report/send";
 import { purgeAgentRuns } from "@/server/agent/run-log";
+import { purgeTurns } from "@/server/agent/memory";
 import { runDoneForYouSweep } from "@/server/services/dfy/orchestrator";
 import { processSetupFollowups, SETUP_FOLLOWUP_INTERVAL_MS } from "@/server/services/done-for-you/setup-followups";
 import { runGeneratedSitesPass } from "@/server/services/dfy/site-generator";
@@ -416,7 +417,8 @@ export async function runScheduler(
   if (nowMs - lastAgentRunPurgeMs >= AGENT_RUN_PURGE_INTERVAL_MS) {
     lastAgentRunPurgeMs = nowMs;
     const purged = await purgeAgentRuns(admin, nowMs);
-    if (purged) console.log(`[scheduler] agent runs purged: ${purged}`);
+    const turns = await purgeTurns(admin, nowMs);
+    if (purged || turns) console.log(`[scheduler] agent runs purged: ${purged}, memory turns purged: ${turns}`);
   }
   // Recurring jobs (docs/recurring-jobs.md): keep ~60 days of visits on the calendar.
   // Hourly; the sweep only touches series whose horizon is running out, and is idempotent.

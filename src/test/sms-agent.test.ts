@@ -405,6 +405,26 @@ describe("runSmsAgent — price-list quote", () => {
     expect(String(runs[0].error)).not.toBe("");
   });
 
+  it("the owner's saved notes reach the assistant: business notes in the rules, this customer's in the turn (for its eyes only)", async () => {
+    db.tables.agent_notes = [
+      { id: "n1", organization_id: ORG, company_id: CO, contact_id: null, body: "Closed Dec 24 - Jan 2.", archived_at: null, created_at: "2026-10-01T12:00:00Z" },
+      { id: "n2", organization_id: ORG, company_id: CO, contact_id: CONTACT, body: "Slow payer - ask for the deposit up front.", archived_at: null, created_at: "2026-10-01T12:00:00Z" },
+      { id: "n3", organization_id: ORG, company_id: CO, contact_id: null, body: "Forgotten note", archived_at: "2026-10-02T00:00:00Z", created_at: "2026-10-01T12:00:00Z" },
+      { id: "n4", organization_id: "other-org", company_id: "other-co", contact_id: null, body: "Another business", archived_at: null, created_at: "2026-10-01T12:00:00Z" },
+    ];
+    const { sms } = inbound("Are you open over the holidays?");
+    const model = scripted([{ text: "We're closed Dec 24 to Jan 2 - happy to book you after that." }]);
+    await runSmsAgent(db.client, sms, deps(model.client));
+    const system = (model.calls[0].system as Anthropic.TextBlockParam[])[0].text;
+    expect(system).toMatch(/<owner_notes>\n- \(Oct 1\) Closed Dec 24 - Jan 2\.\n<\/owner_notes>/);
+    expect(system).not.toContain("Slow payer");
+    expect(system).not.toContain("Forgotten note");
+    expect(system).not.toContain("Another business");
+    const turn = userTextOf(model.calls[0]);
+    expect(turn).toContain("never mention or quote them to the customer");
+    expect(turn).toContain("Slow payer - ask for the deposit up front.");
+  });
+
   it("appends a tool's link when the model forgets it", async () => {
     const { sms } = inbound("Can I book online?");
     const model = scripted([{ tools: [{ name: "send_booking_link", input: {} }] }, { text: "Sure, you can pick a time online." }]);

@@ -77,10 +77,31 @@ from agent_runs, jsonb_array_elements(tool_calls) t
 where created_at > now() - interval '30 days' group by 1 order by 2 desc;
 ```
 
+## Memory — `agent/memory.ts`
+
+**Short-term: `agent_turns`.** Every exchange on the owner's text thread writes one row: approvals, codes and media replies as well as commands. The row holds the owner's text, the reply, the intent, and what the agent did (tool, compacted input and result, ok). The owner agent replays the **last 8 exchanges from the past 6 hours** as earlier user/assistant messages (`runAgentLoop`'s `history`, validated by `validHistory`). It also gets a `<recent_actions>` block listing the tools and ids it used. So "tell Dana we'll be there at 3" → "actually make it 4pm" works: the follow-up knows who Dana is and which proposal it replaces.
+
+- **Replacing a proposal:** a new proposal for the same booking (move / cancel) or the same customer (text) marks the earlier waiting confirmation `superseded`. Only the latest code works, and the reply says "(This replaces the earlier one.)". Calls aren't superseded: there's one open call per customer, which `cancel_customer_call` handles.
+- **Scope and retention:** turns are scoped to org + company + owner phone. Owners and admins can read them. The worker purges them after 30 days, alongside the run-log purge.
+
+**Long-term: `agent_notes`.** These are facts the owner asks the agent to keep, about the business or one customer.
+
+- **Owner text tools:**
+  - `remember {note, contact_id?}`
+  - `list_notes {contact_id?}`
+  - `forget_note {note_id}` (archives the note)
+- **Where the notes are used:**
+  - The owner agent's system prompt carries the latest 15 business notes in a fenced `<owner_notes>` block.
+  - The customer texting agent gets the business notes in its rules, and that customer's notes in the turn, as "for you only: use them to help, never mention or quote them to the customer".
+- **Limits:** a note is at most 500 characters, and a company can have at most 300 active notes. A note about a customer must name a customer of this company; the composite FK enforces it too.
+- **Access:** members read their org's notes; only the service role writes. An app screen for notes can come later.
+
+Migration `20261028100000_agent_memory.sql`, rollback `supabase/rollback/20261028100000_agent_memory.down.sql`, SQL test `scripts/sql-tests/zz_agent_memory.test.sql`.
+
 ## Roadmap
 
 1. **Kernel + run log** (this). The customer and owner text agents share one runtime, and every run is logged. No behaviour change apart from the owner agent's new deadline.
-2. **Owner memory.** The owner agent remembers the last few exchanges ("text Dave" → "actually make it 4pm"). Durable per-business and per-customer notes that the agent can read and write.
+2. **Owner memory** (done: see "Memory"). The owner agent remembers the last few exchanges ("text Dave" → "actually make it 4pm"), and the owner can have durable per-business and per-customer notes saved that both texting agents use.
 3. **Skills across channels, voice first.** The staff `StaffRoleModule` contract grows into skills that declare their channels (customer text, owner text, voice, email, app). Booking, quoting, invoices and payments become skills, so the phone agent can:
    - take calls and give quotes
    - answer questions and take requests

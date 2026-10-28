@@ -60,6 +60,11 @@ export interface AgentLoopInput {
   cacheSystem?: boolean;
   /** The first user message's content (text, images…). */
   userContent: string | Anthropic.ContentBlockParam[];
+  /**
+   * Earlier exchanges replayed before it (agent memory): alternating user / assistant, starting
+   * with a user message. Malformed history (empty texts, wrong order) is dropped, never sent.
+   */
+  history?: Anthropic.MessageParam[];
   tools: Anthropic.Tool[];
   /** Runs one tool call. Must not throw; a throw is caught and returned to the model as an error. */
   runTool(name: string, input: unknown): Promise<ToolOutcome>;
@@ -108,6 +113,19 @@ export function toolResultContent(result: unknown, fence: boolean): string {
   return fence ? `<tool_data note="${FENCE_NOTE}">${json}</tool_data>` : json;
 }
 
+/** History that the API will accept: user/assistant pairs with non-empty text, in order. PURE. */
+export function validHistory(history: Anthropic.MessageParam[] | undefined): Anthropic.MessageParam[] {
+  if (!history?.length) return [];
+  const nonEmpty = (m: Anthropic.MessageParam) => (typeof m.content === "string" ? m.content.trim().length > 0 : m.content.length > 0);
+  const out: Anthropic.MessageParam[] = [];
+  for (let i = 0; i + 1 < history.length; i += 2) {
+    const [user, assistant] = [history[i], history[i + 1]];
+    if (user.role !== "user" || assistant.role !== "assistant" || !nonEmpty(user) || !nonEmpty(assistant)) return [];
+    out.push(user, assistant);
+  }
+  return out;
+}
+
 function textOf(message: Anthropic.Message, joiner: string): string {
   return message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -124,7 +142,7 @@ function textOf(message: Anthropic.Message, joiner: string): string {
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutput> {
   const now = input.now ?? Date.now;
   const joiner = input.textJoiner ?? "\n";
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: input.userContent }];
+  const messages: Anthropic.MessageParam[] = [...validHistory(input.history), { role: "user", content: input.userContent }];
   const usage: AiUsageMeta[] = [];
   const toolCalls: ToolCallRecord[] = [];
   let lastText: string | null = null;

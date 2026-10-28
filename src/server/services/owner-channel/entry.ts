@@ -11,6 +11,7 @@ import { decideApproval, isExpired, listLine, looksLikeApprovalAttempt, parseApp
 import { consumeLimit, findOwnerCompanies, sameOwnerPhone, sendOwnerSms, type OwnerCompany } from "./common";
 import { CONFIRM_CODE_RE, confirmationMatches, MAX_CONFIRM_ATTEMPTS, OWNER_COMMAND_KIND } from "./owner-commands";
 import { ownerMediaHandlersFor } from "@/server/services/staff/registry";
+import { recordTurn, type TurnAction } from "@/server/agent/memory";
 
 /** Texts per phone per hour we'll act on at all, and model-backed commands per hour. */
 const OWNER_SMS_PER_HOUR = 60;
@@ -28,7 +29,12 @@ interface Outcome {
   reply: string | null;
   company: OwnerCompany | null;
   result?: Record<string, unknown>;
+  /** What the agent did, for its short-term memory (agent_turns.actions). */
+  memoryActions?: TurnAction[];
 }
+
+/** Intents that aren't part of a conversation worth remembering. */
+const NOT_REMEMBERED = new Set(["rate_limited", "command_rate_limited", "not_owner", "ask_company"]);
 
 // ── owner_command_log ─────────────────────────────────────────────────────────
 
@@ -361,6 +367,22 @@ export async function handleOwnerInboundSms(admin: AdminClient, sms: InboundOwne
     sendStatus = sent.status;
   }
   await updateLog(admin, logged.id, outcome, { sendStatus });
+  // Short-term memory (agent/memory.ts): every exchange with a business, approvals and codes
+  // included, so the next text can refer back to it. Best-effort.
+  if (outcome.company && !NOT_REMEMBERED.has(outcome.intent)) {
+    await recordTurn(admin, {
+      organizationId: outcome.company.organizationId,
+      companyId: outcome.company.companyId,
+      channel: "owner_sms",
+      threadKey: sms.from,
+      userText: sms.body.trim() || (sms.media.length ? "[picture]" : ""),
+      reply: outcome.reply,
+      intent: outcome.intent,
+      actions: outcome.memoryActions ?? [],
+      sourceRef: logged.id,
+      atMs: nowMs,
+    });
+  }
   return { handled: true };
 }
 
@@ -473,6 +495,7 @@ async function route(admin: AdminClient, sms: InboundOwnerSms, owned: OwnerCompa
       reply: agent.reply,
       company,
       result: { actions: agent.actions, confirmationId: agent.confirmationId, rounds: agent.rounds },
+      memoryActions: agent.memoryActions,
     };
   } catch (err) {
     console.error("[owner-channel] command failed:", err instanceof Error ? err.message : err);

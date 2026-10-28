@@ -328,6 +328,71 @@ export type Database = {
           },
         ]
       }
+      agent_notes: {
+        Row: {
+          archived_at: string | null
+          body: string
+          company_id: string
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          source: string
+          updated_at: string
+        }
+        ComputedFields: never
+        Insert: {
+          archived_at?: string | null
+          body: string
+          company_id: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          body?: string
+          company_id?: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_notes_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "agent_notes_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "contacts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "agent_notes_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "ui_contact_list_v"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "agent_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_runs: {
         Row: {
           cache_read_tokens: number
@@ -393,6 +458,62 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "agent_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_turns: {
+        Row: {
+          actions: Json
+          channel: string
+          company_id: string
+          created_at: string
+          id: string
+          intent: string | null
+          organization_id: string
+          reply: string | null
+          source_ref: string | null
+          thread_key: string
+          user_text: string
+        }
+        ComputedFields: never
+        Insert: {
+          actions?: Json
+          channel: string
+          company_id: string
+          created_at?: string
+          id?: string
+          intent?: string | null
+          organization_id: string
+          reply?: string | null
+          source_ref?: string | null
+          thread_key: string
+          user_text?: string
+        }
+        Update: {
+          actions?: Json
+          channel?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          intent?: string | null
+          organization_id?: string
+          reply?: string | null
+          source_ref?: string | null
+          thread_key?: string
+          user_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_turns_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "agent_turns_organization_id_fkey"
             columns: ["organization_id"]
             referencedRelation: "organizations"
             referencedColumns: ["id"]
