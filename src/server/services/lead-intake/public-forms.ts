@@ -19,6 +19,7 @@ import { createSupabaseAdminClient } from "@/server/supabase/admin";
 import {
   isPublicFormKeyFormat,
   smsConsentText,
+  callConsentText,
   type PublicFormType,
 } from "./public-form-envelope";
 
@@ -28,6 +29,8 @@ export interface ResolvedPublicForm {
   companyId: string;
   formType: PublicFormType;
   allowedOrigins: string[];
+  /** The business has an active AI (Retell) number, so automated call-backs are possible. */
+  callsAvailable?: boolean;
   company: {
     name: string;
     slug: string | null;
@@ -42,6 +45,11 @@ export interface PublicFormConfig {
   form: {
     formType: PublicFormType;
     smsConsentText: string;
+    /**
+     * Wording for consent to an automated call back (docs/sales-calls.md), or null when the
+     * business has no AI phone number to call from (then the checkbox isn't shown).
+     */
+    callConsentText: string | null;
     /** True when the form only works on listed websites (the list itself is not exposed). */
     restrictedToSites: boolean;
   };
@@ -107,12 +115,23 @@ export async function resolvePublicFormKey(key: string): Promise<ResolvedPublicF
   > | null;
   if (!company) return null;
 
+  // The automated-call consent box is only offered when the business has an AI number to call from.
+  const { data: voice } = await admin
+    .from("voice_numbers")
+    .select("id")
+    .eq("organization_id", row.organization_id)
+    .eq("company_id", row.company_id)
+    .eq("provider", "retell")
+    .eq("active", true)
+    .limit(1);
+
   return {
     id: row.id,
     organizationId: row.organization_id,
     companyId: row.company_id,
     formType: asFormType(row.form_type),
     allowedOrigins: Array.isArray(row.allowed_origins) ? row.allowed_origins : [],
+    callsAvailable: ((voice ?? []) as unknown[]).length > 0,
     company: {
       name: company.name,
       slug: company.slug ?? null,
@@ -153,6 +172,7 @@ export function toPublicFormConfig(form: ResolvedPublicForm, services: string[])
     form: {
       formType: form.formType,
       smsConsentText: smsConsentText(form.company.name),
+      callConsentText: form.callsAvailable ? callConsentText(form.company.name) : null,
       restrictedToSites: form.allowedOrigins.length > 0,
     },
     company: {

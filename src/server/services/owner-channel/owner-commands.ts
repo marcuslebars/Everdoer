@@ -16,6 +16,7 @@ import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write
 import type { AdminClient, ApprovalDecision, ExecuteResult, OwnerApprovalRow } from "@/server/services/front-desk/contracts";
 import { markOwnerTakeover } from "@/server/services/sms-agent/takeover";
 import { deliverMessage } from "@/server/services/workflow-engine/messaging";
+import { executeSalesCallCommand, type SalesCallPayload } from "@/server/services/sales-calls/owner-request";
 import { cancelCallRequest, findScopedCallRequest, placeOrScheduleOwnerCall, type OwnerCallRequestRow } from "./calls";
 import { ctxFor, DEFAULT_TIMEZONE, shortWhen } from "./common";
 import { contactName, findScopedBooking, findScopedContact, openTimesForBooking, type CompanyScope } from "./schedule";
@@ -32,7 +33,9 @@ export type OwnerCommandPayload =
   | { action: "cancel"; bookingId: string; who: string }
   | { action: "text_customer"; contactId: string; message: string; who: string }
   /** A Marina call the owner asked for (calls.ts); the brief lives on the owner_call_requests row. */
-  | { action: "call_customer"; requestId: string; contactId: string; who: string };
+  | { action: "call_customer"; requestId: string; contactId: string; who: string }
+  /** A sales call the owner asked for (sales-calls/owner-request.ts). */
+  | SalesCallPayload;
 
 // ── Confirmation codes ────────────────────────────────────────────────────────
 // Destructive owner commands (cancel, move, text a customer) are confirmed with a 4-digit code
@@ -76,6 +79,7 @@ async function scopeForApproval(admin: AdminClient, approval: OwnerApprovalRow):
 export async function executeOwnerCommand(admin: AdminClient, approval: OwnerApprovalRow, decision: ApprovalDecision): Promise<ExecuteResult> {
   const payload = approval.payload as Partial<OwnerCommandPayload>;
   if (payload.action === "call_customer") return executeCallCustomer(admin, approval, payload, decision);
+  if (payload.action === "sales_call") return executeSalesCallCommand(admin, approval, payload, decision, await scopeForApproval(admin, approval));
   if (!decision.approved) return { ok: true, message: "OK, left it as is." };
   const scope = await scopeForApproval(admin, approval);
   if (!scope) return { ok: false, message: "I couldn't find that business." };

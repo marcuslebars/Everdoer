@@ -273,7 +273,12 @@ export async function runPriceListQuote(
   }
 
   const leadPayload = {
-    call: readCall(req.raw) ?? { call_id: call.callId, from_number: call.fromNumber, to_number: call.toNumber, agent_id: call.agentId },
+    // On a call WE placed (a sales call), Retell's raw from/to are our line and the customer; the
+    // lead adapter reads from = customer, to = business, so it gets the normalised numbers.
+    call:
+      call.direction === "outbound"
+        ? { call_id: call.callId, from_number: call.fromNumber, to_number: call.toNumber, agent_id: call.agentId }
+        : (readCall(req.raw) ?? { call_id: call.callId, from_number: call.fromNumber, to_number: call.toNumber, agent_id: call.agentId }),
     args: {
       caller_name: name,
       ...(s(args.email) ? { caller_email: s(args.email) } : {}),

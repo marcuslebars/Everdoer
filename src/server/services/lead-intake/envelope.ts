@@ -138,6 +138,20 @@ export const leadEnvelopeSchema = z.object({
           capturedAt: z.string().datetime().optional(),
         })
         .optional(),
+
+      /**
+       * Express consent to an AUTOMATED call back (docs/sales-calls.md): the person ticked "you can
+       * call me with your automated assistant". `granted` true records a call_consents row (with
+       * `text`, the exact wording shown) and, when the business turned lead calls on, queues a
+       * speed-to-lead call. Additive + optional.
+       */
+      callConsent: z
+        .object({
+          granted: z.boolean(),
+          text: z.string().max(600).optional(),
+          capturedAt: z.string().datetime().optional(),
+        })
+        .optional(),
     })
     .optional(),
 });

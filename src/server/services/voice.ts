@@ -65,6 +65,8 @@ async function placeMarinaCall(input: {
   voiceProfile?: CompanyVoiceProfile | null;
   /** The prompt built for THIS call (retell/outbound-prompt.ts); injected as {{system_prompt}}. */
   systemPrompt?: string | null;
+  /** Sales calls: the sales agent and the company's own number win over the profile (Retell only). */
+  override?: { agentId: string; fromNumber: string } | null;
 }): Promise<MarinaCallOutcome> {
   const provider = selectMarinaProvider();
   if (!provider) {
@@ -75,6 +77,9 @@ async function placeMarinaCall(input: {
     );
   }
 
+  if (input.override && provider !== "retell") {
+    throw new ValidationError("Sales calls need Retell outbound calling.");
+  }
   if (provider === "retell") {
     const globalCfg = readRetellVoiceConfig();
     if (!globalCfg) {
@@ -87,9 +92,10 @@ async function placeMarinaCall(input: {
       companyName: input.companyName,
       systemPrompt: input.systemPrompt ?? null,
     });
+    const effective = input.override ? { ...config, agentId: input.override.agentId, fromNumber: input.override.fromNumber } : config;
     const result = await placeRetellCall(
       { toNumber: input.toNumber, metadata: input.metadata, dynamicVariables },
-      config,
+      effective,
     );
     return { agentCallId: result.callId, provider, toNumber: result.toNumber };
   }
@@ -183,9 +189,14 @@ export async function callContactWithMarina(
     brief?: OwnerCallBrief | null;
     /** The owner_call_requests row this call belongs to; echoed in the call metadata. */
     requestId?: string | null;
+    /**
+     * A sales call (docs/sales-calls.md): the prompt is built by the caller (sales-calls/queue.ts)
+     * and the call runs on the sales agent, from the company's own number. Retell only.
+     */
+    sales?: { salesCallId: string; prompt: string; agentId: string; fromNumber: string } | null;
   },
 ): Promise<PlaceCallResult> {
-  if (options?.brief && !isRetellOutboundActive()) {
+  if ((options?.brief || options?.sales) && !isRetellOutboundActive()) {
     throw new ValidationError("Calling with instructions needs Retell outbound calling.");
   }
   const { data, error } = await context.supabase
@@ -213,7 +224,9 @@ export async function callContactWithMarina(
   const companyName = await resolveCompanyName(context, contact.company_id);
   // The prompt for this call: the company's facts + the owner's brief (or the plain follow-up
   // brief). Built per call, never the stored inbound prompt — see effectiveVoiceForProfile.
-  const systemPrompt = await outboundPromptFor(context, contact.company_id, name || null, companyName, options?.brief ?? null);
+  const systemPrompt = options?.sales
+    ? options.sales.prompt
+    : await outboundPromptFor(context, contact.company_id, name || null, companyName, options?.brief ?? null);
 
   const outcome = await placeMarinaCall({
     toNumber,
@@ -225,9 +238,11 @@ export async function callContactWithMarina(
       organizationId: context.organizationId,
       companyId: contact.company_id,
       ...(options?.requestId ? { ownerCallRequestId: options.requestId } : {}),
+      ...(options?.sales ? { salesCallId: options.sales.salesCallId } : {}),
     },
     voiceProfile,
     systemPrompt,
+    override: options?.sales ? { agentId: options.sales.agentId, fromNumber: options.sales.fromNumber } : null,
   });
 
   // Best-effort: log the placed call on the contact's timeline. The call is already
@@ -249,6 +264,7 @@ export async function callContactWithMarina(
         // omitted for owner-initiated calls so they don't count toward the public cap.
         ...(options?.triggerSource ? { triggerSource: options.triggerSource } : {}),
         ...(options?.requestId ? { ownerCallRequestId: options.requestId } : {}),
+        ...(options?.sales ? { salesCallId: options.sales.salesCallId } : {}),
       },
     });
   } catch {

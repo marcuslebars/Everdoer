@@ -112,6 +112,12 @@ the question the caller was asked to get, verbatim-ish; empty if none"*) — the
 with it when present. `RETELL_OUTBOUND_ENABLED=1`, `RETELL_FROM_NUMBER`, `RETELL_OUTBOUND_AGENT_ID`
 on the **web and worker** services (the worker places scheduled calls).
 
+## Sales calls
+
+A call to *sell* (answer questions, quote, book) is a different tool: `sales_call`, on the shared
+sales agent with tools, and it needs the customer's consent to automated calls. See
+[sales-calls.md](sales-calls.md). `call_customer` stays the "say exactly this" call.
+
 ## Not yet (v2)
 
 - Tools on briefed calls (book / reschedule / quote on the call).

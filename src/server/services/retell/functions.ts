@@ -19,7 +19,12 @@ import { enforceWebhookBackstop } from "@/server/services/rate-limit";
 
 export interface RetellCallContext {
   callId: string | null;
+  /**
+   * The CUSTOMER's number: the caller on an inbound call, the person we dialled on an outbound
+   * call (a sales call). Every tool reads the customer from here.
+   */
   fromNumber: string | null;
+  /** The BUSINESS line: the number dialled inbound, the number we call from outbound. */
   toNumber: string | null;
   agentId: string | null;
   direction: string | null;
@@ -45,15 +50,19 @@ export function parseRetellFunctionBody<TArgs = Record<string, unknown>>(
   const hasEnvelope = Boolean(obj.args && typeof obj.args === "object");
   const args = (hasEnvelope ? obj.args : obj) as TArgs;
   const call = (obj.call && typeof obj.call === "object" ? obj.call : {}) as Record<string, unknown>;
+  const direction = str(call.direction);
+  // Outbound (we placed it): Retell's from_number is our business line and to_number the customer.
+  // Swap them so fromNumber is always the customer and toNumber always the business.
+  const outbound = direction === "outbound";
   return {
     name: str(obj.name),
     args,
     call: {
       callId: str(call.call_id),
-      fromNumber: str(call.from_number),
-      toNumber: str(call.to_number),
+      fromNumber: str(outbound ? call.to_number : call.from_number),
+      toNumber: str(outbound ? call.from_number : call.to_number),
       agentId: str(call.agent_id),
-      direction: str(call.direction),
+      direction,
     },
     raw: body,
   };

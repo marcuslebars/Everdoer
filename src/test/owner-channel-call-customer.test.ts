@@ -72,6 +72,11 @@ function seed() {
       owner_approvals: [],
       owner_call_requests: [],
       owner_command_log: [],
+      sales_calls: [],
+      call_consents: [],
+      do_not_call: [],
+      voice_numbers: [{ id: "vn-1", organization_id: "org-1", company_id: "co-1", provider: "retell", active: true, phone_e164: "+17055550001" }],
+      retell_calls: [],
       platform_sms_opt_outs: [],
       sms_conversations: [],
       ui_inbox_v: [],
@@ -445,5 +450,54 @@ describe("the result (Retell call_analyzed → owner text)", () => {
     expect(await recordOwnerCallOutcome(db.client, { requestId: row.id as string, organizationId: "org-9", callId: "call_abc", callSuccessful: true, inVoicemail: false, callSummary: "x", userSentiment: null, durationMs: 1000, customAnalysisData: null })).toEqual({ notified: false });
     expect(db.tables.owner_call_requests[0].status).toBe("placed");
     expect(ownerReplies()).toHaveLength(0);
+  });
+});
+
+// Sales calls by text (docs/sales-calls.md): "call Dana and see if she wants to book".
+describe("sales_call — consent, code, dial on the sales agent", () => {
+  beforeEach(() => {
+    process.env.RETELL_SALES_AGENT_ID = "agent_sales";
+  });
+  afterEach(() => {
+    delete process.env.RETELL_SALES_AGENT_ID;
+  });
+
+  it("isn't offered without the sales agent", async () => {
+    delete process.env.RETELL_SALES_AGENT_ID;
+    scriptModel([], "ok");
+    await text("what's on today");
+    expect(listedTools()).not.toContain("sales_call");
+    expect(listedTools()).toContain("call_customer");
+  });
+
+  it("refuses without consent and asks for nothing", async () => {
+    scriptModel([{ name: "sales_call", input: { contact_id: DANA, focus: "spring cleanup" } }], "Dana hasn't agreed to automated calls.");
+    await text("call Dana and see if she wants the spring cleanup");
+    expect(listedTools()).toEqual(expect.arrayContaining(["sales_call", "cancel_sales_call", "lead_call_settings"]));
+    expect(toolResult(1)).toContain("hasn't agreed to automated calls");
+    expect(db.tables.owner_approvals).toHaveLength(0);
+    expect(db.tables.sales_calls).toHaveLength(0);
+  });
+
+  it("with the owner's word: code first, then consent recorded and the call placed on the sales agent", async () => {
+    scriptModel([{ name: "sales_call", input: { contact_id: DANA, focus: "spring cleanup", customer_asked: true, when: "now" } }], "unused");
+    await text("Dana asked me to call her back about the spring cleanup - have the AI call her");
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+    expect(ownerReplies().at(-1)).toContain('Have the AI call Dana Jones ((705) 555-0123) now about "spring cleanup"');
+
+    await text(lastCode());
+    expect(db.tables.call_consents[0]).toMatchObject({ source: "owner_attested", phone_last10: "7055550123" });
+    expect(callContactWithMarina).toHaveBeenCalledTimes(1);
+    const opts = callContactWithMarina.mock.calls[0][2] as { sales: { agentId: string; fromNumber: string; prompt: string } };
+    expect(opts.sales).toMatchObject({ agentId: "agent_sales", fromNumber: "+17055550001" });
+    expect(opts.sales.prompt).toContain("asked you to call Dana Jones about «spring cleanup»");
+    expect(db.tables.sales_calls[0]).toMatchObject({ reason: "owner_request", status: "placed", requested_by_phone: OWNER });
+    expect(ownerReplies().at(-1)).toContain("Calling Dana Jones now");
+  });
+
+  it("lead_call_settings turns new-lead calls on and clamps the numbers", async () => {
+    scriptModel([{ name: "lead_call_settings", input: { on: true, delay_minutes: 0, attempts: 7 } }], "Lead calls are on.");
+    await text("turn on lead calls, call them right away and try a few times");
+    expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: true, delayMinutes: 1, maxAttempts: 3 });
   });
 });

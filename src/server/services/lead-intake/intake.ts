@@ -26,6 +26,7 @@ import { normalizeEmail, normalizePhoneLast10 } from "./matching";
 import { leadNotifyAudience, sendLeadNotification, type LeadNotifyAudience, type ReturningInfo } from "./notify";
 import { companySlugForSourceSite, LEAD_INTAKE_ORG_SLUG } from "./routing";
 import { maybeAutoQuoteLead } from "@/server/services/quotes/auto-quote";
+import { maybeScheduleSpeedToLead } from "@/server/services/sales-calls/speed-to-lead";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 type AsRecord = Record<string, unknown>;
@@ -599,6 +600,9 @@ export async function handleLeadIntake(
       // Handed back to the spoke so it can show a pay button. Only set when a
       // quote actually exists and is payable.
       if (auto.created && auto.quoteUrl) quoteUrl = auto.quoteUrl;
+      // Speed-to-lead (docs/sales-calls.md): a lead who ticked the automated call-back box gets a
+      // call a few minutes later when the business turned lead calls on. Never throws.
+      await maybeScheduleSpeedToLead(admin, { organizationId: orgId, companyId, contactId: enriched.contactId, envelope, leadId });
     } catch (err) {
       console.error("[intake] enrichment failed (lead kept in raw_leads):", err);
       // Enrichment failed after the durable write — flag for attention so the lead

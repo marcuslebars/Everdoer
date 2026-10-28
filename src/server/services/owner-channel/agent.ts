@@ -3,6 +3,7 @@
  * company. The owner's own text is the instruction; everything tools return (customer names,
  * their messages, notes) is data and is fenced as such.
  */
+import { salesAgentId } from "@/server/services/voice/sales-agent";
 import { activeRolesFor } from "@/server/services/staff/registry";
 
 import { listNotes, notesBlock, recentTurns, turnActions, type MemoryTurn, type TurnAction } from "@/server/agent/memory";
@@ -32,6 +33,12 @@ const CALL_RULES = [
   "call_customer proposes a phone call by Marina. Put the owner's message in purpose in their words (tidied, same meaning); put a single question in ask_for only if they asked one. Never add prices, dates or promises they didn't give. If they said \"now\" or \"right away\", when=\"now\"; otherwise leave when blank unless they gave a time. The owner confirms with a code; never say a call was placed unless a tool says so.",
   "If a name matches more than one customer, ask which one before proposing a call.",
   "\"cancel the call to Dave\" → cancel_customer_call.",
+];
+/** Sales-call rules (docs/sales-calls.md), only when those tools are listed. */
+const SALES_CALL_RULES = [
+  "sales_call: the AI calls a customer to sell (answer questions, quote, book). call_customer: the AI passes on the owner's exact message. Pick by what the owner wants; ask if unclear.",
+  "A sales call needs the customer's agreement to automated calls. Set customer_asked only when the owner says the customer asked to be called; never assume it. If the tool says they haven't agreed, tell the owner in one line and offer to text them instead.",
+  "\"turn on lead calls\" / \"call new leads after 10 minutes\" → lead_call_settings. \"cancel the sales call to Dave\" → cancel_sales_call.",
 ];
 const CALLS_NOT_IN_PLAN_RULE = "You can't place phone calls for this business (that's part of the Front Desk plan). If asked to call someone, say so in one line and offer to text them instead.";
 const CALLS_NOT_SET_UP_RULE = "You can't place phone calls right now (calling isn't set up on this account - support can switch it on). If asked to call someone, say so in one line and offer to text them instead.";
@@ -129,9 +136,10 @@ export async function runOwnerCommandAgent(input: OwnerAgentInput): Promise<Owne
   const roleTools = staffRoles.flatMap((r) => r.ownerTools);
   const calls = await ownerCallsAvailability(input.admin, input.scope.organizationId);
   const callsEnabled = calls === "enabled";
-  const callNotes = callsEnabled ? CALL_RULES : [calls === "not_set_up" ? CALLS_NOT_SET_UP_RULE : CALLS_NOT_IN_PLAN_RULE];
+  const salesCallsEnabled = callsEnabled && Boolean(salesAgentId());
+  const callNotes = callsEnabled ? [...CALL_RULES, ...(salesCallsEnabled ? SALES_CALL_RULES : [])] : [calls === "not_set_up" ? CALLS_NOT_SET_UP_RULE : CALLS_NOT_IN_PLAN_RULE];
   const roleNotes = [...callNotes, ...staffRoles.flatMap((r) => r.ownerPromptNotes)];
-  const state: ToolRunState = { admin: input.admin, scope: input.scope, ownerPhone: input.ownerPhone, nowMs, confirmation: null, actions: [], roleOwnerTools: roleTools, callsEnabled };
+  const state: ToolRunState = { admin: input.admin, scope: input.scope, ownerPhone: input.ownerPhone, nowMs, confirmation: null, actions: [], roleOwnerTools: roleTools, callsEnabled, salesCallsEnabled };
   if (!isAIConfigured()) return { reply: FALLBACK_HELP, confirmationId: null, actions: [], rounds: 0, memoryActions: [] };
 
   // Memory: the recent exchanges with this owner, and the notes they asked us to keep.

@@ -33,6 +33,7 @@ import {
 import { answerCallMatches, isVerifiedAnswerTenant, readAnswerMetadata, type VerifiedAnswerTenant } from "@/server/services/voice/ai-answer";
 import { handleAnsweredCall } from "@/server/services/voice/post-call";
 import { recordOwnerCallOutcome } from "@/server/services/owner-channel/calls";
+import { recordSalesCallOutcome } from "@/server/services/sales-calls/queue";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The custom_analysis_data field-name contract.
@@ -805,6 +806,8 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
   const companyId = typeof meta.companyId === "string" ? meta.companyId : null;
   // A call the owner asked for by text (docs/owner-call-requests.md): the row id we set when dialing.
   const ownerCallRequestId = typeof meta.ownerCallRequestId === "string" && UUID_RE.test(meta.ownerCallRequestId) ? meta.ownerCallRequestId : null;
+  // A sales call (docs/sales-calls.md): the sales_calls row id we set when dialing.
+  const salesCallId = typeof meta.salesCallId === "string" && UUID_RE.test(meta.salesCallId) ? meta.salesCallId : null;
 
   const callId = fields.callId ?? `retell_nocid_${randomBytes(8).toString("hex")}`;
 
@@ -838,6 +841,7 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
           inVoicemail: fields.inVoicemail,
           toNumber: fields.toNumber,
           ...(ownerCallRequestId ? { ownerCallRequestId } : {}),
+          ...(salesCallId ? { salesCallId } : {}),
         },
       });
     } catch (err) {
@@ -858,6 +862,22 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
       disconnectionReason: fields.disconnectionReason ?? null,
       callSummary: fields.callSummary,
       userSentiment: fields.userSentiment,
+      durationMs: fields.durationMs,
+      customAnalysisData: fields.customAnalysisData,
+    });
+  }
+
+  // A sales call: close the queue row (do-not-call, retry, owner text). Pinned by the organization
+  // we sent; recordSalesCallOutcome reads the row by id AND organization.
+  if (salesCallId && organizationId) {
+    await recordSalesCallOutcome(admin, {
+      salesCallId,
+      organizationId,
+      callId: fields.callId,
+      callSuccessful: fields.callSuccessful,
+      inVoicemail: fields.inVoicemail,
+      disconnectionReason: fields.disconnectionReason ?? null,
+      callSummary: fields.callSummary,
       durationMs: fields.durationMs,
       customAnalysisData: fields.customAnalysisData,
     });
