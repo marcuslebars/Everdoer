@@ -466,6 +466,7 @@ async function route(admin: AdminClient, sms: InboundOwnerSms, owned: OwnerCompa
       ownerPhone: sms.from,
       body,
       nowMs,
+      logId,
     });
     return {
       intent: agent.confirmationId ? "command_confirm" : "command",
