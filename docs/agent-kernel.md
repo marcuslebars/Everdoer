@@ -98,11 +98,57 @@ where created_at > now() - interval '30 days' group by 1 order by 2 desc;
 
 Migration `20261028100000_agent_memory.sql`, rollback `supabase/rollback/20261028100000_agent_memory.down.sql`, SQL test `scripts/sql-tests/zz_agent_memory.test.sql`.
 
+## Skills — `agent/skills/`
+
+A skill is one business capability written once and offered on several channels. The contract
+(`skills/types.ts`): a `name`, a `description` and JSON-schema `parameters` for the model, the
+`channels` it runs on (`voice`, `customer_sms`), optional voice settings (what to say while it
+runs, timeout), and `run(ctx, input)`.
+
+- **Context, not input, decides who.** `SkillContext` carries the tenant (`scope`) and the
+  customer (`caller`) from the channel: on a call, the Retell call's tenant and the caller ID
+  matched to a contact of that company; by text, the conversation's contact. The model's
+  arguments never pick an organization, a company or a customer.
+- **Results always say something.** A result has `ok` and, on the phone, a `say` the agent can
+  read back. `runSkill` never throws: an unknown skill, a skill not on this channel or a crash
+  returns `SAY_SKILL_FAILED`.
+- **Registry** (`skills/registry.ts`): `SKILLS`, `skillsFor(channel)`, `findSkill`, `runSkill`.
+
+| Skill | Channels | What it does |
+| --- | --- | --- |
+| `find_services` | voice, text | Matches what the customer described to the company's price list and returns the listed price wording (before HST), or what's offered when nothing matches. |
+| `my_invoices` | voice | How many open invoices the caller has. Never reads amounts aloud: caller ID can be spoofed. |
+| `send_invoice_link` | voice | Texts the pay link to the phone **on file** for the matched contact (never a number the caller gives); respects opt-out and consent. |
+| `message_owner` | voice | Texts + emails the owner now with who's calling (caller ID), the message and any callback number. At most 2 per call. |
+| `alert_owner` | voice | The same, marked urgent, once per call; always tells the caller to call 9-1-1 if anyone is in danger. |
+| `business_notes` | voice | The owner's saved business notes (the texting agents get them in their prompts already). |
+
+By text, invoices stay with the Bookkeeper role (`staff/bookkeeper/agent-tools.ts`: its own
+`my_invoices`, promise-to-pay and payment plans), which only runs when the owner turns it on.
+
+**On the phone:** every voice skill is a Retell custom tool on one route,
+`POST /api/retell/functions/skill` (`retell/call-skills.ts` → `runVoiceSkill`). Retell's
+envelope names the skill. The tenant comes from signed AI-answer metadata for this call, else
+the dialled number → agent id; the legacy env guess is refused. Receptionists get the skill
+tools plus, when the owner's phone is a valid E.164 number, a **warm `transfer_call`**: Retell
+rings the owner, briefs them privately on who's calling and why, then connects the caller. If
+the owner doesn't pick up, the agent takes a message with `message_owner`.
+`receptionist-tools.ts` builds them; `job:retell-repoint` flags any receptionist that is
+missing a skill tool, so `npm run job:retell-repoint -- --apply --all` brings existing agents up
+to date.
+
+**By text:** `sms-agent/skill-tools.ts` adapts every `customer_sms` skill into an `AgentTool`.
+A tool the texting agent (or an AI staff role) already has under the same name wins. Links a
+skill returns go into the reply; dollar amounts it returned are vouched for the reply guard.
+
+The shared Catch / Close message agent (`voice/message-agent.ts`) is unchanged: it takes
+messages only.
+
 ## Roadmap
 
 1. **Kernel + run log** (this). The customer and owner text agents share one runtime, and every run is logged. No behaviour change apart from the owner agent's new deadline.
 2. **Owner memory** (done: see "Memory"). The owner agent remembers the last few exchanges ("text Dave" → "actually make it 4pm"), and the owner can have durable per-business and per-customer notes saved that both texting agents use.
-3. **Skills across channels, voice first.** The staff `StaffRoleModule` contract grows into skills that declare their channels (customer text, owner text, voice, email, app). Booking, quoting, invoices and payments become skills, so the phone agent can:
+3. **Skills across channels, voice first** (done: see "Skills"). The staff `StaffRoleModule` contract grows into skills that declare their channels (customer text, owner text, voice, email, app). Booking, quoting, invoices and payments become skills, so the phone agent can:
    - take calls and give quotes
    - answer questions and take requests
    - reach the owner in real time

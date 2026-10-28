@@ -25,6 +25,7 @@ import {
 } from "@/server/services/rebrand/twilio-repoint";
 import { planTwilioRetag, RetagRefusedError, runTwilioRetag } from "@/server/services/rebrand/twilio-retag";
 import type { RetellReader } from "@/server/services/retell/health";
+import { voiceSkillToolNames } from "@/server/services/retell/receptionist-tools";
 import type { TwilioAccountNumber, TwilioAccountNumbersClient } from "@/server/services/twilio/provision";
 
 let usage: ReturnType<typeof captureLegacyUsage>;
@@ -217,6 +218,8 @@ function fakeReader(agents: Record<string, Obj>, llms: Record<string, Obj>, numb
 const OLD_TOOLS = (header: string, host = "app.empirevu.com") => ({
   general_tools: [
     { type: "custom", name: "quote_services", url: `https://${host}/api/retell/functions/price-quote`, headers: { [header]: "s" } },
+    // The phone skills (no URL here, so only quote_services' host is judged).
+    ...voiceSkillToolNames().map((name) => ({ type: "custom", name })),
     { type: "end_call", name: "end_call" },
   ],
 });
@@ -260,6 +263,24 @@ describe("job:retell-repoint", () => {
     const on = await inspectAgent(reader, { agentId: "a", phoneNumber: "+1" }, { host: "app.everdoer.com", headerName: "x-everdoer-retell-secret" });
     expect(on.stale).toContain("tool quote_services header x-empirevu-retell-secret");
     expect(on.agentName).toBe("Front desk");
+  });
+
+  it("inspectAgent flags a receptionist built before the phone skills, not the message agent", async () => {
+    const reader = fakeReader(
+      {
+        rec: { agent_name: "Front desk", response_engine: { llm_id: "l-rec" } },
+        msg: { agent_name: "Messages", response_engine: { llm_id: "l-msg" } },
+      },
+      {
+        "l-rec": { general_tools: [{ type: "custom", name: "quote_services" }, { type: "custom", name: "alert_owner" }] },
+        "l-msg": { general_tools: [{ type: "custom", name: "alert_owner" }, { type: "end_call", name: "end_call" }] },
+      },
+      {},
+    );
+    const expected = { host: "app.everdoer.com", headerName: "x-everdoer-retell-secret" };
+    const rec = await inspectAgent(reader, { agentId: "rec" }, expected);
+    expect(rec.stale).toEqual([`missing tools ${voiceSkillToolNames().filter((n) => n !== "alert_owner").join(", ")}`]);
+    expect((await inspectAgent(reader, { agentId: "msg" }, expected)).stale).toEqual([]);
   });
 
   function deps(over: Partial<RetellRepointDeps> = {}, env: Record<string, string | undefined> = ENV) {

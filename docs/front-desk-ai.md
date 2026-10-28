@@ -582,7 +582,8 @@ with the `x-empirevu-retell-secret` header (`x-everdoer-retell-secret` once `EVE
 | `check_availability`, `book_job` / `book_wrap_date` | `/availability`, `/book` |
 | `send_deposit_link` | `/deposit-link` |
 | `capture_lead` | `/capture-lead` |
-| `alert_owner` | `/urgent-alert` (works on catcher-routed calls) |
+| `find_services`, `my_invoices`, `send_invoice_link`, `message_owner`, `alert_owner`, `business_notes` | `/skill` — the shared skills (docs/agent-kernel.md → "Skills"); works on catcher-routed and direct calls |
+| `transfer_call` (only when the owner's phone is valid E.164) | built in — warm transfer to the owner, who is briefed privately first; if they don't answer, the agent uses `message_owner` |
 | `end_call` | built in |
 
 Plus `post_call_analysis_data` on the agent and an updated prompt: AI + recording disclosure
@@ -624,7 +625,9 @@ DFY number retry as before.)
 4. **Retell:** custom telephony needs no SIP trunk for this method. Make sure the workspace
    has concurrency for the expected parallel calls.
 5. **Existing Front Desk receptionists:** run the concierge action **Re-sync AI
-   receptionist** (or let switch-on do it) so they get the tools + new prompt.
+   receptionist** (or let switch-on do it) so they get the tools + new prompt. After a
+   deploy that adds tools, `npm run job:retell-repoint` lists the receptionists missing one
+   and `npm run job:retell-repoint -- --apply --all` re-syncs them all.
 6. **Test:** call a Catch test company's business line, let it forward, talk to the AI, hang
    up — expect the owner text, one follow-up text to your phone, and the conversation seeded.
    Then set the company to voicemail in Settings and call again — the old greeting returns.

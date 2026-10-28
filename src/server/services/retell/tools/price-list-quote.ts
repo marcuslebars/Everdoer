@@ -28,12 +28,11 @@ import { createQuote, sendQuote, type QuoteRow } from "@/server/services/quotes/
 import type { TenantServiceContext } from "@/server/services/shared";
 import { deliverMessage, type ConsentContact } from "@/server/services/workflow-engine/messaging";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
-import { answerCallMatches, isVerifiedAnswerTenant, readAnswerMetadata } from "@/server/services/voice/ai-answer";
-import { getRetellConfig } from "../config";
 import type { RetellFunctionRequest } from "../functions";
 import { captureRetellLead } from "../lead-adapter";
 import { toE164 } from "../payload";
-import { createRetellAdminClient, pinnedRetellTenant, resolveRetellTenant, type RetellTenant } from "../tenant";
+import { resolveCallTenant } from "../call-skills";
+import { createRetellAdminClient, type RetellTenant } from "../tenant";
 import { spokenDollars } from "./phone-quote";
 
 export interface PriceListServiceArg {
@@ -360,16 +359,7 @@ function readCall(raw: unknown): unknown {
 
 export const defaultPriceListQuoteDeps: PriceListQuoteDeps = {
   async resolveTenant(req) {
-    const admin = createRetellAdminClient();
-    const call = readCall(req.raw);
-    const metadata = call && typeof call === "object" ? (call as Record<string, unknown>).metadata : undefined;
-    const answered = readAnswerMetadata(metadata);
-    if (answered) {
-      // Signed, fresh, and for THIS Retell call (the call_id we registered) — else not priced.
-      if (!isVerifiedAnswerTenant(answered) || !(await answerCallMatches(admin, answered, req.call.callId))) return null;
-      return pinnedRetellTenant(admin, answered.organizationId, answered.companyId);
-    }
-    return resolveRetellTenant(admin, { toNumber: req.call.toNumber, agentId: req.call.agentId, legacySourceSite: getRetellConfig().sourceSite });
+    return resolveCallTenant(createRetellAdminClient(), req);
   },
 
   async loadCatalog(companyId) {
