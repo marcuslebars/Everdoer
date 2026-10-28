@@ -113,6 +113,9 @@ export async function recordCallConsent(
 
 // ── Do not call ───────────────────────────────────────────────────────────────
 
+/** 3 years + 14 days (CRTC), as the migration's default. */
+const DNC_KEEP_MS = (3 * 365 + 1 + 14) * 86_400_000;
+
 export async function isDoNotCall(admin: AdminClient, scope: Scope, phone: string | null, nowMs: number = Date.now()): Promise<boolean> {
   const last10 = normalizePhoneLast10(phone);
   if (!last10) return false;
@@ -129,7 +132,7 @@ export async function isDoNotCall(admin: AdminClient, scope: Scope, phone: strin
 }
 
 /**
- * Put a number on the company's do-not-call list (idempotent), revoke its call consents and
+ * Put a number on the company's do-not-call list (a repeat request renews it), revoke its call consents and
  * cancel any sales call still waiting for it. Returns false when the number isn't usable.
  */
 export async function addDoNotCall(
@@ -148,8 +151,10 @@ export async function addDoNotCall(
       source: input.source,
       note: input.note ? input.note.slice(0, 300) : null,
       created_at: now,
+      // A new request (including one after an old entry expired) restarts the 3 years + 14 days.
+      expires_at: new Date(Date.parse(now) + DNC_KEEP_MS).toISOString(),
     },
-    { onConflict: "company_id,phone_last10", ignoreDuplicates: true },
+    { onConflict: "company_id,phone_last10" },
   );
   if (error) throw error;
   await admin

@@ -29,7 +29,7 @@ re-checked when the call is dialed, not only when it was queued.
 | **Express consent to automated calls, for this number** | `call_consents`, one evidence row per grant, writable only by the service role. Sources: `form_optin` (the checkbox, with the exact wording shown), `owner_attested` (the owner confirmed with a code that the customer asked to be called) and `customer_request`. Consent is for a number: if the contact's phone changes, it no longer applies. Implied consent (just enquiring) is never enough. |
 | **Calling hours** | Weekdays 9:00–21:30 and weekends 10:00–18:00, in the company's time zone. A call isn't started within 15 minutes of the end. Outside the window it waits for the next opening. |
 | **Identify and disclose** | The opening line is: *"Hi, is this Sam? This is the automated assistant calling for Northshore Home, and this call may be recorded."* It then gives the reason for the call. |
-| **Do-not-call** | `do_not_call`, per company and number, kept for 3 years and 14 days. A "don't call me" on a call (the post-call field `do_not_call_requested`, or outcome `do_not_call`) adds the number, revokes its consent and cancels any waiting call. The agent apologises and ends the call; it never argues. |
+| **Do-not-call** | `do_not_call`, per company and number, kept for 3 years and 14 days (a repeat request renews it). A "don't call me" on a call (the post-call field `do_not_call_requested`, or outcome `do_not_call`) adds the **number that was dialled**, revokes its consent and cancels any waiting call. This happens whatever Retell's success verdict is, even if the row was already closed. The agent apologises and ends the call; it never argues. Owner `call_customer` calls also refuse a listed number. |
 | **Caps** | `dailyCap` sales calls per company per local day (default 40). Over the cap, the call moves to tomorrow's opening. |
 | **No pressure** | The prompt forbids discounts, invented urgency and promises a tool didn't confirm. Prices are only quoted from the price-list tool. |
 | **Wrong number** | Consent for that number is revoked, but it isn't added to the do-not-call list. |
@@ -73,15 +73,18 @@ Retell call_analyzed ─► captureOutboundOutcome ─► recordSalesCallOutcome
 
 States: `scheduled → dialing → placed → completed | failed`, plus `cancelled` and `skipped`
 (with `skip_reason`). A placement that throws is `failed` and is never redialed, because an
-ambiguous timeout must not become two calls. A claim older than 15 minutes with no call id is
-failed by the sweep. There is one open call per customer (partial unique index).
+ambiguous timeout must not become two calls. The sweep fails a claim older than 15 minutes that
+has no call id. A `placed` row with no result after 2 hours is closed as failed, with no retry and
+no owner text. There is one open call per customer (partial unique index). The calling window and
+the cap's day are read from a live clock at dial time, not from when the sweep started. The owner
+gets one text per lead, after the last attempt.
 
 **Tools on the call.** The shared sales agent has `find_services`, `quote_services`,
 `check_availability`, `book_job`, `send_deposit_link`, `message_owner`, `business_notes` and
-`end_call`. It doesn't have `capture_lead` or the invoice skills. Tool requests on an outbound
-call are normalised in `retell/functions.ts` (`fromNumber` is always the customer and `toNumber`
-the business line), so every tool finds the company by its own number and the customer by the
-number we dialled. The quote tool files its lead with the normalised numbers, never Retell's
+`end_call`. It doesn't have `capture_lead` or the invoice skills. Tool requests on a sales call
+(outbound, with `metadata.salesCallId`) are normalised in `retell/functions.ts`: `fromNumber` is
+the customer and `toNumber` the business line. That way every tool finds the company by its own
+number and the customer by the number we dialled. Other outbound agents keep Retell's numbers. The quote tool files its lead with the normalised numbers, never Retell's
 raw outbound `to_number`.
 
 ## Setup

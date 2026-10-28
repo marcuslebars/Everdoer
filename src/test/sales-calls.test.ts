@@ -180,15 +180,16 @@ describe("consent + do-not-call", () => {
     consent();
     queued();
     await addDoNotCall(db.client, { scope, phone: "+17055550123", source: "call", contactId: "ct-1", nowMs: WED_10AM });
-    expect(await isDoNotCall(db.client, scope, "705-555-0123", WED_10AM)).toBe(false); // the fake DB doesn't apply the column default
-    db.tables.do_not_call[0].expires_at = "2029-11-11T00:00:00Z";
     expect(await isDoNotCall(db.client, scope, "705-555-0123", WED_10AM)).toBe(true);
     expect(await isDoNotCall(db.client, scope, "705-555-0123", Date.parse("2030-01-01T00:00:00Z"))).toBe(false);
     expect(db.tables.call_consents[0].revoked_at).toBeTruthy();
     expect(db.tables.sales_calls[0]).toMatchObject({ status: "cancelled", skip_reason: "do_not_call" });
-    // Idempotent.
-    await addDoNotCall(db.client, { scope, phone: "+17055550123", source: "owner" });
+    // A repeat request renews the entry (one row), even after it expired.
+    db.tables.do_not_call[0].expires_at = "2026-01-01T00:00:00Z";
+    await addDoNotCall(db.client, { scope, phone: "+17055550123", source: "owner", nowMs: WED_10AM });
     expect(db.tables.do_not_call).toHaveLength(1);
+    expect(Date.parse(String(db.tables.do_not_call[0].expires_at))).toBeGreaterThan(Date.parse("2029-11-01T00:00:00Z"));
+    expect(await isDoNotCall(db.client, scope, "705-555-0123", WED_10AM)).toBe(true);
   });
 });
 
@@ -365,6 +366,40 @@ describe("outcomes", () => {
     expect((sendOwnerSms.mock.calls[0][1] as { body: string }).body).toBe("New-lead call - Sam Lee: asked not to be called (added to your do-not-call list). (2 min)");
   });
 
+  it("\"don't call me\" on a call Retell marks unsuccessful is still honoured, with no retry", async () => {
+    const row = placed();
+    const r = await recordSalesCallOutcome(db.client, { salesCallId: row.id, organizationId: ORG, callId: "call_abc", callSuccessful: false, inVoicemail: false, disconnectionReason: "user_hangup", callSummary: "Asked us to stop calling.", durationMs: 4_000, customAnalysisData: { do_not_call_requested: true }, nowMs: WED_10AM });
+    expect(r.retryId).toBeNull();
+    expect(db.tables.do_not_call).toHaveLength(1);
+    expect(db.tables.call_consents[0].revoked_at).toBeTruthy();
+    expect(db.tables.sales_calls.filter((x) => x.status === "scheduled")).toHaveLength(0);
+    expect((sendOwnerSms.mock.calls[0][1] as { body: string }).body).toContain("asked not to be called");
+  });
+
+  it("a late result on a row already closed still honours \"don't call me\", on the number dialled", async () => {
+    const row = placed({ status: "failed", last_error: "no call result from Retell" });
+    db.tables.contacts[0].phone = "+14165550000"; // the contact's number changed meanwhile
+    await recordSalesCallOutcome(db.client, { ...answered, salesCallId: row.id, organizationId: ORG, callSummary: null, customAnalysisData: { sales_outcome: "do_not_call" }, dialedNumber: "+17055550123", nowMs: WED_10AM });
+    expect(db.tables.do_not_call[0]).toMatchObject({ phone_last10: "7055550123" });
+    expect(sendOwnerSms).not.toHaveBeenCalled();
+  });
+
+  it("an owner-requested call that will be retried texts the owner once, at the end", async () => {
+    const row = placed({ reason: "owner_request", requested_by_phone: "+17055559999" });
+    const r = await recordSalesCallOutcome(db.client, { salesCallId: row.id, organizationId: ORG, callId: "call_abc", callSuccessful: false, inVoicemail: false, disconnectionReason: "dial_no_answer", callSummary: null, durationMs: 0, customAnalysisData: {}, nowMs: WED_10AM });
+    expect(r).toMatchObject({ notified: false });
+    expect(rowOf(r.retryId as string)).toMatchObject({ reason: "owner_request", requested_by_phone: "+17055559999", attempt: 2 });
+    expect(sendOwnerSms).not.toHaveBeenCalled();
+  });
+
+  it("the sweep closes a placed call that never got a result, freeing the customer", async () => {
+    placed({ placed_at: "2026-10-28T10:00:00Z" });
+    placed({ contact_id: "ct-2", placed_at: "2026-10-28T13:50:00Z" });
+    const r = await processDueSalesCalls(db.client, WED_10AM);
+    expect(r.failed).toBe(1);
+    expect(db.tables.sales_calls.map((x) => x.status)).toEqual(["failed", "placed"]);
+  });
+
   it("wrong number: consent dropped (the number isn't theirs)", async () => {
     const row = placed();
     await recordSalesCallOutcome(db.client, { ...answered, durationMs: 15_000, salesCallId: row.id, organizationId: ORG, callSummary: null, customAnalysisData: { sales_outcome: "wrong_number" }, nowMs: WED_10AM });
@@ -390,7 +425,6 @@ describe("outcomes", () => {
       summary: "x".repeat(400),
       durationMs: 60_000,
       attempt: 1,
-      retryAtLabel: null,
     });
     expect(text.startsWith("Sales call - Kim: asked to be called back later (tomorrow after 5).")).toBe(true);
     expect(text.length).toBeLessThan(330);
@@ -464,8 +498,11 @@ describe("the sales prompt, agent and outbound tool requests", () => {
   });
 
   it("an outbound tool request reads the customer from the number we dialled", () => {
-    const outbound = parseRetellFunctionBody({ name: "quote_services", args: {}, call: { call_id: "c1", from_number: "+17055550001", to_number: "+17055550123", direction: "outbound", agent_id: "agent_sales" } });
+    const outbound = parseRetellFunctionBody({ name: "quote_services", args: {}, call: { call_id: "c1", from_number: "+17055550001", to_number: "+17055550123", direction: "outbound", agent_id: "agent_sales", metadata: { salesCallId: "sc-1" } } });
     expect(outbound.call).toMatchObject({ fromNumber: "+17055550123", toNumber: "+17055550001", direction: "outbound" });
+    // Other outbound agents (no salesCallId) keep Retell's numbers and resolve by agent id as before.
+    const other = parseRetellFunctionBody({ name: "x", args: {}, call: { call_id: "c3", from_number: "+16475550000", to_number: "+17055550123", direction: "outbound", agent_id: "agent_x" } });
+    expect(other.call).toMatchObject({ fromNumber: "+16475550000", toNumber: "+17055550123" });
     const inbound = parseRetellFunctionBody({ name: "quote_services", args: {}, call: { call_id: "c2", from_number: "+17055550123", to_number: "+17055550001", direction: "inbound" } });
     expect(inbound.call).toMatchObject({ fromNumber: "+17055550123", toNumber: "+17055550001" });
   });

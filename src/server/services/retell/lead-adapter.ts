@@ -880,6 +880,8 @@ async function captureOutboundOutcome(fields: RetellCallFields, rawPayload: unkn
       callSummary: fields.callSummary,
       durationMs: fields.durationMs,
       customAnalysisData: fields.customAnalysisData,
+      // Raw outbound payload: to_number is the person we dialled.
+      dialedNumber: fields.toNumber,
     });
   }
 }

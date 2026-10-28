@@ -495,6 +495,14 @@ describe("sales_call — consent, code, dial on the sales agent", () => {
     expect(ownerReplies().at(-1)).toContain("Calling Dana Jones now");
   });
 
+  it("call_customer won't phone someone on the do-not-call list", async () => {
+    db.tables.do_not_call.push({ organization_id: "org-1", company_id: "co-1", phone_last10: "7055550123", source: "call", expires_at: "2029-11-01T00:00:00Z" });
+    scriptModel([{ name: "call_customer", input: BRIEF_INPUT }], "They asked not to be called.");
+    await text("call Dana and tell her the lift is fixed");
+    expect(toolResult(1)).toContain("asked not to be called");
+    expect(db.tables.owner_call_requests).toHaveLength(0);
+  });
+
   it("lead_call_settings turns new-lead calls on and clamps the numbers", async () => {
     scriptModel([{ name: "lead_call_settings", input: { on: true, delay_minutes: 0, attempts: 7 } }], "Lead calls are on.");
     await text("turn on lead calls, call them right away and try a few times");

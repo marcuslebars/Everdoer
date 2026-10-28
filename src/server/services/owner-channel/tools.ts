@@ -490,6 +490,8 @@ async function callCustomerTool(state: ToolRunState, input: Input) {
   if (!contact.phone) return { ok: false, reason: `${who} has no phone number on file.` };
   const phone = toE164(contact.phone);
   if (!phone) return { ok: false, reason: `${who}'s number on file isn't a callable phone number.` };
+  // They asked not to be called (docs/sales-calls.md → do-not-call): the AI doesn't phone them.
+  if (await isDoNotCall(state.admin, state.scope, phone, state.nowMs)) return { ok: false, reason: `${who} asked not to be called, so the AI won't phone them. Offer to text them, or the owner can call personally.` };
 
   const parsed = briefInputSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Tell me what Marina should say." };

@@ -273,10 +273,10 @@ export async function runPriceListQuote(
   }
 
   const leadPayload = {
-    // On a call WE placed (a sales call), Retell's raw from/to are our line and the customer; the
-    // lead adapter reads from = customer, to = business, so it gets the normalised numbers.
+    // On a sales call Retell's raw from/to are our line and the customer; the lead adapter reads
+    // from = customer, to = business, so it gets the normalised numbers.
     call:
-      call.direction === "outbound"
+      call.direction === "outbound" && isSalesCall(req.raw)
         ? { call_id: call.callId, from_number: call.fromNumber, to_number: call.toNumber, agent_id: call.agentId }
         : (readCall(req.raw) ?? { call_id: call.callId, from_number: call.fromNumber, to_number: call.toNumber, agent_id: call.agentId }),
     args: {
@@ -354,6 +354,12 @@ export async function runPriceListQuote(
     console.error("[retell:price-quote] quote failed:", err instanceof Error ? err.message : err);
     return { ok: false, reason: "error", say: SAY_ERROR };
   }
+}
+
+function isSalesCall(raw: unknown): boolean {
+  const call = readCall(raw);
+  const meta = call && typeof call === "object" ? (call as Record<string, unknown>).metadata : null;
+  return Boolean(meta && typeof meta === "object" && typeof (meta as Record<string, unknown>).salesCallId === "string");
 }
 
 function readCall(raw: unknown): unknown {

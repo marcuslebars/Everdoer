@@ -403,7 +403,7 @@ export async function runScheduler(
   await runDoneForYouPasses(admin, nowMs);
   await guarded("owner approvals", null, () => sweepOwnerApprovals(admin, nowMs)); // expire + morning sends (docs/front-desk-ai.md)
   await guarded("owner calls", null, () => processDueOwnerCalls(admin, nowMs)); // scheduled "call Dave at 9" (docs/owner-call-requests.md)
-  await guarded("sales calls", null, () => processDueSalesCalls(admin, nowMs)); // speed-to-lead + owner-requested sales calls (docs/sales-calls.md)
+  await guarded("sales calls", null, () => processDueSalesCalls(admin)); // speed-to-lead + owner-requested sales calls (docs/sales-calls.md)
   await guarded("unanswered texts", null, () => sweepUnansweredTexts(admin, nowMs)); // re-run lost SMS-agent turns, else tell the owner once
   // Daily operator health email (docs/operator-health.md) — at/after 07:30 BUSINESS_TIMEZONE,
   // once per day (claimed in operator_health_reports before sending), throttled like the

@@ -36,6 +36,8 @@ type Scope = { organizationId: string; companyId: string };
 
 /** A worker that claimed a call and vanished loses it after this long (failed, never redialed). */
 const STALE_CLAIM_MS = 15 * 60_000;
+/** A placed call with no result after this long is closed (the call itself lasts ≤ 10 min). */
+const NO_RESULT_MS = 2 * 3_600_000;
 const SUMMARY_MAX = 220;
 
 export type SkipReason =
@@ -243,7 +245,10 @@ function whoOf(inputs: Pick<CallInputs, "contact"> | null): string {
  * `scheduled` with a new run_at; skipped ones are closed with the reason.
  */
 export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, options: { nowMs?: number; claimedBy?: string } = {}): Promise<PlaceSalesCallResult> {
-  const nowMs = options.nowMs ?? Date.now();
+  // The calling window and the cap's day are read from a live clock at each check (a fixed nowMs
+  // only in tests): a sweep that started minutes ago must not use its start time near 21:15.
+  const clock = (): number => options.nowMs ?? Date.now();
+  const nowMs = clock();
   const claimed = await setStatus(admin, row.id, ["scheduled"], { status: "dialing", claimed_at: new Date(nowMs).toISOString(), claimed_by: options.claimedBy ?? "scheduler" });
   if (!claimed) return { status: "already", message: "That call was already handled." };
 
@@ -254,8 +259,9 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
     return { status: "skipped", reason: "no_phone", message: `Didn't call ${who} - I couldn't find them any more.` };
   }
 
+  let placedCallId: string | null = null;
   try {
-    const decision = await decideDial(admin, claimed, inputs, nowMs);
+    const decision = await decideDial(admin, claimed, inputs, clock());
     if (decision.kind === "defer") {
       await setStatus(admin, row.id, ["dialing"], { status: "scheduled", run_at: new Date(decision.runAtMs).toISOString(), claimed_at: null, claimed_by: null });
       return { status: "deferred", runAtMs: decision.runAtMs, message: `I'll call ${who} when calling hours open.` };
@@ -265,9 +271,9 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
       return { status: "skipped", reason: decision.reason, message: `Didn't call ${who} - ${skipReasonText(decision.reason)}.` };
     }
 
-    const day = localDate(new Date(nowMs), inputs.timeZone);
+    const day = localDate(new Date(clock()), inputs.timeZone);
     if (!(await consumeLimit(admin, `sales_calls:${row.company_id}:${day}`, inputs.settings.dailyCap, 86_400))) {
-      const runAtMs = tomorrowsOpening(nowMs, inputs.timeZone);
+      const runAtMs = tomorrowsOpening(clock(), inputs.timeZone);
       await setStatus(admin, row.id, ["dialing"], { status: "scheduled", run_at: new Date(runAtMs).toISOString(), claimed_at: null, claimed_by: null });
       return { status: "deferred", runAtMs, message: `That's today's limit on sales calls - I'll call ${who} tomorrow.` };
     }
@@ -295,17 +301,34 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
       voicemail: inputs.settings.voicemail,
       attempt: claimed.attempt,
     });
-    const placed = await callContactWithMarina(ctx, row.contact_id, {
-      sales: { salesCallId: row.id, prompt, agentId: salesAgentId() as string, fromNumber: inputs.businessNumber as string },
-    });
-    await setStatus(admin, row.id, ["dialing"], { status: "placed", placed_at: new Date().toISOString(), retell_call_id: placed.agentCallId });
-    return { status: "placed", message: `Calling ${who} now. I'll text you how it went.` };
+    placedCallId = (
+      await callContactWithMarina(ctx, row.contact_id, {
+        sales: { salesCallId: row.id, prompt, agentId: salesAgentId() as string, fromNumber: inputs.businessNumber as string },
+      })
+    ).agentCallId;
   } catch (err) {
     console.error("[sales-calls] placing call failed", row.id, err instanceof Error ? err.message : err);
     await setStatus(admin, row.id, ["dialing"], { status: "failed", last_error: (err instanceof Error ? err.message : String(err)).slice(0, 500) });
     const why = err instanceof UserFacingError ? err.message.replace(/\.$/, "").toLowerCase() : "the call couldn't be placed";
     return { status: "failed", message: `Couldn't call ${who} - ${why}.` };
   }
+
+  // The call is ringing. Record it even if the stale-claim sweep failed the row meanwhile; a failed
+  // write is logged, never turned into a "failed" call (the outcome still lands by salesCallId).
+  try {
+    const { data: recorded, error } = await admin
+      .from("sales_calls")
+      .update({ status: "placed", placed_at: new Date().toISOString(), retell_call_id: placedCallId, last_error: null })
+      .eq("id", row.id)
+      .in("status", ["dialing", "failed"])
+      .is("retell_call_id", null)
+      .select("id");
+    if (error) throw error;
+    if (((recorded ?? []) as unknown[]).length === 0) console.error("[sales-calls] placed call not recorded (row changed)", row.id, placedCallId);
+  } catch (err) {
+    console.error("[sales-calls] placed call not recorded", row.id, placedCallId, err instanceof Error ? err.message : err);
+  }
+  return { status: "placed", message: `Calling ${who} now. I'll text you how it went.` };
 }
 
 // ── The sweep (scheduler.ts, every tick) ──────────────────────────────────────
@@ -315,18 +338,20 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
  * dial the same row) and fail claims a crashed worker left behind. Owner-requested calls tell
  * the owner when they were placed, skipped or failed. Never throws.
  */
-export async function processDueSalesCalls(admin: AdminClient, nowMs: number = Date.now()): Promise<{ placed: number; deferred: number; skipped: number; failed: number }> {
+export async function processDueSalesCalls(admin: AdminClient, fixedNowMs?: number): Promise<{ placed: number; deferred: number; skipped: number; failed: number }> {
   const result = { placed: 0, deferred: 0, skipped: 0, failed: 0 };
+  // Live clock per row (fixedNowMs only in tests): see placeSalesCall.
+  const clock = (): number => fixedNowMs ?? Date.now();
   try {
     const { data: due } = await admin
       .from("sales_calls")
       .select("*")
       .eq("status", "scheduled")
-      .lte("run_at", new Date(nowMs).toISOString())
+      .lte("run_at", new Date(clock()).toISOString())
       .order("run_at", { ascending: true })
       .limit(20);
     for (const row of (due ?? []) as SalesCallRow[]) {
-      const outcome = await placeSalesCall(admin, row, { nowMs, claimedBy: "scheduler" });
+      const outcome = await placeSalesCall(admin, row, { nowMs: fixedNowMs, claimedBy: "scheduler" });
       if (outcome.status === "placed") result.placed += 1;
       else if (outcome.status === "deferred") result.deferred += 1;
       else if (outcome.status === "skipped") result.skipped += 1;
@@ -342,9 +367,20 @@ export async function processDueSalesCalls(admin: AdminClient, nowMs: number = D
       .update({ status: "failed", last_error: "worker lost the call after claiming it" })
       .eq("status", "dialing")
       .is("retell_call_id", null)
-      .lt("claimed_at", new Date(nowMs - STALE_CLAIM_MS).toISOString())
+      .lt("claimed_at", new Date(clock() - STALE_CLAIM_MS).toISOString())
       .select("*");
     result.failed += ((lost ?? []) as unknown[]).length;
+
+    // Placed but Retell never sent a result: close it so the customer isn't blocked for good (no
+    // retry, no owner text — whether they were reached is unknown). A late result still applies a
+    // do-not-call request (recordSalesCallOutcome).
+    const { data: stuck } = await admin
+      .from("sales_calls")
+      .update({ status: "failed", last_error: "no call result from Retell" })
+      .eq("status", "placed")
+      .lt("placed_at", new Date(clock() - NO_RESULT_MS).toISOString())
+      .select("id");
+    result.failed += ((stuck ?? []) as unknown[]).length;
   } catch (err) {
     console.error("[sales-calls] sweep failed:", err instanceof Error ? err.message : err);
   }
@@ -411,13 +447,11 @@ export function salesCallResultText(input: {
   summary: string | null;
   durationMs: number | null;
   attempt: number;
-  retryAtLabel: string | null;
 }): string {
   const head = input.reason === "speed_to_lead" ? `New-lead call - ${input.who}` : `Sales call - ${input.who}`;
   const sentence = (t: string) => (/[.!?]$/.test(t) ? t : `${t}.`);
   if (!input.reached) {
     const missed = input.inVoicemail ? "voicemail" : "no answer";
-    if (input.retryAtLabel) return `${head}: ${missed}. I'll try again ${input.retryAtLabel}.`;
     const tries = input.attempt > 1 ? ` after ${input.attempt} tries` : "";
     return `${head}: ${missed}${tries}. Want me to text them? Say "tell ${input.who.split(" ")[0]} ...".`;
   }
@@ -456,14 +490,17 @@ export interface SalesCallOutcomeInput {
   callSummary: string | null;
   durationMs: number | null;
   customAnalysisData: unknown;
+  /** The number actually dialled (Retell's outbound to_number): do-not-call and consent use it. */
+  dialedNumber?: string | null;
   nowMs?: number;
 }
 
 /**
- * Record a sales call's outcome: close the row, honour a "don't call me" (do-not-call list +
- * consent revoked), drop consent on a wrong number, schedule the next attempt when nobody
- * answered and attempts remain, and text the owner once (owner_notified_at is the claim). A
- * speed-to-lead call that will be retried doesn't text the owner yet. Never throws.
+ * Record a sales call's outcome: honour a "don't call me" (do-not-call list + consent revoked) and
+ * drop consent on a wrong number — always, whatever Retell's verdict and even if the row is
+ * already closed — then close the row, schedule the next attempt when nobody answered and
+ * attempts remain, and text the owner once at the end (owner_notified_at is the claim). Never
+ * throws.
  */
 export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCallOutcomeInput): Promise<{ notified: boolean; retryId: string | null }> {
   const nowMs = input.nowMs ?? Date.now();
@@ -475,10 +512,22 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
     const { reached, inVoicemail } = classifyOutboundCall(input);
     const analysis = readSalesAnalysis(input.customAnalysisData);
     const inputs = await loadInputs(admin, row);
-    const phone = inputs?.contact.phone ?? null;
+    const phone = input.dialedNumber ?? inputs?.contact.phone ?? null;
+    const wrongNumber = analysis.salesOutcome === "wrong_number";
+
+    // "Don't call me" and "wrong number" are honoured whatever Retell's success verdict says, and
+    // even when the row was already closed (redelivery, a stale claim, a lost "placed" write).
+    if (analysis.doNotCall) {
+      await addDoNotCall(admin, { scope, phone, source: "call", contactId: row.contact_id, note: input.callId ? `call ${input.callId}` : null, nowMs });
+    } else if (wrongNumber) {
+      const last10 = normalizePhoneLast10(phone);
+      if (last10) {
+        await admin.from("call_consents").update({ revoked_at: new Date(nowMs).toISOString() }).eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("phone_last10", last10).is("revoked_at", null);
+      }
+    }
 
     const updated = await setStatus(admin, row.id, ["placed", "dialing"], {
-      status: reached || inVoicemail ? "completed" : "failed",
+      status: reached || inVoicemail || analysis.doNotCall ? "completed" : "failed",
       outcome: toJson({
         reached,
         inVoicemail,
@@ -495,18 +544,8 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
     // A redelivered webhook finds the row already closed: nothing more to do.
     if (!updated) return { notified: false, retryId: null };
 
-    if (reached && analysis.doNotCall) {
-      await addDoNotCall(admin, { scope, phone, source: "call", contactId: row.contact_id, note: input.callId ? `call ${input.callId}` : null, nowMs });
-    } else if (reached && analysis.salesOutcome === "wrong_number") {
-      const last10 = normalizePhoneLast10(phone);
-      if (last10) {
-        await admin.from("call_consents").update({ revoked_at: new Date(nowMs).toISOString() }).eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("phone_last10", last10).is("revoked_at", null);
-      }
-    }
-
     let retryId: string | null = null;
-    let retryAtLabel: string | null = null;
-    if (!reached && row.attempt < row.max_attempts && inputs) {
+    if (!reached && !analysis.doNotCall && !wrongNumber && row.attempt < row.max_attempts && inputs) {
       const runAtMs = nextCallableAt(nowMs + inputs.settings.retryMinutes * 60_000, inputs.timeZone);
       const next = await scheduleSalesCall(admin, {
         scope,
@@ -519,27 +558,25 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
         rawLeadId: row.raw_lead_id,
         requestedByPhone: row.requested_by_phone,
       });
-      if (next !== "already_open") {
-        retryId = next.id;
-        retryAtLabel = new Date(runAtMs).toLocaleString("en-CA", { timeZone: inputs.timeZone, weekday: "short", hour: "numeric", minute: "2-digit" });
-      }
+      if (next !== "already_open") retryId = next.id;
     }
 
-    // A speed-to-lead call that will be retried waits for the last attempt before texting.
-    if (retryId && row.reason === "speed_to_lead") return { notified: false, retryId };
+    // A call that will be tried again waits for the last attempt before texting the owner.
+    if (retryId) return { notified: false, retryId };
 
     const { data: claimed } = await admin.from("sales_calls").update({ owner_notified_at: new Date(nowMs).toISOString() }).eq("id", row.id).is("owner_notified_at", null).select("id");
     if (((claimed ?? []) as unknown[]).length === 0) return { notified: false, retryId };
     const text = salesCallResultText({
       who: whoOf(inputs),
       reason: row.reason === "owner_request" ? "owner_request" : "speed_to_lead",
-      reached,
+      // Someone spoke (they asked not to be called / it's not their number) even if Retell
+      // judged the call unsuccessful.
+      reached: reached || analysis.doNotCall || wrongNumber,
       inVoicemail,
       analysis,
       summary: input.callSummary,
       durationMs: input.durationMs,
       attempt: row.attempt,
-      retryAtLabel,
     });
     return { notified: await notifyOwner(admin, row, text), retryId };
   } catch (err) {

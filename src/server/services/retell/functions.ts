@@ -20,11 +20,11 @@ import { enforceWebhookBackstop } from "@/server/services/rate-limit";
 export interface RetellCallContext {
   callId: string | null;
   /**
-   * The CUSTOMER's number: the caller on an inbound call, the person we dialled on an outbound
-   * call (a sales call). Every tool reads the customer from here.
+   * The CUSTOMER's number: the caller on an inbound call, the person we dialled on a sales call.
+   * Every tool reads the customer from here.
    */
   fromNumber: string | null;
-  /** The BUSINESS line: the number dialled inbound, the number we call from outbound. */
+  /** The BUSINESS line: the number dialled inbound, the company's number we call from on a sales call. */
   toNumber: string | null;
   agentId: string | null;
   direction: string | null;
@@ -51,9 +51,12 @@ export function parseRetellFunctionBody<TArgs = Record<string, unknown>>(
   const args = (hasEnvelope ? obj.args : obj) as TArgs;
   const call = (obj.call && typeof obj.call === "object" ? obj.call : {}) as Record<string, unknown>;
   const direction = str(call.direction);
-  // Outbound (we placed it): Retell's from_number is our business line and to_number the customer.
-  // Swap them so fromNumber is always the customer and toNumber always the business.
-  const outbound = direction === "outbound";
+  // A sales call we placed (docs/sales-calls.md): Retell's from_number is the company's own line and
+  // to_number the customer. Swap them so fromNumber is the customer and toNumber the business, as
+  // the tools expect. Only for sales calls (metadata.salesCallId, set by us at create-call): other
+  // outbound agents may dial from a shared number, and keep resolving their company by agent id.
+  const metadata = call.metadata && typeof call.metadata === "object" ? (call.metadata as Record<string, unknown>) : {};
+  const outbound = direction === "outbound" && typeof metadata.salesCallId === "string";
   return {
     name: str(obj.name),
     args,

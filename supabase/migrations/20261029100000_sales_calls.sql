@@ -110,8 +110,7 @@ begin
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t || '_select', t);
     execute format('create policy %I on public.%I for select using (public.is_organization_member(organization_id))', t || '_select', t);
-    execute format('revoke insert, update, delete on public.%I from anon, authenticated', t);
-    execute format('revoke select on public.%I from anon', t);
+    execute format('revoke all on public.%I from anon, authenticated', t);
     execute format('grant select on public.%I to authenticated', t);
     execute format('grant all on public.%I to service_role', t);
   end loop;
