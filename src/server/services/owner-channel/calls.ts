@@ -359,6 +359,21 @@ export interface OwnerCallOutcomeInput {
   customAnalysisData: unknown;
 }
 
+/**
+ * Did a call WE placed reach a person? Reached = a real conversation: not voicemail, not a dial
+ * failure / busy / no answer / provider error (Retell still reports ring time as duration for
+ * those), the analysis didn't mark it failed, and either the analysis called it a success or it
+ * lasted longer than a ring (the same 5 s threshold as classifyRetellCall). PURE.
+ */
+export function classifyOutboundCall(input: { callSuccessful: boolean | null; inVoicemail: boolean | null; disconnectionReason?: string | null; durationMs: number | null }): { reached: boolean; inVoicemail: boolean } {
+  const reason = input.disconnectionReason ?? null;
+  const inVoicemail = input.inVoicemail === true || (reason != null && VOICEMAIL_REASONS.test(reason));
+  const notConnected = reason != null && NOT_CONNECTED_REASONS.test(reason);
+  const lasted = input.durationMs != null && input.durationMs >= REACHED_MIN_MS;
+  const reached = !inVoicemail && !notConnected && input.callSuccessful !== false && (input.callSuccessful === true || lasted);
+  return { reached, inVoicemail };
+}
+
 function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max - 3).trimEnd()}...` : t;
@@ -423,15 +438,7 @@ export async function recordOwnerCallOutcome(admin: AdminClient, input: OwnerCal
     const brief = readBrief(request);
     if (!brief) return { notified: false };
 
-    const reason = input.disconnectionReason ?? null;
-    const inVoicemail = input.inVoicemail === true || (reason != null && VOICEMAIL_REASONS.test(reason));
-    // Reached = a real conversation: not voicemail, not a dial failure / busy / no answer /
-    // provider error (Retell still reports ring time as duration for those), the analysis
-    // didn't mark it failed, and either the analysis called it a success or it lasted longer
-    // than a ring (the same 5 s threshold as classifyRetellCall).
-    const notConnected = reason != null && NOT_CONNECTED_REASONS.test(reason);
-    const lasted = input.durationMs != null && input.durationMs >= REACHED_MIN_MS;
-    const reached = !inVoicemail && !notConnected && input.callSuccessful !== false && (input.callSuccessful === true || lasted);
+    const { reached, inVoicemail } = classifyOutboundCall(input);
     const outcome = {
       reached,
       inVoicemail,

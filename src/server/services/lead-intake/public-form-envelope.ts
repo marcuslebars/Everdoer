@@ -59,6 +59,18 @@ export function smsConsentText(companyName: string): string {
   );
 }
 
+/**
+ * The exact wording for consent to an automated call back (docs/sales-calls.md). Express consent
+ * is what the CRTC rules require for automated sales calls, so it names who, how (an automated
+ * assistant), the number, and how to stop.
+ */
+export function callConsentText(companyName: string): string {
+  return (
+    `Yes, ${companyName} may call me about my request at the number above, including with an automated assistant. ` +
+    "Calls may be recorded. I can ask not to be called at any time. Consent is not a condition of purchase."
+  );
+}
+
 const optionalTrimmed = (max: number) =>
   z
     .string()
@@ -89,6 +101,7 @@ export const publicFormSubmissionSchema = z
       .optional()
       .transform((v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : undefined)),
     smsConsent: z.boolean().optional(),
+    callConsent: z.boolean().optional(),
     /** The page the form sits on (parent page when embedded). */
     page: optionalTrimmed(2000),
     /** Origin of the site embedding the iframe, as observed by the hosted page. */
@@ -181,6 +194,11 @@ export function buildPublicFormEnvelope(
     meta.smsConsent = {
       granted: input.smsConsent === true,
       ...(input.smsConsent === true ? { text: smsConsentText(context.companyName).slice(0, 600) } : {}),
+      capturedAt: now,
+    };
+    meta.callConsent = {
+      granted: input.callConsent === true,
+      ...(input.callConsent === true ? { text: callConsentText(context.companyName).slice(0, 600) } : {}),
       capturedAt: now,
     };
   }

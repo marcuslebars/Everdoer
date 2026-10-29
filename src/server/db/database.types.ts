@@ -1202,6 +1202,74 @@ export type Database = {
           },
         ]
       }
+      call_consents: {
+        Row: {
+          captured_at: string
+          company_id: string
+          contact_id: string
+          created_at: string
+          evidence: string
+          id: string
+          organization_id: string
+          phone_last10: string
+          revoked_at: string | null
+          source: string
+          source_ref: string | null
+        }
+        ComputedFields: never
+        Insert: {
+          captured_at?: string
+          company_id: string
+          contact_id: string
+          created_at?: string
+          evidence: string
+          id?: string
+          organization_id: string
+          phone_last10: string
+          revoked_at?: string | null
+          source: string
+          source_ref?: string | null
+        }
+        Update: {
+          captured_at?: string
+          company_id?: string
+          contact_id?: string
+          created_at?: string
+          evidence?: string
+          id?: string
+          organization_id?: string
+          phone_last10?: string
+          revoked_at?: string | null
+          source?: string
+          source_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_consents_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "call_consents_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "contacts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "call_consents_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "ui_contact_list_v"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "call_consents_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       care_case_bookings: {
         Row: {
           booking_id: string
@@ -1818,6 +1886,7 @@ export type Database = {
           quote_public_base_url: string | null
           quote_terms_text: string | null
           review_settings: Json
+          sales_call_settings: Json
           service_area: string | null
           slug: string
           stage: Database["public"]["Enums"]["company_stage"]
@@ -1881,6 +1950,7 @@ export type Database = {
           quote_public_base_url?: string | null
           quote_terms_text?: string | null
           review_settings?: Json
+          sales_call_settings?: Json
           service_area?: string | null
           slug: string
           stage?: Database["public"]["Enums"]["company_stage"]
@@ -1943,6 +2013,7 @@ export type Database = {
           quote_public_base_url?: string | null
           quote_terms_text?: string | null
           review_settings?: Json
+          sales_call_settings?: Json
           service_area?: string | null
           slug?: string
           stage?: Database["public"]["Enums"]["company_stage"]
@@ -3559,6 +3630,56 @@ export type Database = {
           },
           {
             foreignKeyName: "dispatch_weather_cache_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      do_not_call: {
+        Row: {
+          company_id: string
+          contact_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          note: string | null
+          organization_id: string
+          phone_last10: string
+          source: string
+        }
+        ComputedFields: never
+        Insert: {
+          company_id: string
+          contact_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          phone_last10: string
+          source: string
+        }
+        Update: {
+          company_id?: string
+          contact_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          phone_last10?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "do_not_call_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "do_not_call_organization_id_fkey"
             columns: ["organization_id"]
             referencedRelation: "organizations"
             referencedColumns: ["id"]
@@ -10273,6 +10394,107 @@ export type Database = {
           },
           {
             foreignKeyName: "review_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_calls: {
+        Row: {
+          attempt: number
+          claimed_at: string | null
+          claimed_by: string | null
+          company_id: string
+          contact_id: string
+          created_at: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          note: string | null
+          organization_id: string
+          outcome: Json | null
+          owner_notified_at: string | null
+          placed_at: string | null
+          raw_lead_id: string | null
+          reason: string
+          requested_by_phone: string | null
+          retell_call_id: string | null
+          run_at: string
+          skip_reason: string | null
+          status: string
+          updated_at: string
+        }
+        ComputedFields: never
+        Insert: {
+          attempt?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
+          company_id: string
+          contact_id: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          note?: string | null
+          organization_id: string
+          outcome?: Json | null
+          owner_notified_at?: string | null
+          placed_at?: string | null
+          raw_lead_id?: string | null
+          reason: string
+          requested_by_phone?: string | null
+          retell_call_id?: string | null
+          run_at?: string
+          skip_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
+          company_id?: string
+          contact_id?: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          note?: string | null
+          organization_id?: string
+          outcome?: Json | null
+          owner_notified_at?: string | null
+          placed_at?: string | null
+          raw_lead_id?: string | null
+          reason?: string
+          requested_by_phone?: string | null
+          retell_call_id?: string | null
+          run_at?: string
+          skip_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_calls_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "sales_calls_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "contacts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "sales_calls_contact_id_organization_id_fkey"
+            columns: ["contact_id", "organization_id"]
+            referencedRelation: "ui_contact_list_v"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "sales_calls_organization_id_fkey"
             columns: ["organization_id"]
             referencedRelation: "organizations"
             referencedColumns: ["id"]

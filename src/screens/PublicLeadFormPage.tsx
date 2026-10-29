@@ -82,6 +82,7 @@ export default function PublicLeadFormPage() {
   const [message, setMessage] = useState("");
   const [preferredDate, setPreferredDate] = useState("");
   const [smsConsent, setSmsConsent] = useState(false);
+  const [callConsent, setCallConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [done, setDone] = useState(false);
@@ -166,6 +167,7 @@ export default function PublicLeadFormPage() {
         message: message.trim() || undefined,
         preferredDate: preferredDate || undefined,
         smsConsent: phone.trim() ? smsConsent : undefined,
+        callConsent: phone.trim() && config?.form.callConsentText ? callConsent : undefined,
         page: ctx.page,
         embedOrigin: ctx.embedOrigin,
         framed: ctx.framed,
@@ -290,6 +292,13 @@ export default function PublicLeadFormPage() {
                   <label className="flex items-start gap-2.5 text-xs text-slate-600 leading-relaxed cursor-pointer">
                     <input type="checkbox" checked={smsConsent} onChange={(e) => setSmsConsent(e.target.checked)} className="mt-0.5 w-4 h-4 shrink-0 accent-slate-800" />
                     <span>{config.form.smsConsentText}</span>
+                  </label>
+                )}
+
+                {phone.trim() && config.form.callConsentText && (
+                  <label className="flex items-start gap-2.5 text-xs text-slate-600 leading-relaxed cursor-pointer">
+                    <input type="checkbox" checked={callConsent} onChange={(e) => setCallConsent(e.target.checked)} className="mt-0.5 w-4 h-4 shrink-0 accent-slate-800" />
+                    <span>{config.form.callConsentText}</span>
                   </label>
                 )}
 

@@ -156,5 +156,5 @@ messages only.
    - share invoices
    - recommend services from what the caller says
    - do anything else a skill offers
-4. **Outbound sales calls.** Speed-to-lead calls a set time after a lead comes in, plus calls the owner asks for, within hours, consent and caps.
+4. **Outbound sales calls** (done: see [sales-calls.md](sales-calls.md)). Speed-to-lead calls a set time after a consenting web lead comes in, plus calls the owner asks for by text, on a shared sales agent that can quote, book and text a deposit link. Express consent, CRTC calling hours, an internal do-not-call list, retries and daily caps are enforced at dial time.
 5. **Agent profiles + blueprints.** A versioned profile per business (name, persona, tone, enabled skills, autonomy and approval limits, hours), exportable as a blueprint and clonable to a new tenant.

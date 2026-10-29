@@ -32,6 +32,10 @@ import { contactName, findScopedBooking, findScopedContact, openTimesForBooking,
 import { formatNanp } from "@/server/services/dfy/intake";
 import { requireReceptionistMinutes } from "@/server/services/voice/minutes";
 import { addNote, forgetNote, listNotes } from "@/server/agent/memory";
+import { findCallConsent, isDoNotCall, nextCallableAt } from "@/server/services/sales-calls/compliance";
+import { salesCallProposal } from "@/server/services/sales-calls/owner-request";
+import { cancelSalesCall, openSalesCallFor } from "@/server/services/sales-calls/queue";
+import { loadSalesCallSettings, saveSalesCallSettings } from "@/server/services/sales-calls/settings";
 
 export interface ToolRunState {
   admin: AdminClient;
@@ -47,6 +51,8 @@ export interface ToolRunState {
   roleOwnerTools?: RoleOwnerTool[];
   /** Marina can place calls for this owner (Retell outbound on + the plan has marina_reception). */
   callsEnabled?: boolean;
+  /** Sales calls are set up too (callsEnabled + the shared sales agent, docs/sales-calls.md). */
+  salesCallsEnabled?: boolean;
   /** Earlier confirmations this run's proposal replaced (same action, same booking / customer). */
   superseded?: number;
 }
@@ -244,8 +250,46 @@ export const CALL_TOOLS: Anthropic.Messages.Tool[] = [
   },
 ];
 
-export function ownerToolsFor(state: Pick<ToolRunState, "callsEnabled">): Anthropic.Messages.Tool[] {
-  return state.callsEnabled ? [...OWNER_TOOLS, ...CALL_TOOLS] : OWNER_TOOLS;
+/** Sales calls (docs/sales-calls.md); listed only when ToolRunState.salesCallsEnabled. */
+export const SALES_CALL_TOOLS: Anthropic.Messages.Tool[] = [
+  {
+    name: "sales_call",
+    description:
+      "Have the AI call a customer to sell: answer their questions, recommend a service, quote from the price list and book. Use when the owner says to call a lead/customer to follow up, close, quote or book them (not for passing on a specific message - that's call_customer). The customer must have agreed to automated calls; set customer_asked=true ONLY if the owner says the customer asked to be called. The owner confirms with a code.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contact_id: { type: "string" },
+        focus: { type: "string", description: "What the call should focus on, in the owner's words (optional, max 200 chars)." },
+        customer_asked: { type: "boolean", description: "True only if the owner says the customer asked to be called." },
+        when: { type: "string", description: "'now', or YYYY-MM-DD HH:MM local, or blank for the next calling hours." },
+      },
+      required: ["contact_id"],
+    },
+  },
+  {
+    name: "cancel_sales_call",
+    description: "Cancel a sales call that's waiting to be placed for a customer.",
+    input_schema: { type: "object", properties: { contact_id: { type: "string" } }, required: ["contact_id"] },
+  },
+  {
+    name: "lead_call_settings",
+    description:
+      "Turn automatic new-lead calls on or off, or change them: the AI calls web leads who ticked 'you can call me' this many minutes after they enquire, with this many tries. Leave out what the owner didn't mention. Applied right away.",
+    input_schema: {
+      type: "object",
+      properties: {
+        on: { type: "boolean" },
+        delay_minutes: { type: "integer", minimum: 1, maximum: 1440 },
+        attempts: { type: "integer", minimum: 1, maximum: 3 },
+      },
+    },
+  },
+];
+
+export function ownerToolsFor(state: Pick<ToolRunState, "callsEnabled" | "salesCallsEnabled">): Anthropic.Messages.Tool[] {
+  if (!state.callsEnabled) return OWNER_TOOLS;
+  return state.salesCallsEnabled ? [...OWNER_TOOLS, ...CALL_TOOLS, ...SALES_CALL_TOOLS] : [...OWNER_TOOLS, ...CALL_TOOLS];
 }
 
 type Input = Record<string, unknown>;
@@ -446,6 +490,8 @@ async function callCustomerTool(state: ToolRunState, input: Input) {
   if (!contact.phone) return { ok: false, reason: `${who} has no phone number on file.` };
   const phone = toE164(contact.phone);
   if (!phone) return { ok: false, reason: `${who}'s number on file isn't a callable phone number.` };
+  // They asked not to be called (docs/sales-calls.md → do-not-call): the AI doesn't phone them.
+  if (await isDoNotCall(state.admin, state.scope, phone, state.nowMs)) return { ok: false, reason: `${who} asked not to be called, so the AI won't phone them. Offer to text them, or the owner can call personally.` };
 
   const parsed = briefInputSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Tell me what Marina should say." };
@@ -493,6 +539,74 @@ async function cancelCustomerCallTool(state: ToolRunState, input: Input) {
     await state.admin.from("owner_approvals").update({ status: "rejected", decided_at: new Date(state.nowMs).toISOString(), decided_via: "sms", decided_by: state.ownerPhone }).eq("id", open.approval_id).eq("status", "pending");
   }
   return { ok: true, cancelled: who };
+}
+
+// ── Sales calls (docs/sales-calls.md) ─────────────────────────────────────────
+
+async function salesCallTool(state: ToolRunState, input: Input) {
+  if (!state.salesCallsEnabled) return { error: "Sales calls aren't available for this business." };
+  const contact = await findScopedContact(state.admin, state.scope, input.contact_id);
+  if (!contact) return { error: "No such customer for this business." };
+  const who = contactName(contact);
+  const phone = contact.phone ? toE164(contact.phone) : null;
+  if (!phone) return { ok: false, reason: `${who} has no callable phone number on file.` };
+  if (await isDoNotCall(state.admin, state.scope, phone, state.nowMs)) return { ok: false, reason: `${who} is on the do-not-call list.` };
+  const customerAsked = input.customer_asked === true;
+  if (!customerAsked && !(await findCallConsent(state.admin, state.scope, contact))) {
+    return {
+      ok: false,
+      reason: `${who} hasn't agreed to automated calls. Only if they asked to be called can the owner say so (then propose again with customer_asked). Otherwise offer to text them, or the owner can call them personally.`,
+    };
+  }
+  if (await openSalesCallFor(state.admin, state.scope, contact.id)) return { ok: false, reason: `A sales call to ${who} is already lined up. Say "cancel the sales call to ${who.split(" ")[0]}" first.` };
+  try {
+    await requireReceptionistMinutes(state.admin, state.scope.organizationId);
+  } catch (err) {
+    return { ok: false, reason: `The call can't be placed - ${failureMessage(err)}.` };
+  }
+  const when = resolveCallTime(str(input.when), state.nowMs, state.scope.timeZone);
+  if ("error" in when) return { error: when.error };
+  const focus = str(input.focus) ? toPlainText(str(input.focus) as string).replace(/\s+/g, " ").slice(0, 200) : null;
+  const runAtMs = nextCallableAt(when.runAtMs, state.scope.timeZone);
+  const whenLabel = runAtMs <= state.nowMs ? "now" : shortWhen(new Date(runAtMs).toISOString(), state.scope.timeZone);
+  const proposal = salesCallProposal({ who, phone: formatNanp(phone), focus, customerAsked, whenLabel });
+  await proposeConfirmation(state, contact.id, {
+    summary: proposal.summary,
+    payload: { ...proposal.payload, contactId: contact.id, runAtMs: when.immediate ? null : runAtMs, ownerPhone: state.ownerPhone },
+  });
+  return { ok: true, asked_owner: "Confirmation sent; nothing is dialed until the owner confirms." };
+}
+
+async function cancelSalesCallTool(state: ToolRunState, input: Input) {
+  const contact = await findScopedContact(state.admin, state.scope, input.contact_id);
+  if (!contact) return { error: "No such customer for this business." };
+  const who = contactName(contact);
+  const open = await openSalesCallFor(state.admin, state.scope, contact.id);
+  if (!open) return { ok: false, reason: `No sales call to ${who} is waiting.` };
+  if (open.status !== "scheduled") return { ok: false, reason: `The call to ${who} is already under way.` };
+  if (!(await cancelSalesCall(state.admin, open.id))) return { ok: false, reason: `The call to ${who} was already handled.` };
+  return { ok: true, cancelled: who };
+}
+
+async function leadCallSettingsTool(state: ToolRunState, input: Input) {
+  if (!state.salesCallsEnabled) return { error: "Sales calls aren't available for this business." };
+  const patch = {
+    ...(typeof input.on === "boolean" ? { enabled: input.on } : {}),
+    ...(typeof input.delay_minutes === "number" ? { delayMinutes: input.delay_minutes } : {}),
+    ...(typeof input.attempts === "number" ? { maxAttempts: input.attempts } : {}),
+  };
+  if (Object.keys(patch).length === 0) {
+    const current = await loadSalesCallSettings(state.admin, state.scope);
+    return { ok: true, lead_calls: current.enabled ? "on" : "off", delay_minutes: current.delayMinutes, attempts: current.maxAttempts };
+  }
+  const next = await saveSalesCallSettings(state.admin, state.scope, patch);
+  return {
+    ok: true,
+    lead_calls: next.enabled ? "on" : "off",
+    delay_minutes: next.delayMinutes,
+    attempts: next.maxAttempts,
+    note: "Only leads who tick the automated call-back box on the website form are called, and only during calling hours (weekdays 9-9:30, weekends 10-6).",
+  };
 }
 
 async function setAiForCustomerTool(state: ToolRunState, input: Input) {
@@ -561,6 +675,15 @@ export async function runOwnerTool(state: ToolRunState, name: string, input: Inp
         break;
       case "cancel_customer_call":
         result = await cancelCustomerCallTool(state, input);
+        break;
+      case "sales_call":
+        result = await salesCallTool(state, input);
+        break;
+      case "cancel_sales_call":
+        result = await cancelSalesCallTool(state, input);
+        break;
+      case "lead_call_settings":
+        result = await leadCallSettingsTool(state, input);
         break;
       case "set_ai_for_customer":
         result = await setAiForCustomerTool(state, input);
