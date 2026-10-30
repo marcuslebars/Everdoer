@@ -332,7 +332,7 @@ function NotificationsMenu() {
   );
 }
 
-function UserMenu() {
+function UserMenu({ onNewOrganization }: { onNewOrganization?: () => void }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
@@ -384,6 +384,19 @@ function UserMenu() {
                 <SettingsIcon className="w-4 h-4" />
                 <span>Settings</span>
               </button>
+              {/* With one organization the switcher is hidden; creating another lives here. */}
+              {onNewOrganization && (
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    onNewOrganization();
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-secondary transition-colors flex items-center gap-2.5"
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>New organization</span>
+                </button>
+              )}
               <button
                 onClick={handleSignOut}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-secondary transition-colors flex items-center gap-2.5 text-destructive"
@@ -518,9 +531,12 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // One business: no "All Companies" (it's the same data), just its name.
+  const singleCompany = companies?.length === 1;
   const companyItems = useMemo(() => {
     const base = [{ id: "__all__", name: "All Companies", color: "hsl(215 100% 55%)" }];
     if (!companies) return base;
+    if (companies.length === 1) return [{ id: companies[0].id, name: companies[0].name, color: companyColors[1 % companyColors.length] }];
     return [
       ...base,
       ...companies.map((c, i) => ({
@@ -533,7 +549,9 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
 
   const organizationItems = useMemo(() => orgs || [], [orgs]);
 
-  const selectedCompanyId = companyId ?? "__all__";
+  // Simple by default: the organization switcher only shows when there's more than one.
+  const singleOrg = !isLoadingOrgs && (orgs?.length ?? 0) <= 1;
+  const selectedCompanyId = companyId ?? (singleCompany && companies ? companies[0].id : "__all__");
   const handleCompanySelect = (id: string) => {
     setCompanyId(id === "__all__" ? null : id);
   };
@@ -549,7 +567,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="hidden md:block">
+        <div className={singleOrg ? "hidden" : "hidden md:block"}>
           <Dropdown
             label="Organization"
             icon={Building2}
@@ -560,7 +578,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
             onCreate={{ label: "New organization", onClick: () => openCreate("org") }}
           />
         </div>
-        <span className="hidden md:inline text-border select-none">/</span>
+        {!singleOrg && <span className="hidden md:inline text-border select-none">/</span>}
         <div className="min-w-0">
           <Dropdown
             label="Company"
@@ -601,7 +619,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         <QuickAddMenu />
         <HelpButton />
         <NotificationsMenu />
-        <UserMenu />
+        <UserMenu onNewOrganization={singleOrg ? () => openCreate("org") : undefined} />
       </div>
 
       {createDialog === "org" && (
