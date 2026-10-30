@@ -230,6 +230,12 @@ describe("speed-to-lead", () => {
     expect(await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CO, contactId: "ct-1", envelope: other, leadId: "l", nowMs: WED_10AM })).toEqual({ scheduled: false, reason: "phone_mismatch" });
   });
 
+  it("a web lead that didn't pass the bot check records nothing and isn't called", async () => {
+    expect(await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CO, contactId: "ct-1", envelope: envelope(), leadId: "l", verified: false, nowMs: WED_10AM })).toEqual({ scheduled: false, reason: "unverified" });
+    expect(db.tables.call_consents).toHaveLength(0);
+    expect(db.tables.sales_calls).toHaveLength(0);
+  });
+
   it("a second enquiry while a call is waiting doesn't queue another", async () => {
     await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CO, contactId: "ct-1", envelope: envelope(), leadId: "l1", nowMs: WED_10AM });
     expect(await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CO, contactId: "ct-1", envelope: envelope(), leadId: "l2", nowMs: WED_10AM })).toEqual({ scheduled: false, reason: "already_open" });

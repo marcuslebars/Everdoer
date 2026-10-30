@@ -16,7 +16,7 @@ import { loadSalesCallSettings } from "./settings";
 
 export type SpeedToLeadResult =
   | { scheduled: true; salesCallId: string; runAtMs: number }
-  | { scheduled: false; reason: "no_consent" | "no_phone" | "phone_mismatch" | "turned_off" | "already_open" | "error" };
+  | { scheduled: false; reason: "no_consent" | "unverified" | "no_phone" | "phone_mismatch" | "turned_off" | "already_open" | "error" };
 
 /** What the lead asked about, for the call's prompt (service + a slice of their message). PURE. */
 export function leadNote(envelope: Pick<LeadEnvelope, "services" | "message">): string | null {
@@ -28,10 +28,24 @@ export function leadNote(envelope: Pick<LeadEnvelope, "services" | "message">): 
 
 export async function maybeScheduleSpeedToLead(
   admin: AdminClient,
-  input: { organizationId: string; companyId: string; contactId: string; envelope: LeadEnvelope; leadId: string; nowMs?: number },
+  input: {
+    organizationId: string;
+    companyId: string;
+    contactId: string;
+    envelope: LeadEnvelope;
+    leadId: string;
+    /**
+     * False when the submission didn't pass the bot check (a web form whose Turnstile wasn't
+     * verified). Then a bot could have typed a stranger's number and ticked the box, so neither the
+     * consent nor the call is recorded. Signed intake (/api/intake) is verified.
+     */
+    verified?: boolean;
+    nowMs?: number;
+  },
 ): Promise<SpeedToLeadResult> {
   const consent = input.envelope.meta?.callConsent;
   if (consent?.granted !== true) return { scheduled: false, reason: "no_consent" };
+  if (input.verified === false) return { scheduled: false, reason: "unverified" };
   const nowMs = input.nowMs ?? Date.now();
   const scope = { organizationId: input.organizationId, companyId: input.companyId };
   try {

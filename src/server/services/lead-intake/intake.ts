@@ -602,7 +602,15 @@ export async function handleLeadIntake(
       if (auto.created && auto.quoteUrl) quoteUrl = auto.quoteUrl;
       // Speed-to-lead (docs/sales-calls.md): a lead who ticked the automated call-back box gets a
       // call a few minutes later when the business turned lead calls on. Never throws.
-      await maybeScheduleSpeedToLead(admin, { organizationId: orgId, companyId, contactId: enriched.contactId, envelope, leadId });
+      // A web-form lead that didn't pass the bot check (paidActionsVerified false) is never called.
+      await maybeScheduleSpeedToLead(admin, {
+        organizationId: orgId,
+        companyId,
+        contactId: enriched.contactId,
+        envelope,
+        leadId,
+        verified: options.workflowTrigger?.paidActionsVerified !== false,
+      });
     } catch (err) {
       console.error("[intake] enrichment failed (lead kept in raw_leads):", err);
       // Enrichment failed after the durable write — flag for attention so the lead
