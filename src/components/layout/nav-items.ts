@@ -20,6 +20,7 @@ import {
   Activity,
   Settings,
   Headset,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -47,6 +48,7 @@ export const PRIMARY_NAV: NavItem[] = [
 ];
 
 export const MORE_NAV: NavItem[] = [
+  { title: "Your AI", icon: Sparkles, path: "/ai" },
   { title: "My Jobs", icon: ClipboardCheck, path: "/jobs" },
   { title: "Tasks", icon: CheckSquare, path: "/tasks" },
   { title: "Recurring", icon: Repeat, path: "/recurring" },
