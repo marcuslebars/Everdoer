@@ -56,7 +56,7 @@ function SetupChecklistCard({ orgId }: { orgId: string }) {
 }
 
 /** Shown until onboarding is complete — nudges the owner back into the wizard (Task 13). */
-function OnboardingChecklistCard({ orgId }: { orgId: string }) {
+export function OnboardingChecklistCard({ orgId }: { orgId: string }) {
   const brand = useBrand();
   const navigate = useNavigate();
   const { data } = useOnboardingProgress(orgId);
@@ -144,7 +144,7 @@ function CapturedByPlatformCard({ orgId, companyId }: { orgId: string; companyId
   );
 }
 
-function NoOrgContextState() {
+export function NoOrgContextState() {
   const navigate = useNavigate();
   const { status } = useAuth();
   const { requiresOnboarding } = useOrg();
@@ -189,7 +189,7 @@ function NoOrgContextState() {
   );
 }
 
-function DashboardErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function DashboardErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="max-w-[1440px] mx-auto space-y-6">
       <Card className="border-dashed">
@@ -311,7 +311,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between opacity-0 animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Command Center</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Activity</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {currentOrgName} · {currentCompanyName} · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
           </p>
