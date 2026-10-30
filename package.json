@@ -40,6 +40,7 @@
     "job:retell-message-agent": "tsx src/server/jobs/retell-message-agent.ts",
     "job:retell-sales-agent": "tsx src/server/jobs/retell-sales-agent.ts",
     "job:agent-blueprint": "tsx src/server/jobs/agent-blueprint.ts",
+    "job:install-missing-recipes": "tsx src/server/jobs/install-missing-recipes.ts",
     "job:twilio-repoint": "tsx src/server/jobs/twilio-repoint.ts",
     "job:twilio-retag": "tsx src/server/jobs/twilio-retag.ts",
     "job:retell-repoint": "tsx src/server/jobs/retell-repoint.ts",
