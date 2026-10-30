@@ -183,8 +183,9 @@ export default function TodayPage() {
 
       {/* What the AI handled this week, with the weekly report one tap away. */}
       <WeeklyFrontDeskCard orgId={organizationId} companyId={companyId} />
-      <div className="flex justify-center pb-2">
+      <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 pb-2">
         <SeeAll to="/activity" label="See everything your AI did" />
+        <SeeAll to="/ai" label="Change what your AI does" />
       </div>
     </div>
   );

@@ -36,6 +36,7 @@ import UpdatePasswordPage from "./screens/UpdatePasswordPage";
 import OnboardingWizard from "./screens/onboarding/OnboardingWizard";
 import Dashboard from "./screens/Dashboard";
 import TodayPage from "./screens/TodayPage";
+import YourAiPage from "./screens/YourAiPage";
 import CalendarPage from "./screens/CalendarPage";
 import TasksPage from "./screens/TasksPage";
 import CRMPage from "./screens/CRMPage";
@@ -367,6 +368,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <TodayPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Plain-language switches over the AI staff's settings (docs/your-ai.md). */}
+        <Route
+          path="/ai"
+          element={
+            <ProtectedRoute>
+              <YourAiPage />
             </ProtectedRoute>
           }
         />

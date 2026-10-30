@@ -43,7 +43,7 @@ export function onOurWayText(input: { businessName: string; customerFirstName: s
 }
 
 /** PURE: does this workflow definition send a text? */
-function sendsSms(definition: Json | unknown): boolean {
+export function sendsSms(definition: Json | unknown): boolean {
   const actions = asRecord(definition).actions;
   return Array.isArray(actions) && actions.some((a) => asRecord(a).type === "send_sms");
 }
