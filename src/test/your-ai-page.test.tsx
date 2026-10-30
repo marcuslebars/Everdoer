@@ -105,6 +105,15 @@ describe("YourAiPage", () => {
     expect(mutate).toHaveBeenLastCalledWith({ persona: { name: null, tone: "professional" } }, expect.anything());
   });
 
+  it("no tone set shows Standard; an automation doing the same job is named with a link", () => {
+    state.view.switches[2] = { ...state.view.switches[2], alsoDoneBy: "Review request" };
+    renderPage();
+    expect(screen.getByRole("radio", { name: "Standard" })).toHaveAttribute("aria-checked", "true");
+    const reviews = within(screen.getByTestId("your-ai-reviews"));
+    expect(reviews.getByText(/“Review request” automation does this too/)).toBeInTheDocument();
+    expect(reviews.getByRole("link", { name: /Automations/ })).toHaveAttribute("href", "/automations");
+  });
+
   it("members see the switches but can't change them", () => {
     state.role = "member";
     renderPage();

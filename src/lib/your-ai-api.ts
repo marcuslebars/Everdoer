@@ -14,6 +14,8 @@ export interface YourAiSwitch {
   on: boolean;
   choice?: string;
   needs?: string;
+  /** An automation that also does this (switching off here doesn't stop it). */
+  alsoDoneBy?: string;
 }
 
 export interface YourAiView {

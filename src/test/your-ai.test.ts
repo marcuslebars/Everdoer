@@ -6,8 +6,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const resync = vi.fn(async () => ({ status: "ok" }));
 vi.mock("@/server/services/voice/resync", () => ({ resyncReceptionistAgent: (...args: unknown[]) => resync(...(args as [])) }));
+const calls = { outbound: true, plan: true, agent: "agent_sales" as string | null };
+vi.mock("@/server/services/voice", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/services/voice")>()),
+  isRetellOutboundActive: () => calls.outbound,
+}));
+vi.mock("@/server/services/voice/minutes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/services/voice/minutes")>()),
+  hasReceptionistPlan: async () => calls.plan,
+}));
+vi.mock("@/server/services/voice/sales-agent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/services/voice/sales-agent")>()),
+  salesAgentId: () => calls.agent,
+}));
 
-import { SWITCHES, SWITCH_KEYS, aiSettingsMutation, getYourAiView, readSwitches, setSwitch, setYourAiPersona, type CompanySnapshot } from "@/server/services/your-ai/switches";
+import { SWITCHES, SWITCH_KEYS, aiSettingsMutation, getYourAiView, overlappingAutomations, readSwitches, setSwitch, setYourAiPersona, type CompanySnapshot } from "@/server/services/your-ai/switches";
 import { readEstimatorSettings } from "@/server/services/staff/estimator/settings";
 import { readCustomerCareSettings } from "@/server/services/staff/customer-care/settings";
 import { createFakeDb } from "@/test/helpers/fake-supabase";
@@ -17,7 +30,18 @@ const house = { doneForYou: false, tier: null };
 const dfy = { doneForYou: true, tier: null };
 
 function snapshot(over: Partial<CompanySnapshot> = {}): CompanySnapshot {
-  return { aiSettings: {}, reviewSettings: null, salesCallSettings: null, hasReviewLink: true, hasAiNumber: true, org: house, ...over };
+  return {
+    aiSettings: {},
+    reviewSettings: null,
+    salesCallSettings: null,
+    hasReviewLink: true,
+    hasAiNumber: true,
+    hasOwnerCell: true,
+    leadCalls: "enabled",
+    dispatch: { hints: ["Jane's Roofing"] },
+    org: house,
+    ...over,
+  };
 }
 
 function stateOf(s: CompanySnapshot) {
@@ -44,7 +68,12 @@ function seed(company: Record<string, unknown> = {}, opts: { platformBrand?: str
   });
 }
 
-beforeEach(() => resync.mockClear());
+beforeEach(() => {
+  resync.mockClear();
+  calls.outbound = true;
+  calls.plan = true;
+  calls.agent = "agent_sales";
+});
 
 describe("the switch list", () => {
   it("every key has one definition, with a label and a group", () => {
@@ -87,12 +116,45 @@ describe("readSwitches (pure)", () => {
     expect(stateOf(snapshot({ aiSettings: { estimator: { enabled: false, follow_ups: true } } })).quote_follow_ups).toBe(false);
   });
 
-  it("says what's missing: the review link, the AI number", () => {
-    const s = readSwitches(snapshot({ hasReviewLink: false, hasAiNumber: false }));
-    expect(s.find((x) => x.key === "reviews")?.needs).toMatch(/review link/);
-    expect(s.find((x) => x.key === "calls")?.needs).toMatch(/AI phone number/);
-    expect(s.find((x) => x.key === "lead_calls")?.needs).toMatch(/AI phone number/);
+  it("says what's missing: review link, AI number, owner cell", () => {
+    const s = readSwitches(snapshot({ hasReviewLink: false, hasAiNumber: false, hasOwnerCell: false }));
+    const needs = (k: string) => s.find((x) => x.key === k)?.needs;
+    expect(needs("reviews")).toMatch(/review link/);
+    expect(needs("lead_calls")).toMatch(/AI phone number/);
+    expect(needs("morning_briefing")).toMatch(/cell number/);
+    // Forwarded calls are answered by the shared agent: no number needed.
+    expect(s.find((x) => x.key === "calls")).not.toHaveProperty("needs");
     expect(s.find((x) => x.key === "weather")).not.toHaveProperty("needs");
+  });
+
+  it("lead calls: outside the plan or not set up says so", () => {
+    expect(readSwitches(snapshot({ leadCalls: "not_in_plan" })).find((x) => x.key === "lead_calls")?.needs).toMatch(/Front Desk plan/);
+    expect(readSwitches(snapshot({ leadCalls: "not_set_up" })).find((x) => x.key === "lead_calls")?.needs).toMatch(/Not set up/);
+  });
+
+  it("check-ins and quote follow-ups need texting on (that's how they go out)", () => {
+    const off = readSwitches(snapshot({ aiSettings: { customer_care: { enabled: true, checkins: { enabled: true } } } }));
+    expect(off.find((x) => x.key === "check_ins")).toMatchObject({ on: true, needs: expect.stringMatching(/Answer customer texts/) });
+    expect(off.find((x) => x.key === "quote_follow_ups")?.needs).toMatch(/Answer customer texts/);
+    const on = readSwitches(snapshot({ aiSettings: { sms_agent: { enabled: true }, customer_care: { enabled: true, checkins: { enabled: true } } } }));
+    expect(on.find((x) => x.key === "check_ins")).not.toHaveProperty("needs");
+  });
+
+  it("weather: says so when no job counts as weather-dependent (indoor trade, unknown trade, none chosen)", () => {
+    const weather = (over: Partial<CompanySnapshot>) => readSwitches(snapshot(over)).find((x) => x.key === "weather");
+    expect(weather({ dispatch: { hints: ["Acme Services"] } })?.needs).toMatch(/depend on the weather/);
+    expect(weather({ dispatch: { hints: ["Acme Services"] }, aiSettings: { dispatch: { weather: { sensitive: "all" } } } })).not.toHaveProperty("needs");
+    expect(weather({ aiSettings: { dispatch: { weather: { sensitive: "none" } } } })?.needs).toMatch(/depend on the weather/);
+  });
+
+  it("chase invoices is off when its reminder texts are", () => {
+    expect(stateOf(snapshot({ aiSettings: { collections: { enabled: true, textReminders: false } } })).chase_invoices).toBe(false);
+  });
+
+  it("names an automation that does the same job", () => {
+    const s = readSwitches(snapshot({ automations: { reviews: "Review request" } }));
+    expect(s.find((x) => x.key === "reviews")?.alsoDoneBy).toBe("Review request");
+    expect(s.find((x) => x.key === "texts")).not.toHaveProperty("alsoDoneBy");
   });
 });
 
@@ -144,9 +206,28 @@ describe("aiSettingsMutation (pure)", () => {
     expect(apply("weather", false).dispatch).toMatchObject({ weather: { enabled: false } });
   });
 
+  it("chase invoices on also turns its reminder texts back on", () => {
+    expect(apply("chase_invoices", true, { collections: { enabled: true, textReminders: false } }).collections).toMatchObject({ enabled: true, textReminders: true });
+  });
+
   it("reviews and lead calls live in their own columns", () => {
     expect(aiSettingsMutation("reviews", true)).toBeNull();
     expect(aiSettingsMutation("lead_calls", true)).toBeNull();
+  });
+});
+
+describe("overlappingAutomations (pure)", () => {
+  it("quote follow-up, review request and an on-the-way text automation, this company or org-wide only", () => {
+    const out = overlappingAutomations(
+      [
+        { company_id: null, name: "Quote follow-up", slug: "quote-follow-up", trigger_event: "quote.sent", definition: {} },
+        { company_id: "co-2", name: "Other co reviews", slug: "review-request", trigger_event: "booking.completed", definition: {} },
+        { company_id: "co-1", name: "Heads up", slug: "custom", trigger_event: "booking.en_route", definition: { actions: [{ type: "send_sms" }] } },
+        { company_id: "co-1", name: "Log only", slug: "log", trigger_event: "booking.en_route", definition: { actions: [{ type: "create_task" }] } },
+      ],
+      "co-1",
+    );
+    expect(out).toEqual({ quote_follow_ups: "Quote follow-up", on_our_way: "Heads up" });
   });
 });
 
@@ -196,6 +277,24 @@ describe("getYourAiView / setSwitch / setYourAiPersona", () => {
     const view = await setSwitch(db.client, scope, { key: "lead_calls", on: true });
     expect(view?.switches.find((s) => s.key === "lead_calls")?.on).toBe(true);
     expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: true, delayMinutes: 2, maxAttempts: 3 });
+  });
+
+  it("lead calls can't be switched on outside the plan or before it's set up; off always works", async () => {
+    calls.plan = false;
+    const db = seed({ sales_call_settings: { enabled: true } });
+    await expect(setSwitch(db.client, scope, { key: "lead_calls", on: true })).rejects.toThrow(/Front Desk plan/);
+    calls.plan = true;
+    calls.agent = null;
+    await expect(setSwitch(db.client, scope, { key: "lead_calls", on: true })).rejects.toThrow(/isn't set up/);
+    await setSwitch(db.client, scope, { key: "lead_calls", on: false });
+    expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: false });
+  });
+
+  it("the view names an active automation doing the same job", async () => {
+    const db = seed();
+    db.tables.workflows = [{ organization_id: "org-1", company_id: null, name: "Review request", slug: "review-request", trigger_event: "booking.completed", definition: {}, status: "active" }];
+    const view = await getYourAiView(db.client, scope);
+    expect(view?.switches.find((s) => s.key === "reviews")?.alsoDoneBy).toBe("Review request");
   });
 
   it("persona: saved and the phone receptionist re-synced, only when it changed", async () => {

@@ -24,6 +24,11 @@ import { mergeSmsAgentSettings, readSmsAgentSettings, smsAgentActive, type SmsAg
 import { mergeCollectionsSettings, readCollectionsSettings } from "@/server/services/staff/bookkeeper/settings";
 import { mergeCustomerCareSettings, readCustomerCareSettings } from "@/server/services/staff/customer-care/settings";
 import { mergeDispatchSettings, readDispatchSettings } from "@/server/services/staff/dispatcher/settings";
+import { sendsSms } from "@/server/services/staff/dispatcher/on-our-way";
+import { QUOTE_FOLLOW_UP_RECIPE } from "@/server/services/staff/estimator/follow-up";
+import { isRetellOutboundActive } from "@/server/services/voice";
+import { hasReceptionistPlan } from "@/server/services/voice/minutes";
+import { salesAgentId } from "@/server/services/voice/sales-agent";
 import { followUpsActive, mergeEstimatorSettings, readEstimatorSettings } from "@/server/services/staff/estimator/settings";
 import { mergeMarketingSettings, readMarketingSettings } from "@/server/services/staff/marketer/settings";
 import { mergeOfficeManagerSettings, readOfficeManagerSettings } from "@/server/services/staff/office-manager/settings";
@@ -106,14 +111,14 @@ export const SWITCHES: SwitchDef[] = [
     key: "quote_follow_ups",
     group: "paid",
     label: "Follow up on quotes",
-    description: "Texts customers who haven't booked after getting a quote, a few days apart.",
+    description: "Texts customers who haven't booked a few days after your AI sent them a quote.",
     customize: FRONT_DESK("estimator"),
   },
   {
     key: "chase_invoices",
     group: "paid",
     label: "Chase unpaid invoices",
-    description: "Sends polite reminders when an invoice is past due, and tells you who's late.",
+    description: "Texts customers when an invoice is past due, and tells you who's late. Reminder emails are set in Settings → Invoices.",
     customize: FRONT_DESK("bookkeeper"),
   },
   {
@@ -174,6 +179,14 @@ export interface CompanySnapshot {
   salesCallSettings: unknown;
   hasReviewLink: boolean;
   hasAiNumber: boolean;
+  /** A verified owner cell (the morning briefing goes there). */
+  hasOwnerCell: boolean;
+  /** Whether outbound AI calls are in this business's plan and set up (lead calls). */
+  leadCalls: "enabled" | "not_in_plan" | "not_set_up";
+  /** The trade hints the dispatcher uses to pick weather-sensitive jobs by default. */
+  dispatch?: { industryPack?: unknown; hints?: Array<string | null | undefined> };
+  /** Active automations that also do a switch's job, by switch (shown so "off" isn't a surprise). */
+  automations?: Partial<Record<SwitchKey, string>>;
   org: StaffOrg;
 }
 
@@ -184,6 +197,8 @@ export interface SwitchState {
   choice?: string;
   /** Something missing for it to work, in plain words (it can still be switched on). */
   needs?: string;
+  /** An automation that also does this, so switching it off here doesn't stop that one. */
+  alsoDoneBy?: string;
 }
 
 function asRecord(value: unknown): AiSettings {
@@ -194,27 +209,54 @@ function asRecord(value: unknown): AiSettings {
 export function readSwitches(s: CompanySnapshot): SwitchState[] {
   const ai = s.aiSettings;
   const sms = readSmsAgentSettings(ai, s.org);
-  const dispatch = readDispatchSettings(ai, s.org);
+  const textsOn = smsAgentActive(sms);
+  const dispatch = readDispatchSettings(ai, { ...s.org, ...(s.dispatch ?? {}) });
   const care = readCustomerCareSettings(ai, s.org);
-  const noNumber = s.hasAiNumber ? undefined : "Needs your AI phone number";
+  const collections = readCollectionsSettings(ai, s.org);
+  const needsTexts = textsOn ? undefined : "Works only with “Answer customer texts” on";
+  const leadCallsNeeds =
+    s.leadCalls === "not_in_plan"
+      ? "Part of the Front Desk plan"
+      : s.leadCalls === "not_set_up"
+        ? "Not set up for your business yet"
+        : s.hasAiNumber
+          ? undefined
+          : "Needs your AI phone number";
   const state: Record<SwitchKey, SwitchState> = {
-    texts: { key: "texts", on: smsAgentActive(sms), choice: sms.autonomy === "ask_first" ? "ask_first" : "standard" },
-    calls: { key: "calls", on: readCallAnsweringSettings(ai, s.org).mode === "ai", needs: noNumber },
-    lead_calls: { key: "lead_calls", on: parseSalesCallSettings(s.salesCallSettings).enabled, needs: noNumber },
-    quote_follow_ups: { key: "quote_follow_ups", on: followUpsActive(readEstimatorSettings(ai, s.org)) },
-    chase_invoices: { key: "chase_invoices", on: readCollectionsSettings(ai, s.org).enabled },
-    weather: { key: "weather", on: dispatch.weather.enabled },
+    texts: { key: "texts", on: textsOn, choice: sms.autonomy === "ask_first" ? "ask_first" : "standard" },
+    calls: { key: "calls", on: readCallAnsweringSettings(ai, s.org).mode === "ai" },
+    lead_calls: { key: "lead_calls", on: parseSalesCallSettings(s.salesCallSettings).enabled, needs: leadCallsNeeds },
+    // Follow-ups are for quotes the AI sent by text, so they need texting on.
+    quote_follow_ups: { key: "quote_follow_ups", on: followUpsActive(readEstimatorSettings(ai, s.org)), needs: needsTexts },
+    // The Bookkeeper's reminders are texts: off when its reminder texts are.
+    chase_invoices: { key: "chase_invoices", on: collections.enabled && collections.textReminders },
+    weather: {
+      key: "weather",
+      on: dispatch.weather.enabled,
+      needs:
+        dispatch.weather.sensitive === "none" || (Array.isArray(dispatch.weather.sensitive) && dispatch.weather.sensitive.length === 0)
+          ? "Choose which jobs depend on the weather (Customize)"
+          : undefined,
+    },
     on_our_way: { key: "on_our_way", on: dispatch.onOurWay.enabled },
-    check_ins: { key: "check_ins", on: care.enabled && care.checkins.enabled },
+    // Customer care only runs while the texting assistant is on (careWorks).
+    check_ins: { key: "check_ins", on: care.enabled && care.checkins.enabled, needs: needsTexts },
     reviews: {
       key: "reviews",
       on: parseReviewSettings(s.reviewSettings).enabled,
       needs: s.hasReviewLink ? undefined : "Add your review link first",
     },
     win_back: { key: "win_back", on: readMarketingSettings(ai, s.org).winBack.enabled },
-    morning_briefing: { key: "morning_briefing", on: readOfficeManagerSettings(ai, s.org).enabled },
+    morning_briefing: {
+      key: "morning_briefing",
+      on: readOfficeManagerSettings(ai, s.org).enabled,
+      needs: s.hasOwnerCell ? undefined : "Needs your verified cell number (Settings → AI front desk)",
+    },
     weekly_report: { key: "weekly_report", on: parseWeeklyReportSettings(toJson(ai) as Json, s.org.doneForYou).enabled },
   };
+  for (const [key, name] of Object.entries(s.automations ?? {}) as Array<[SwitchKey, string]>) {
+    if (state[key] && name) state[key].alsoDoneBy = name;
+  }
   for (const st of Object.values(state)) if (st.needs === undefined) delete st.needs;
   return SWITCH_KEYS.map((k) => state[k]);
 }
@@ -242,7 +284,7 @@ export function aiSettingsMutation(key: SwitchKey, on: boolean, choice?: string)
     case "quote_follow_ups":
       return (current) => mergeEstimatorSettings(current, on ? { enabled: true, followUps: true } : { followUps: false });
     case "chase_invoices":
-      return (current) => mergeCollectionsSettings(current, { enabled: on });
+      return (current) => mergeCollectionsSettings(current, on ? { enabled: true, textReminders: true } : { enabled: false });
     case "weather":
       return (current) => mergeDispatchSettings(current, { weather: { enabled: on } });
     case "on_our_way":
@@ -269,11 +311,36 @@ export interface YourAiView {
   switches: Array<SwitchDef & SwitchState>;
 }
 
+/** Automations that also do a switch's job (the switch's "off" doesn't stop them). PURE. */
+export function overlappingAutomations(
+  flows: Array<{ company_id: string | null; name: string | null; slug: string | null; trigger_event: string | null; definition: unknown }>,
+  companyId: string,
+): Partial<Record<SwitchKey, string>> {
+  const out: Partial<Record<SwitchKey, string>> = {};
+  for (const f of flows) {
+    if (f.company_id && f.company_id !== companyId) continue;
+    const name = f.name?.trim() || f.slug || "An automation";
+    if (f.slug === QUOTE_FOLLOW_UP_RECIPE) out.quote_follow_ups ??= name;
+    if (f.slug === "review-request") out.reviews ??= name;
+    if (f.trigger_event === "booking.en_route" && (f.slug === "crew-on-the-way" || sendsSms(f.definition))) out.on_our_way ??= name;
+  }
+  return out;
+}
+
+async function leadCallsAvailability(admin: AdminClient, organizationId: string): Promise<CompanySnapshot["leadCalls"]> {
+  if (!isRetellOutboundActive() || !salesAgentId()) return "not_set_up";
+  try {
+    return (await hasReceptionistPlan(admin, organizationId)) ? "enabled" : "not_in_plan";
+  } catch {
+    return "not_in_plan";
+  }
+}
+
 async function loadSnapshot(admin: AdminClient, scope: Scope): Promise<{ snapshot: CompanySnapshot; persona: AgentPersona } | null> {
-  const [{ data: company, error }, { data: org }, { data: number }] = await Promise.all([
+  const [{ data: company, error }, { data: org }, { data: number }, { data: flows }] = await Promise.all([
     admin
       .from("companies")
-      .select("id, ai_settings, review_settings, sales_call_settings, brand_review_url, agent_persona")
+      .select("id, name, industry_pack, ai_settings, review_settings, sales_call_settings, brand_review_url, agent_persona, owner_phone_e164, owner_phone_verified_at")
       .eq("organization_id", scope.organizationId)
       .eq("id", scope.companyId)
       .maybeSingle(),
@@ -287,10 +354,21 @@ async function loadSnapshot(admin: AdminClient, scope: Scope): Promise<{ snapsho
       .eq("active", true)
       .limit(1)
       .maybeSingle(),
+    admin.from("workflows").select("company_id, name, slug, trigger_event, definition").eq("organization_id", scope.organizationId).eq("status", "active").limit(500),
   ]);
   if (error) throw error;
   if (!company) return null;
-  const row = company as { ai_settings: Json; review_settings: Json; sales_call_settings: Json; brand_review_url: string | null; agent_persona: Json };
+  const row = company as {
+    name: string | null;
+    industry_pack: unknown;
+    ai_settings: Json;
+    review_settings: Json;
+    sales_call_settings: Json;
+    brand_review_url: string | null;
+    agent_persona: Json;
+    owner_phone_e164: string | null;
+    owner_phone_verified_at: string | null;
+  };
   const orgRow = org as { platform_brand: string | null } | null;
   return {
     snapshot: {
@@ -299,6 +377,10 @@ async function loadSnapshot(admin: AdminClient, scope: Scope): Promise<{ snapsho
       salesCallSettings: row.sales_call_settings,
       hasReviewLink: Boolean(row.brand_review_url?.trim()),
       hasAiNumber: Boolean(number),
+      hasOwnerCell: Boolean(row.owner_phone_e164?.trim() && row.owner_phone_verified_at),
+      leadCalls: await leadCallsAvailability(admin, scope.organizationId),
+      dispatch: { industryPack: row.industry_pack, hints: [row.name] },
+      automations: overlappingAutomations((flows ?? []) as Parameters<typeof overlappingAutomations>[0], scope.companyId),
       org: { doneForYou: isDoneForYou(orgRow?.platform_brand), tier: orgTier(org) },
     },
     persona: parsePersona(row.agent_persona),
@@ -330,6 +412,11 @@ export async function setSwitch(admin: AdminClient, scope: Scope, input: { key: 
     const { error: writeError } = await admin.from("companies").update({ review_settings: toJson(next) as Json }).eq("organization_id", scope.organizationId).eq("id", scope.companyId);
     if (writeError) throw writeError;
   } else if (input.key === "lead_calls") {
+    if (input.on) {
+      const availability = await leadCallsAvailability(admin, scope.organizationId);
+      if (availability === "not_in_plan") throw new UserFacingError("Calling new leads is part of the Front Desk plan.");
+      if (availability === "not_set_up") throw new UserFacingError("Calling new leads isn't set up for your business yet.");
+    }
     await saveSalesCallSettings(admin, scope, { enabled: input.on });
   } else {
     const mutate = aiSettingsMutation(input.key, input.on, input.choice);

@@ -15,7 +15,9 @@ import { toast } from "@/components/ui/sonner";
 import { ErrorBanner } from "@/components/ui/StateViews";
 import { YOUR_AI_GROUPS, useUpdateYourAi, useYourAi, type YourAiSwitch, type YourAiTone, type YourAiView } from "@/lib/your-ai-api";
 
-const TONES: Array<{ value: YourAiTone; label: string }> = [
+// "Standard" = no tone set: each conversation's built-in wording.
+const TONES: Array<{ value: YourAiTone | null; label: string }> = [
+  { value: null, label: "Standard" },
   { value: "friendly", label: "Friendly" },
   { value: "professional", label: "Professional" },
   { value: "casual", label: "Casual" },
@@ -31,6 +33,14 @@ function SwitchRow({ item, canManage, busy, onChange }: { item: YourAiSwitch; ca
         </label>
         <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
         {item.needs && <p className="text-xs text-warning mt-1">{item.needs}</p>}
+        {item.alsoDoneBy && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Your “{item.alsoDoneBy}” automation does this too.{" "}
+            <Link to="/automations" className="text-primary hover:underline">
+              Manage it in Automations
+            </Link>
+          </p>
+        )}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {item.on && item.choices && (
             <div role="radiogroup" aria-label={`${item.label}: how`} className="flex items-center gap-1 rounded-md bg-secondary p-0.5">
@@ -116,10 +126,10 @@ function PersonaCard({ view, canManage, busy, onSave }: { view: YourAiView; canM
           </span>
           <div role="radiogroup" aria-labelledby="your-ai-tone" className="mt-1 flex items-center gap-1 rounded-md bg-secondary p-1 w-fit">
             {TONES.map((t) => {
-              const selected = (view.persona.tone ?? "friendly") === t.value;
+              const selected = view.persona.tone === t.value;
               return (
                 <button
-                  key={t.value}
+                  key={t.value ?? "standard"}
                   type="button"
                   role="radio"
                   aria-checked={selected}
@@ -182,7 +192,7 @@ export default function YourAiPage() {
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Your AI</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          What your assistant does for you{companies && companies.length > 1 && companyName ? ` at ${companyName}` : ""}. Switch anything off and it stops.
+          What your assistant does for you{companies && companies.length > 1 && companyName ? ` at ${companyName}` : ""}. These are the same settings as in Settings; Customize has the details.
         </p>
         {!canManage && <p className="text-xs text-muted-foreground mt-1">Only owners and admins can change these.</p>}
       </header>
@@ -195,7 +205,7 @@ export default function YourAiPage() {
         </div>
       ) : (
         <>
-          <PersonaCard view={data} canManage={canManage} busy={pendingKey === "persona"} onSave={savePersona} />
+          <PersonaCard view={data} canManage={canManage} busy={pendingKey !== null} onSave={savePersona} />
           {YOUR_AI_GROUPS.map((group) => {
             const items = data.switches.filter((s) => s.group === group.id);
             if (items.length === 0) return null;
@@ -204,7 +214,7 @@ export default function YourAiPage() {
                 <h2 className="pt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{group.title}</h2>
                 <ul className="divide-y divide-border">
                   {items.map((item) => (
-                    <SwitchRow key={item.key} item={item} canManage={canManage} busy={pendingKey === item.key} onChange={(on, choice) => flip(item, on, choice)} />
+                    <SwitchRow key={item.key} item={item} canManage={canManage} busy={pendingKey !== null} onChange={(on, choice) => flip(item, on, choice)} />
                   ))}
                 </ul>
               </section>
