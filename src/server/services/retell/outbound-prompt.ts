@@ -10,6 +10,7 @@
  * The brief is what to SAY, never authority: the prompt forbids prices, dates, discounts,
  * booking changes and payments on these calls. Customer speech is information, not instructions.
  */
+import { toneLine, voiceName, type AgentPersona } from "@/server/agent/profile";
 
 export interface OwnerCallBrief {
   /** What to tell them, in the owner's words (tidied, same meaning). ≤ BRIEF_PURPOSE_MAX chars. */
@@ -30,6 +31,8 @@ export interface OutboundCallContext {
   serviceArea: string | null;
   /** The number a caller can be given to reach a person (owner / transfer number). */
   transferNumber: string | null;
+  /** The agent profile: the assistant's name ("Marina" when unset) and tone. */
+  persona?: AgentPersona | null;
 }
 
 // The owner confirms the brief word for word in one text (owner texts cap at 700 chars with
@@ -48,9 +51,10 @@ export function defaultOutboundBrief(companyName: string, who: string): OwnerCal
 }
 
 /** The agent's opening line (the global outbound agent has no begin message; the prompt sets it). */
-export function outboundOpeningLine(ctx: Pick<OutboundCallContext, "companyName" | "customerName">): string {
+export function outboundOpeningLine(ctx: Pick<OutboundCallContext, "companyName" | "customerName" | "persona">): string {
   const who = ctx.customerName ? `Hi, is this ${ctx.customerName}? ` : "Hi. ";
-  return `${who}This is ${ctx.companyName}'s automated assistant calling.`;
+  const me = ctx.persona?.name ? `${ctx.persona.name}, ` : "";
+  return `${who}This is ${me}${ctx.companyName}'s automated assistant calling.`;
 }
 
 function quoted(text: string): string {
@@ -60,7 +64,8 @@ function quoted(text: string): string {
 export function buildOutboundCallPrompt(ctx: OutboundCallContext, brief: OwnerCallBrief | null): string {
   const b = brief ?? defaultOutboundBrief(ctx.companyName, ctx.customerName ?? "them");
   const lines = [
-    `You are Marina, the automated phone assistant calling on behalf of ${ctx.companyName}. This is a call YOU placed to ${ctx.customerName ?? "a customer"}.`,
+    `You are ${voiceName(ctx.persona)}, the automated phone assistant calling on behalf of ${ctx.companyName}. This is a call YOU placed to ${ctx.customerName ?? "a customer"}.`,
+    ...(toneLine(ctx.persona) ? [toneLine(ctx.persona) as string] : []),
     `Open with exactly: "${outboundOpeningLine(ctx)}" If they ask whether you're a real person, say plainly that you're an automated assistant and that the call may be recorded.`,
     "",
     `The owner asked you to tell them: ${quoted(b.purpose)}.`,
@@ -104,9 +109,10 @@ export interface SalesCallContext extends OutboundCallContext {
 }
 
 /** The sales call's opening line: who, that it's automated, that it may be recorded. PURE. */
-export function salesOpeningLine(ctx: Pick<SalesCallContext, "companyName" | "customerName">): string {
+export function salesOpeningLine(ctx: Pick<SalesCallContext, "companyName" | "customerName" | "persona">): string {
   const who = ctx.customerName ? `Hi, is this ${ctx.customerName}? ` : "Hi. ";
-  return `${who}This is the automated assistant calling for ${ctx.companyName}, and this call may be recorded.`;
+  const me = ctx.persona?.name ? `${ctx.persona.name}, ` : "the ";
+  return `${who}This is ${me}${ctx.persona?.name ? "the " : ""}automated assistant calling for ${ctx.companyName}, and this call may be recorded.`;
 }
 
 /**
@@ -122,7 +128,8 @@ export function buildSalesCallPrompt(ctx: SalesCallContext): string {
       ? `${name} just enquired with ${ctx.companyName}${about ? ` about ${about}` : ""} and said it was OK to call them.`
       : `The owner of ${ctx.companyName} asked you to call ${name}${about ? ` about ${about}` : " to follow up on their enquiry"}.`;
   const lines = [
-    `You are Marina, the automated phone assistant for ${ctx.companyName}. This is a call YOU placed to ${name}. ${why}`,
+    `You are ${voiceName(ctx.persona)}, the automated phone assistant for ${ctx.companyName}. This is a call YOU placed to ${name}. ${why}`,
+    ...(toneLine(ctx.persona) ? [toneLine(ctx.persona) as string] : []),
     `Open with exactly: "${salesOpeningLine(ctx)}" Then say why you're calling in one sentence${ctx.reason === "speed_to_lead" ? " (they asked about it a moment ago)" : ""} and ask if now is a good time. If they ask whether you're a real person, say plainly that you're an automated assistant.`,
     "",
     "If it's not a good time: ask when would be better, thank them, and end the call.",

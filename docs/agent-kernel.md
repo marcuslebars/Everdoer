@@ -157,4 +157,4 @@ messages only.
    - recommend services from what the caller says
    - do anything else a skill offers
 4. **Outbound sales calls** (done: see [sales-calls.md](sales-calls.md)). Speed-to-lead calls a set time after a consenting web lead comes in, plus calls the owner asks for by text, on a shared sales agent that can quote, book and text a deposit link. Express consent, CRTC calling hours, an internal do-not-call list, retries and daily caps are enforced at dial time.
-5. **Agent profiles + blueprints.** A versioned profile per business (name, persona, tone, enabled skills, autonomy and approval limits, hours), exportable as a blueprint and clonable to a new tenant.
+5. **Agent profiles + blueprints** (done: see [agent-blueprints.md](agent-blueprints.md)). The assistant's name and tone per business, read by every prompt (phone, texting, sales calls). Versioned blueprints capture a business's portable AI setup (every role's tuning, booking / review / invoice / sales-call policy, never tenant data) and apply it to any business with a preview and an undo. Each trade can have a default blueprint that new done-for-you tenants get automatically.

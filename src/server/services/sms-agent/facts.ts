@@ -3,6 +3,7 @@
  * company's own records (name, price list, hours, service area, booking setup, policies on file).
  * The prompt tells the model these are the ONLY facts; the reply guard enforces the money part.
  */
+import { parsePersona, type AgentPersona } from "@/server/agent/profile";
 import { parseBookingPolicy, type BookingPolicy } from "@/server/services/booking-windows";
 import { getBusinessTimezone } from "@/server/services/ai";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
@@ -71,6 +72,8 @@ export interface BusinessFacts {
   qualifyingQuestions: string[];
   /** Words that mean "urgent / emergency" in this trade. */
   urgentKeywords: string[];
+  /** The agent profile (agent/profile.ts): the assistant's name and tone. Absent = defaults. */
+  persona?: AgentPersona;
 }
 
 const MEASURE_TYPES = new Set(["per_measure", "tiered_by_measure", "per_measure_banded"]);
@@ -189,5 +192,6 @@ export async function loadBusinessFacts(admin: AdminClient, companyId: string): 
     quoteTerms: text(c.quote_terms_text),
     qualifyingQuestions: pack?.receptionist.qualifyingQuestions ?? [],
     urgentKeywords: pack?.receptionist.urgentKeywords ?? [],
+    persona: parsePersona(c.agent_persona),
   };
 }

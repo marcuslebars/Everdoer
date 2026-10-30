@@ -32,6 +32,8 @@ import { contactName, findScopedBooking, findScopedContact, openTimesForBooking,
 import { formatNanp } from "@/server/services/dfy/intake";
 import { requireReceptionistMinutes } from "@/server/services/voice/minutes";
 import { addNote, forgetNote, listNotes } from "@/server/agent/memory";
+import { cleanPersonaName, loadPersona, PERSONA_TONES, savePersona, voiceName, type PersonaTone } from "@/server/agent/profile";
+import { resyncReceptionistAgent } from "@/server/services/voice/resync";
 import { findCallConsent, isDoNotCall, nextCallableAt } from "@/server/services/sales-calls/compliance";
 import { salesCallProposal } from "@/server/services/sales-calls/owner-request";
 import { cancelSalesCall, openSalesCallFor } from "@/server/services/sales-calls/queue";
@@ -202,6 +204,18 @@ export const OWNER_TOOLS: Anthropic.Messages.Tool[] = [
     name: "resume_all_texts",
     description: "Undo pause_all_texts.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "assistant_persona",
+    description:
+      "Change what the AI assistant is called and how it sounds with customers, on the phone and by text (\"call yourself Sam\", \"be more professional\"). Leave out what the owner didn't mention; name \"default\" goes back to the standard name. With no input, says the current setting.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "A first name, or 'default'." },
+        tone: { type: "string", enum: ["friendly", "professional", "casual", "default"] },
+      },
+    },
   },
   {
     name: "remember",
@@ -617,6 +631,38 @@ async function setAiForCustomerTool(state: ToolRunState, input: Input) {
   return { ok: true, customer: contactName(contact), ai: on ? "on" : "off" };
 }
 
+// ── Agent profile (agent/profile.ts) ──────────────────────────────────────────
+
+async function assistantPersonaTool(state: ToolRunState, input: Input) {
+  const current = await loadPersona(state.admin, state.scope);
+  const rawName = str(input.name);
+  const rawTone = str(input.tone);
+  if (!rawName && !rawTone) {
+    return { ok: true, name: voiceName(current), name_is_default: current.name === null, tone: current.tone ?? "default" };
+  }
+  let name = current.name;
+  if (rawName) {
+    if (rawName.toLowerCase() === "default") name = null;
+    else {
+      name = cleanPersonaName(rawName);
+      if (!name) return { ok: false, reason: "Use a plain first name (letters only, 2-20 characters)." };
+    }
+  }
+  let tone = current.tone;
+  if (rawTone) tone = rawTone === "default" ? null : PERSONA_TONES.includes(rawTone as PersonaTone) ? (rawTone as PersonaTone) : current.tone;
+  const saved = await savePersona(state.admin, state.scope, { name, tone });
+  // The phone receptionist's prompt lives in Retell: rebuild it now (best-effort).
+  let phone = "no AI phone line";
+  try {
+    const outcome = await resyncReceptionistAgent(state.admin, state.scope.companyId);
+    phone = outcome.status === "resynced" ? "phone assistant updated" : "no AI phone line";
+  } catch (err) {
+    console.error("[owner-channel] receptionist resync after persona change failed:", err instanceof Error ? err.message : err);
+    phone = "phone assistant will update on its next sync";
+  }
+  return { ok: true, name: voiceName(saved), tone: saved.tone ?? "default", phone };
+}
+
 // ── Memory (agent/memory.ts) ──────────────────────────────────────────────────
 
 async function rememberTool(state: ToolRunState, input: Input) {
@@ -700,6 +746,9 @@ export async function runOwnerTool(state: ToolRunState, name: string, input: Inp
         break;
       case "remember":
         result = await rememberTool(state, input);
+        break;
+      case "assistant_persona":
+        result = await assistantPersonaTool(state, input);
         break;
       case "list_notes":
         result = await listNotesTool(state, input);
