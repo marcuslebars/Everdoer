@@ -35,6 +35,7 @@ import ForgotPasswordPage from "./screens/ForgotPasswordPage";
 import UpdatePasswordPage from "./screens/UpdatePasswordPage";
 import OnboardingWizard from "./screens/onboarding/OnboardingWizard";
 import Dashboard from "./screens/Dashboard";
+import TodayPage from "./screens/TodayPage";
 import CalendarPage from "./screens/CalendarPage";
 import TasksPage from "./screens/TasksPage";
 import CRMPage from "./screens/CRMPage";
@@ -363,6 +364,15 @@ function AppRoutes() {
       <Route element={<AppLayout />}>
         <Route
           path="/"
+          element={
+            <ProtectedRoute>
+              <TodayPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* The full dashboard (activity feed, automation impact, attribution): More → Activity. */}
+        <Route
+          path="/activity"
           element={
             <ProtectedRoute>
               <Dashboard />

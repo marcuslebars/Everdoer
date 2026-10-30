@@ -1,79 +1,98 @@
-import {
-  LayoutDashboard,
-  Inbox,
-  Calendar,
-  CheckSquare,
-  ClipboardCheck,
-  Repeat,
-  Timer,
-  Users,
-  Zap,
-  FileText,
-  Receipt,
-  Wallet,
-  Building2,
-  BarChart3,
-  Star,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  Headset,
-} from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { Logo, LogoMark } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { MORE_NAV, OPERATOR_NAV_ITEM, PRIMARY_NAV, isNavActive, isUnderMore, type NavItem } from "./nav-items";
 
-const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Inbox", icon: Inbox, path: "/inbox" },
-  { title: "Calendar", icon: Calendar, path: "/calendar" },
-  { title: "My Jobs", icon: ClipboardCheck, path: "/jobs" },
-  { title: "Recurring", icon: Repeat, path: "/recurring" },
-  { title: "Timesheets", icon: Timer, path: "/timesheets" },
-  { title: "Tasks", icon: CheckSquare, path: "/tasks" },
-  { title: "CRM", icon: Users, path: "/crm" },
-  { title: "Quotes", icon: FileText, path: "/quotes" },
-  { title: "Invoices", icon: Receipt, path: "/invoices" },
-  { title: "Expenses", icon: Wallet, path: "/expenses" },
-  { title: "Accounts", icon: Building2, path: "/accounts" },
-  { title: "Automations", icon: Zap, path: "/automations" },
-  { title: "Reviews", icon: Star, path: "/reviews" },
-  { title: "Reports", icon: BarChart3, path: "/reports" },
-  { title: "Settings", icon: Settings, path: "/settings" },
-];
+const MORE_OPEN_KEY = "everdoer.nav.moreOpen";
 
-/** Only shown to concierge operators (session.isOperator); the routes 404 for everyone else. */
-const operatorNavItem = { title: "Concierge", icon: Headset, path: "/concierge" };
+function readMoreOpen(): boolean {
+  try {
+    return window.localStorage.getItem(MORE_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeMoreOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(MORE_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Storage blocked (private window): the group just won't remember.
+  }
+}
+
+function NavRow({ item, active, collapsed, onNavigate }: { item: NavItem; active: boolean; collapsed?: boolean; onNavigate?: () => void }) {
+  return (
+    <Link
+      to={item.path}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      title={collapsed ? item.title : undefined}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "active:scale-[0.97]",
+        active ? "bg-sidebar-accent text-foreground shadow-sm" : "text-sidebar-foreground",
+      )}
+    >
+      <item.icon className="w-[18px] h-[18px] shrink-0" />
+      {!collapsed && <span>{item.title}</span>}
+    </Link>
+  );
+}
 
 function NavList({ collapsed, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const { session } = useAuth();
-  const items = session?.isOperator ? [...navItems, operatorNavItem] : navItems;
+  const { pathname } = useLocation();
+  const more = session?.isOperator ? [...MORE_NAV, OPERATOR_NAV_ITEM] : MORE_NAV;
+  const [storedOpen, setStoredOpen] = useState(readMoreOpen);
+  // A page that lives under More always shows its group, so you can see where you are.
+  const here = isUnderMore(pathname, more);
+  const open = storedOpen || here;
+
+  const toggle = () => {
+    const next = !open;
+    setStoredOpen(next);
+    writeMoreOpen(next);
+  };
+
   return (
-    <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-      {items.map((item) => (
-        <NavLink
-          key={item.path}
-          to={item.path}
-          end={item.path === "/"}
-          onClick={onNavigate}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150",
-              "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-              "active:scale-[0.97]",
-              isActive
-                ? "bg-sidebar-accent text-foreground shadow-sm"
-                : "text-sidebar-foreground",
-            )
-          }
-        >
-          <item.icon className="w-[18px] h-[18px] shrink-0" />
-          {!collapsed && <span>{item.title}</span>}
-        </NavLink>
+    <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto" aria-label="Main">
+      {PRIMARY_NAV.map((item) => (
+        <NavRow key={item.path} item={item} active={isNavActive(item, pathname)} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
+
+      <div className="pt-3">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-controls="nav-more"
+          title={collapsed ? "More" : undefined}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+            "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          )}
+        >
+          <MoreHorizontal className="w-[18px] h-[18px] shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="flex-1 text-left">More</span>
+              <ChevronDown className={cn("w-4 h-4 transition-transform", open ? "rotate-180" : "")} />
+            </>
+          )}
+        </button>
+        {open && (
+          <div id="nav-more" className="mt-0.5 space-y-0.5">
+            {more.map((item) => (
+              <NavRow key={item.path} item={item} active={isNavActive(item, pathname)} collapsed={collapsed} onNavigate={onNavigate} />
+            ))}
+          </div>
+        )}
+      </div>
     </nav>
   );
 }
@@ -107,6 +126,7 @@ export function AppSidebar({
         <div className="p-2 border-t border-sidebar-border">
           <button
             onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="w-full flex items-center justify-center py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

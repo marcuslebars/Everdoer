@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Home,
+  Inbox,
+  ClipboardCheck,
+  Repeat,
+  Timer,
+  Wallet,
   LayoutDashboard,
   Users,
   CheckSquare,
@@ -32,12 +38,18 @@ interface CommandPaletteProps {
 }
 
 const NAV_ITEMS = [
-  { label: "Dashboard", to: "/", icon: LayoutDashboard, keywords: "home overview" },
-  { label: "CRM", to: "/crm", icon: Users, keywords: "contacts leads pipeline" },
+  { label: "Home", to: "/", icon: Home, keywords: "today dashboard overview" },
+  { label: "Activity", to: "/activity", icon: LayoutDashboard, keywords: "dashboard command center feed automation impact" },
+  { label: "Inbox", to: "/inbox", icon: Inbox, keywords: "messages texts conversations" },
+  { label: "Customers", to: "/crm", icon: Users, keywords: "crm contacts leads pipeline" },
   { label: "Tasks", to: "/tasks", icon: CheckSquare, keywords: "todo to-do" },
-  { label: "Calendar", to: "/calendar", icon: CalendarIcon, keywords: "bookings schedule" },
+  { label: "Schedule", to: "/calendar", icon: CalendarIcon, keywords: "calendar bookings jobs" },
+  { label: "My jobs", to: "/jobs", icon: ClipboardCheck, keywords: "jobs crew today" },
+  { label: "Recurring jobs", to: "/recurring", icon: Repeat, keywords: "recurring repeat seasonal" },
+  { label: "Timesheets", to: "/timesheets", icon: Timer, keywords: "hours clock time payroll" },
   { label: "Quotes", to: "/quotes", icon: FileText, keywords: "estimate proposal deposit" },
-  { label: "Invoices", to: "/invoices", icon: FileText, keywords: "invoice bill payment overdue receivable" },
+  { label: "Invoices", to: "/invoices", icon: FileText, keywords: "money invoice bill payment overdue receivable" },
+  { label: "Expenses", to: "/expenses", icon: Wallet, keywords: "money expenses receipts costs" },
   { label: "Business accounts", to: "/accounts", icon: Users, keywords: "marina business account statement customer company" },
   { label: "Automations", to: "/automations", icon: Zap, keywords: "workflows rules" },
   { label: "Reviews", to: "/reviews", icon: Star, keywords: "reviews google review request ask rating feedback" },

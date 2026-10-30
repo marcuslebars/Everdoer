@@ -93,7 +93,10 @@ function DueCell({ invoice }: { invoice: Invoice }) {
 export default function InvoicesPage() {
   const orgId = useOrgId();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filter, setFilter] = useState<InvoiceFilter>("all");
+  // ?filter=overdue (from Home's "money owed") opens on that list.
+  const [filter, setFilter] = useState<InvoiceFilter>(
+    () => FILTERS.find((f) => f.value === searchParams.get("filter"))?.value ?? "all",
+  );
   const [companyFilter, setCompanyFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
