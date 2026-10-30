@@ -509,3 +509,22 @@ describe("sales_call — consent, code, dial on the sales agent", () => {
     expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: true, delayMinutes: 1, maxAttempts: 3 });
   });
 });
+
+// Agent profile by text (docs/agent-blueprints.md): "call yourself Sam, and be more professional".
+describe("assistant_persona", () => {
+  it("sets the name and tone, says the current setting, and refuses junk names", async () => {
+    scriptModel([{ name: "assistant_persona", input: { name: "sam", tone: "professional" } }], "Done - I'm Sam now.");
+    await text("call yourself Sam and be more professional");
+    expect(db.tables.companies[0].agent_persona).toEqual({ name: "Sam", tone: "professional" });
+    expect(toolResult(1)).toContain('"name":"Sam"');
+
+    scriptModel([{ name: "assistant_persona", input: { name: "<script>" } }], "That name won't work.");
+    await text("call yourself <script>");
+    expect(toolResult(1)).toContain("plain first name");
+    expect(db.tables.companies[0].agent_persona).toEqual({ name: "Sam", tone: "professional" });
+
+    scriptModel([{ name: "assistant_persona", input: { name: "default", tone: "default" } }], "Back to Marina.");
+    await text("go back to the normal name");
+    expect(db.tables.companies[0].agent_persona).toEqual({});
+  });
+});

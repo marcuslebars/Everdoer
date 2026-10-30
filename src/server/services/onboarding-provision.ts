@@ -1,4 +1,5 @@
 import { UserFacingError } from "@/server/errors";
+import { parsePersona } from "@/server/agent/profile";
 import type { Tables } from "@/server/db/database.types";
 import type { TenantServiceContext } from "@/server/services/shared";
 import { upsertCompanyVoiceProfile } from "@/server/services/company-voice-profiles";
@@ -118,6 +119,7 @@ export async function provisionPhoneForCompany(
       serviceArea: company.service_area,
       transferNumber,
       tools: tools ? (marine ? "marine" : "price_list") : null,
+      persona: parsePersona(company.agent_persona),
     },
     pack ? packReceptionistNotes(pack) : null,
   );

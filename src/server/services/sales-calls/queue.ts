@@ -12,6 +12,7 @@
  *
  * Service role (worker / owner channel). Every row is read by id AND organization.
  */
+import { parsePersona } from "@/server/agent/profile";
 import type { Json, Tables } from "@/server/db/database.types";
 import { toJson } from "@/server/db/json";
 import { UserFacingError } from "@/server/errors";
@@ -295,6 +296,7 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
       hoursText: facts?.hoursText ?? null,
       serviceArea: facts?.serviceArea ?? null,
       transferNumber: null,
+      persona: parsePersona(facts?.company?.agent_persona),
       reason: claimed.reason === "owner_request" ? "owner_request" : "speed_to_lead",
       note: claimed.note,
       callbackNumber: inputs.businessNumber ? formatNanp(inputs.businessNumber) : null,

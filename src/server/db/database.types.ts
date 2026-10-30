@@ -328,6 +328,121 @@ export type Database = {
           },
         ]
       }
+      agent_blueprint_applications: {
+        Row: {
+          applied_at: string
+          applied_by: string
+          blueprint_id: string
+          changes: Json
+          company_id: string
+          id: string
+          mode: string
+          organization_id: string
+          previous: Json
+          reverted_at: string | null
+        }
+        ComputedFields: never
+        Insert: {
+          applied_at?: string
+          applied_by: string
+          blueprint_id: string
+          changes?: Json
+          company_id: string
+          id?: string
+          mode: string
+          organization_id: string
+          previous: Json
+          reverted_at?: string | null
+        }
+        Update: {
+          applied_at?: string
+          applied_by?: string
+          blueprint_id?: string
+          changes?: Json
+          company_id?: string
+          id?: string
+          mode?: string
+          organization_id?: string
+          previous?: Json
+          reverted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_blueprint_applications_blueprint_id_fkey"
+            columns: ["blueprint_id"]
+            referencedRelation: "agent_blueprints"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_blueprint_applications_company_id_organization_id_fkey"
+            columns: ["company_id", "organization_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "agent_blueprint_applications_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_blueprints: {
+        Row: {
+          content: Json
+          created_at: string
+          created_by: string
+          default_for_pack: boolean
+          description: string | null
+          id: string
+          name: string
+          pack_id: string | null
+          source_company_id: string | null
+          source_organization_id: string | null
+          version: number
+        }
+        ComputedFields: never
+        Insert: {
+          content: Json
+          created_at?: string
+          created_by: string
+          default_for_pack?: boolean
+          description?: string | null
+          id?: string
+          name: string
+          pack_id?: string | null
+          source_company_id?: string | null
+          source_organization_id?: string | null
+          version: number
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          created_by?: string
+          default_for_pack?: boolean
+          description?: string | null
+          id?: string
+          name?: string
+          pack_id?: string | null
+          source_company_id?: string | null
+          source_organization_id?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_blueprints_source_company_id_fkey"
+            columns: ["source_company_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_blueprints_source_organization_id_fkey"
+            columns: ["source_organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_notes: {
         Row: {
           archived_at: string | null
@@ -1844,6 +1959,7 @@ export type Database = {
       }
       companies: {
         Row: {
+          agent_persona: Json
           ai_settings: Json
           booking_policy: Json | null
           brand_accent_color: string | null
@@ -1908,6 +2024,7 @@ export type Database = {
         }
         ComputedFields: never
         Insert: {
+          agent_persona?: Json
           ai_settings?: Json
           booking_policy?: Json | null
           brand_accent_color?: string | null
@@ -1971,6 +2088,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          agent_persona?: Json
           ai_settings?: Json
           booking_policy?: Json | null
           brand_accent_color?: string | null

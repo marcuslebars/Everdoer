@@ -51,6 +51,7 @@ import { upsertOnboardingStep } from "@/server/services/onboarding";
 import { createOrganization } from "@/server/services/organizations";
 import { getPack } from "@/server/services/packs";
 import { applyIndustryPack, listIndustryPacks } from "@/server/services/packs/apply";
+import { applyDefaultBlueprintForPack } from "@/server/agent/blueprints/service";
 import { toE164 } from "@/server/services/retell/payload";
 import type { TenantServiceContext } from "@/server/services/shared";
 import { createAndSendSetupIntake, ensureSetupIntake } from "@/server/services/dfy/intake";
@@ -592,6 +593,9 @@ async function provisionClaimed(admin: AdminClient, purchase: DoneForYouPurchase
       recipes: packRecipesForTier(tier, pack.recipes.map((r) => r.slug)),
     });
   }
+  // 4a) The trade's default agent blueprint (docs/agent-blueprints.md), tuning only: the tier
+  //     still decides which AI roles are on. Never fails provisioning.
+  await applyDefaultBlueprintForPack(admin, { scope: { organizationId: org.id, companyId }, packId: pack?.id ?? null, appliedBy: "done_for_you_provision" });
   // 4b) Only the tier's automations may be active: createCompany installed the whole recipe
   // catalog at default status (a Catch buyer must not get stale-lead nudges texting leads).
   await restrictAutomationsToTier(ctx, companyId, tier, { packRecipeSlugs: pack ? pack.recipes.map((r) => r.slug) : [] });

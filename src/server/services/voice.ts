@@ -1,4 +1,5 @@
 import type { Tables } from "@/server/db/database.types";
+import { parsePersona } from "@/server/agent/profile";
 import { ValidationError } from "@/server/organizations/context";
 import type { TenantServiceContext } from "@/server/services/shared";
 import { createActivityEvent } from "@/server/services/activity-events";
@@ -128,6 +129,7 @@ async function outboundPromptFor(
         hoursText: facts.hoursText,
         serviceArea: facts.serviceArea,
         transferNumber: facts.transferNumber,
+        persona: parsePersona(facts.company?.agent_persona),
       },
       brief ?? defaultOutboundBrief(facts.companyName, customerName ?? "them"),
     );

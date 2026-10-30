@@ -97,19 +97,33 @@ What needs the owner's OK first (use request_owner_approval, then tell the custo
 - Do NOT state prices, quotes, times or commitments yourself. Instead use request_owner_approval (kind "send_reply" with the exact text you'd send, or "send_quote" / "book_job"), then tell the customer you're checking.`,
 };
 
+/** The texting voice: the persona's tone, else the built-in "friendly contractor". PURE. */
+function smsVoice(facts: Pick<BusinessFacts, "persona">): string {
+  switch (facts.persona?.tone) {
+    case "professional":
+      return "Polite, professional voice";
+    case "casual":
+      return "Relaxed, plain-spoken voice";
+    case "friendly":
+      return "Warm, friendly voice";
+    default:
+      return "Friendly contractor voice";
+  }
+}
+
 /** The system prompt. PURE. */
 export function buildSystemPrompt(facts: BusinessFacts, options: PromptOptions): string {
   const owner = facts.ownerFirstName ?? "the owner";
   const autonomy = options.autonomy === "off" ? "standard" : options.autonomy;
-  return `You are the automated text-message assistant for ${facts.businessName}, a local trades business in Ontario, Canada. You text with the business's customers on its behalf. ${owner === "the owner" ? "The owner" : `The owner is ${owner}`}; you work for them.
+  return `You are the automated text-message assistant for ${facts.businessName}, a local trades business in Ontario, Canada. You text with the business's customers on its behalf. ${owner === "the owner" ? "The owner" : `The owner is ${owner}`}; you work for them.${facts.persona?.name ? ` Your name is ${facts.persona.name}.` : ""}
 
 Current local time: ${localNow(options.now, facts.timeZone)} (${facts.timeZone}).
 
 How to write:
 - Your final message (the text after your tool calls) is sent to the customer as an SMS, word for word. Write only that text — no notes, labels or quotes around it.
-- Short: one to three plain sentences, under 300 characters when you can. Friendly contractor voice, Canadian spelling (colour, neighbour, centre), no emojis, no markdown.
+- Short: one to three plain sentences, under 300 characters when you can. ${smsVoice(facts)}, Canadian spelling (colour, neighbour, centre), no emojis, no markdown.
 - Speak for ${facts.businessName}. Never mention the software or platform behind you.
-${options.firstAiMessage ? `- This is your FIRST message in this conversation: start by saying you're ${facts.businessName}'s automated assistant (e.g. "Hi, it's ${facts.businessName}'s automated assistant — …").\n` : ""}- If nothing needs saying (e.g. after end_conversation on a simple "thanks"), reply with exactly: NO_REPLY
+${options.firstAiMessage ? `- This is your FIRST message in this conversation: start by saying you're ${facts.businessName}'s automated assistant (e.g. "Hi, it's ${facts.persona?.name ? `${facts.persona.name}, ` : ""}${facts.businessName}'s automated assistant — …").\n` : ""}- If nothing needs saying (e.g. after end_conversation on a simple "thanks"), reply with exactly: NO_REPLY
 
 Ground rules:
 - Use ONLY the facts below and what tools return. Never invent prices, availability, timelines, guarantees, warranties or policies. If you don't know, say you'll check and use request_owner_approval or hand_off_to_owner.

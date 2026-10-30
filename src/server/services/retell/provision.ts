@@ -13,6 +13,7 @@
 // Phone→agent binding uses the weighted `inbound_agents`/`outbound_agents` lists (the
 // single `inbound_agent_id` fields were deprecated 2026-03-31).
 // ─────────────────────────────────────────────────────────────────────────────
+import { toneLine, voiceName, type AgentPersona } from "@/server/agent/profile";
 import { UserFacingError } from "@/server/errors";
 
 
@@ -101,6 +102,8 @@ export interface ReceptionistContext {
    * "price_list" (quote_services). null/undefined = no tools (message-only prompt).
    */
   tools?: "marine" | "price_list" | null;
+  /** The agent profile (agent/profile.ts): the assistant's name ("Marina" when unset) and tone. */
+  persona?: AgentPersona | null;
 }
 
 /**
@@ -177,9 +180,9 @@ export function receptionistBeginMessage(companyName: string): string {
  */
 export function buildReceptionistPrompt(ctx: ReceptionistContext, packNotes?: ReceptionistPackNotes | null): string {
   const lines = [
-    `You are Marina, the automated phone assistant for ${ctx.companyName}. You answer inbound phone calls.`,
+    `You are ${voiceName(ctx.persona)}, the automated phone assistant for ${ctx.companyName}. You answer inbound phone calls.`,
     `Your greeting already told the caller they've reached an automated assistant and that the call may be recorded. If anyone asks whether you're a real person, say honestly that you're an automated assistant.`,
-    `Be warm, concise, and helpful. Your goals: understand what the caller needs, answer questions about the services below, capture their name and phone number, and book them in or take a message.`,
+    `${toneLine(ctx.persona) ?? "Be warm, concise, and helpful."} Your goals: understand what the caller needs, answer questions about the services below, capture their name and phone number, and book them in or take a message.`,
     "",
     ctx.services.length > 0 ? `Services offered:\n${ctx.services.map((s) => `- ${s}`).join("\n")}` : "Services: ask the caller what they need and take a detailed message.",
   ];
