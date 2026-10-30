@@ -26,6 +26,7 @@ re-checked when the call is dialed, not only when it was queued.
 
 | Rule | How |
 | --- | --- |
+| **Only verified submissions** | A web-form lead that didn't pass the bot check (Turnstile not verified) records no consent and is never called, so a bot can't get a stranger called. Signed intake from the business's own site counts as verified. |
 | **Express consent to automated calls, for this number** | `call_consents`, one evidence row per grant, writable only by the service role. Sources: `form_optin` (the checkbox, with the exact wording shown), `owner_attested` (the owner confirmed with a code that the customer asked to be called) and `customer_request`. Consent is for a number: if the contact's phone changes, it no longer applies. Implied consent (just enquiring) is never enough. |
 | **Calling hours** | Weekdays 9:00–21:30 and weekends 10:00–18:00, in the company's time zone. A call isn't started within 15 minutes of the end. Outside the window it waits for the next opening. |
 | **Identify and disclose** | The opening line is: *"Hi, is this Sam? This is the automated assistant calling for Northshore Home, and this call may be recorded."* It then gives the reason for the call. |
