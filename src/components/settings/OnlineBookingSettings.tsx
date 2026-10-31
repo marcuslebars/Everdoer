@@ -9,6 +9,7 @@ import { useCompanies } from "@/lib/api-hooks";
 import { useAuth } from "@/lib/auth-context";
 import { useOrg } from "@/lib/org-context";
 import { cn } from "@/lib/utils";
+import { useSettingsCompany } from "@/lib/settings-company";
 
 interface Settings {
   enabled: boolean;
@@ -298,9 +299,8 @@ export function OnlineBookingSettings() {
   const role = session?.organizations.find((o) => o.id === organizationId)?.membershipRole ?? "member";
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
-  const [picked, setPicked] = useState<string | null>(null);
   const list = companies ?? [];
-  const companyId = picked && list.some((c) => c.id === picked) ? picked : (list[0]?.id ?? null);
+  const [companyId, setPicked] = useSettingsCompany(list);
 
   return (
     <div className="space-y-6">

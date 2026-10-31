@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Bot, Loader2, MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useSettingsCompany } from "@/lib/settings-company";
+import { CompanyTabs } from "@/components/settings/CompanyTabs";
 import { toast } from "@/components/ui/sonner";
 import { useOrg } from "@/lib/org-context";
 import { useAuth } from "@/lib/auth-context";
@@ -197,6 +199,8 @@ export function AiFrontDeskSettings({ sections = [] }: { sections?: AiFrontDeskS
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
   const list = companies ?? [];
+  const [companyId, setPicked] = useSettingsCompany(list);
+  const company = list.find((c) => c.id === companyId) ?? null;
   // ?focus=estimator (from "Your AI" → Customize): scroll to that card once it has rendered.
   const focus = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("focus") : null;
   useEffect(() => {
@@ -205,7 +209,7 @@ export function AiFrontDeskSettings({ sections = [] }: { sections?: AiFrontDeskS
       document.querySelector(`[data-ai-section="${CSS.escape(focus)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [focus, isLoading, list.length]);
+  }, [focus, isLoading, list.length, companyId]);
 
   return (
     <div className="space-y-6">
@@ -227,23 +231,21 @@ export function AiFrontDeskSettings({ sections = [] }: { sections?: AiFrontDeskS
           No companies yet. Add a company under the Organization tab first.
         </div>
       ) : (
-        <div className="space-y-6">
-          {list.map((company) => {
-            const props: AiFrontDeskSectionProps = { orgId: organizationId, companyId: company.id, companyName: company.name, canManage };
-            return (
-              <div key={company.id} className="space-y-3">
-                {list.length > 1 && <h3 className="text-sm font-semibold text-foreground">{company.name}</h3>}
-                <div data-ai-section="texts">
-                  <SmsConversationsSection {...props} />
-                </div>
-                {sections.map((slot) => (
-                  <div key={slot.id} data-ai-section={slot.id}>
-                    {slot.render(props)}
-                  </div>
-                ))}
+        <div className="space-y-3">
+          {/* One business at a time; the switcher shows with more than one. */}
+          <CompanyTabs companies={list} selected={companyId} onSelect={setPicked} />
+          {company && (
+            <div key={company.id} className="space-y-3">
+              <div data-ai-section="texts">
+                <SmsConversationsSection orgId={organizationId} companyId={company.id} companyName={company.name} canManage={canManage} />
               </div>
-            );
-          })}
+              {sections.map((slot) => (
+                <div key={slot.id} data-ai-section={slot.id}>
+                  {slot.render({ orgId: organizationId, companyId: company.id, companyName: company.name, canManage })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

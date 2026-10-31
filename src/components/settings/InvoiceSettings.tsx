@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Banknote, CreditCard, Landmark, Loader2, Mail, Plus, Receipt, Wallet, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useSettingsCompany } from "@/lib/settings-company";
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
 import { useOrg } from "@/lib/org-context";
@@ -824,10 +825,9 @@ export function InvoiceSettings({ onOpenPayments }: { onOpenPayments?: () => voi
   const role = session?.organizations.find((o) => o.id === organizationId)?.membershipRole ?? "member";
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
-  const [picked, setPicked] = useState<string | null>(null);
 
   const list = companies ?? [];
-  const companyId = picked && list.some((c) => c.id === picked) ? picked : (list[0]?.id ?? null);
+  const [companyId, setPicked] = useSettingsCompany(list);
 
   return (
     <div className="space-y-6">
