@@ -785,7 +785,7 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col gap-6">
+    <div className="h-[calc(100vh-12rem)] lg:h-[calc(100vh-8rem)] flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>

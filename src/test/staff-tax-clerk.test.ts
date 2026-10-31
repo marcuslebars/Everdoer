@@ -565,6 +565,16 @@ describe("the worksheet", () => {
 const REMIND = Date.parse("2026-10-21T14:00:00Z");
 
 describe("the HST reminder and the accountant packet", () => {
+  // Pin the clock to the reminder day: the approval code's expiry is checked against Date.now, so
+  // without this the tests started failing once the real date passed late October 2026.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(REMIND);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   async function dfyCompany() {
     return (await loadTaxClerkCompany(db.client, ORG, CO))!;
   }
