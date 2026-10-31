@@ -24,6 +24,7 @@ import { categoryLabel } from "@/lib/expenses-api";
 import { useAuth } from "@/lib/auth-context";
 import { useOrg } from "@/lib/org-context";
 import { cn } from "@/lib/utils";
+import { useSettingsCompany } from "@/lib/settings-company";
 import { useBrand } from "@/lib/brand-context";
 
 const labelCls = "block text-sm font-medium text-foreground mb-1.5";
@@ -487,9 +488,8 @@ export function AccountingSettings() {
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
   const [params, setParams] = useSearchParams();
-  const [picked, setPicked] = useState<string | null>(() => params.get("company"));
   const list = useMemo(() => companies ?? [], [companies]);
-  const companyId = picked && list.some((c) => c.id === picked) ? picked : (list[0]?.id ?? null);
+  const [companyId, setPicked] = useSettingsCompany(list);
 
   // Back from QuickBooks / Xero.
   useEffect(() => {

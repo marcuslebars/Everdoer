@@ -89,7 +89,7 @@ describe("YourAiPage", () => {
 
   it("Customize goes to the detailed setting; none where there's nothing more to set; what's missing is shown", () => {
     renderPage();
-    expect(within(screen.getByTestId("your-ai-quote_follow_ups")).getByRole("link", { name: /Customize/ })).toHaveAttribute("href", "/settings?section=front-desk&focus=estimator");
+    expect(within(screen.getByTestId("your-ai-quote_follow_ups")).getByRole("link", { name: /Customize/ })).toHaveAttribute("href", "/settings?section=front-desk&focus=estimator&company=co-1");
     expect(within(screen.getByTestId("your-ai-lead_calls")).queryByRole("link", { name: /Customize/ })).toBeNull();
     expect(within(screen.getByTestId("your-ai-reviews")).getByText("Add your review link first")).toBeInTheDocument();
   });

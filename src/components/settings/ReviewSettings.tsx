@@ -17,6 +17,7 @@ import {
   type ReviewSettingsView,
 } from "@/lib/reviews-api";
 import { cn } from "@/lib/utils";
+import { useSettingsCompany } from "@/lib/settings-company";
 
 const inputCls =
   "w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-60";
@@ -244,9 +245,8 @@ export function ReviewSettings() {
   const role = session?.organizations.find((o) => o.id === organizationId)?.membershipRole ?? "member";
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
-  const [picked, setPicked] = useState<string | null>(null);
   const list = companies ?? [];
-  const companyId = picked && list.some((c) => c.id === picked) ? picked : (list[0]?.id ?? null);
+  const [companyId, setPicked] = useSettingsCompany(list);
 
   return (
     <div className="space-y-6">

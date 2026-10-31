@@ -214,7 +214,14 @@ export default function YourAiPage() {
                 <h2 className="pt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{group.title}</h2>
                 <ul className="divide-y divide-border">
                   {items.map((item) => (
-                    <SwitchRow key={item.key} item={item} canManage={canManage} busy={pendingKey !== null} onChange={(on, choice) => flip(item, on, choice)} />
+                    <SwitchRow
+                      key={item.key}
+                      // Customize opens the same business in Settings.
+                      item={item.customize && effectiveCompanyId ? { ...item, customize: `${item.customize}&company=${effectiveCompanyId}` } : item}
+                      canManage={canManage}
+                      busy={pendingKey !== null}
+                      onChange={(on, choice) => flip(item, on, choice)}
+                    />
                   ))}
                 </ul>
               </section>
