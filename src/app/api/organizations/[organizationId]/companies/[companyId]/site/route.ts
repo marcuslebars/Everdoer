@@ -17,14 +17,15 @@ interface RouteContext {
 export async function GET(_request: Request, context: RouteContext): Promise<NextResponse> {
   const { organizationId, companyId } = context.params;
   return siteRoute(organizationId, companyId, async ({ ctx, canManage }) => {
-    // A domain waiting on DNS is re-checked when the page is opened (at most once a minute).
+    // A connected domain is re-checked when an owner/admin opens the page (a pending one at most
+    // once a minute, a live one every six hours). Members never trigger calls to Railway.
     const { data: site } = await ctx.supabase
       .from("company_sites")
       .select("custom_domain_status, custom_domain_checked_at")
       .eq("organization_id", organizationId)
       .eq("company_id", companyId)
       .maybeSingle();
-    if (site && domainCheckDue(site, Date.now())) {
+    if (canManage && site && domainCheckDue(site, Date.now())) {
       await checkSiteDomain(createSupabaseAdminClient(), { organizationId, companyId }).catch((err) =>
         console.error("[site-domain] check failed:", err instanceof Error ? err.message : err),
       );

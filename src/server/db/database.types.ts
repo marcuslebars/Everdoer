@@ -2246,6 +2246,7 @@ export type Database = {
           content: Json
           created_at: string
           custom_domain: string | null
+          custom_domain_added_at: string | null
           custom_domain_checked_at: string | null
           custom_domain_dns: Json | null
           custom_domain_ref: string | null
@@ -2267,6 +2268,7 @@ export type Database = {
           content?: Json
           created_at?: string
           custom_domain?: string | null
+          custom_domain_added_at?: string | null
           custom_domain_checked_at?: string | null
           custom_domain_dns?: Json | null
           custom_domain_ref?: string | null
@@ -2287,6 +2289,7 @@ export type Database = {
           content?: Json
           created_at?: string
           custom_domain?: string | null
+          custom_domain_added_at?: string | null
           custom_domain_checked_at?: string | null
           custom_domain_dns?: Json | null
           custom_domain_ref?: string | null

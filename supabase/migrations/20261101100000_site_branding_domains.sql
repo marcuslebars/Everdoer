@@ -10,7 +10,7 @@ alter table public.company_sites
   add column if not exists favicon_url text check (favicon_url is null or favicon_url ~ '^https://'),
   add column if not exists custom_domain text check (
     custom_domain is null
-    or (length(custom_domain) <= 253 and custom_domain ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$')
+    or (length(custom_domain) <= 253 and custom_domain ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{2,59})$')
   ),
   -- Railway's id for the domain (customDomainCreate), so it can be checked and removed.
   add column if not exists custom_domain_ref text,
@@ -18,7 +18,9 @@ alter table public.company_sites
     check (custom_domain_status in ('none', 'pending', 'active')),
   -- The DNS records the owner has to add, and their last known state.
   add column if not exists custom_domain_dns jsonb,
-  add column if not exists custom_domain_checked_at timestamptz;
+  add column if not exists custom_domain_checked_at timestamptz,
+  -- When it was connected: a domain still waiting on DNS after a week is released.
+  add column if not exists custom_domain_added_at timestamptz;
 
 -- One business per domain.
 create unique index if not exists company_sites_custom_domain_key
@@ -26,14 +28,11 @@ create unique index if not exists company_sites_custom_domain_key
   where custom_domain is not null;
 
 -- ── Storage: public `site-images` bucket ──────────────────────────────────────
--- Path: {organization_id}/{company_id}/{logo|photo|favicon}-{uuid}.{png|jpg}. Public read (the
--- website, quotes and invoices show them unauthenticated). No client write policy: uploads go
--- through short-lived signed upload URLs minted by the server after the owner/admin check.
+-- Path: {organization_id}/{company_id}/{logo|photo|favicon}-{uuid}.{png|jpg}. A public bucket, so
+-- each file's public URL works for anyone (the website, quotes and invoices show them
+-- unauthenticated). Deliberately NO select policy on storage.objects: that would let anyone with
+-- the anon key list the bucket (and every org/company id). No client write policy either: uploads
+-- go through short-lived signed upload URLs minted by the server after the owner/admin check.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('site-images', 'site-images', true, 5242880, array['image/png', 'image/jpeg'])
 on conflict (id) do nothing;
-
-drop policy if exists "site_images_public_read" on storage.objects;
-create policy "site_images_public_read"
-  on storage.objects for select
-  using (bucket_id = 'site-images');

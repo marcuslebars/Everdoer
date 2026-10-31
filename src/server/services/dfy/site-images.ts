@@ -96,6 +96,34 @@ async function removeObject(admin: AdminClient, scope: Scope, url: string | null
 
 type CompanyImages = Pick<Tables<"companies">, "brand_logo_url" | "profile">;
 
+/**
+ * Change companies.profile.photos without losing a concurrent change: the write is conditional on
+ * companies.updated_at being what we read (the same pattern as ai_settings), retried a few times.
+ * `mutate` gets the current photos and returns the new list, or throws to refuse.
+ */
+async function updatePhotos(admin: AdminClient, scope: Scope, mutate: (photos: string[]) => string[], attempts = 4): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const { data, error } = await admin.from("companies").select("profile, updated_at").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle();
+    if (error) throw error;
+    const row = data as Pick<Tables<"companies">, "profile" | "updated_at"> | null;
+    if (!row) throw new UserFacingError("Company not found.", { status: 404 });
+    // Entries are kept as their https URL ({ url, caption } objects lose the caption).
+    const photos = mutate(profilePhotos(row.profile));
+    const next = { ...asRecord(row.profile), photos };
+    const bumped = new Date(Math.max(Date.now(), (Date.parse(row.updated_at) || 0) + 1)).toISOString();
+    const { data: written, error: writeError } = await admin
+      .from("companies")
+      .update({ profile: next as Json, updated_at: bumped })
+      .eq("organization_id", scope.organizationId)
+      .eq("id", scope.companyId)
+      .eq("updated_at", row.updated_at)
+      .select("id");
+    if (writeError) throw writeError;
+    if (((written ?? []) as unknown[]).length > 0) return;
+  }
+  throw new UserFacingError("Couldn't save the photos (something else was saving). Try again.", { status: 409 });
+}
+
 async function loadCompanyImages(admin: AdminClient, scope: Scope): Promise<CompanyImages> {
   const { data, error } = await admin.from("companies").select("brand_logo_url, profile").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle();
   if (error) throw error;
@@ -147,11 +175,16 @@ export async function saveSiteImage(admin: AdminClient, scope: Scope, kind: Site
     if (error) throw error;
     await removeObject(admin, scope, company.brand_logo_url);
   } else {
-    const photos = profilePhotos(company.profile);
-    if (photos.length >= MAX_SITE_PHOTOS) throw new UserFacingError(`You can have up to ${MAX_SITE_PHOTOS} photos. Remove one first.`);
-    const profile = { ...asRecord(company.profile), photos: [...photos, url] };
-    const { error } = await admin.from("companies").update({ profile: profile as Json }).eq("organization_id", scope.organizationId).eq("id", scope.companyId);
-    if (error) throw error;
+    try {
+      await updatePhotos(admin, scope, (photos) => {
+        if (photos.includes(url)) return photos;
+        if (photos.length >= MAX_SITE_PHOTOS) throw new UserFacingError(`You can have up to ${MAX_SITE_PHOTOS} photos. Remove one first.`);
+        return [...photos, url];
+      });
+    } catch (err) {
+      await removeObject(admin, scope, url); // not kept: don't leave the file behind
+      throw err;
+    }
   }
   await syncSiteImages(admin, scope);
 }
@@ -173,11 +206,10 @@ export async function removeSiteImage(admin: AdminClient, scope: Scope, kind: Si
     if (error) throw error;
     await removeObject(admin, scope, company.brand_logo_url);
   } else {
-    const photos = profilePhotos(company.profile);
-    if (!url || !photos.includes(url)) throw new UserFacingError("That photo isn't on your page.");
-    const profile = { ...asRecord(company.profile), photos: photos.filter((p) => p !== url) };
-    const { error } = await admin.from("companies").update({ profile: profile as Json }).eq("organization_id", scope.organizationId).eq("id", scope.companyId);
-    if (error) throw error;
+    await updatePhotos(admin, scope, (photos) => {
+      if (!url || !photos.includes(url)) throw new UserFacingError("That photo isn't on your page.");
+      return photos.filter((p) => p !== url);
+    });
     await removeObject(admin, scope, url);
   }
   await syncSiteImages(admin, scope);
@@ -185,11 +217,9 @@ export async function removeSiteImage(admin: AdminClient, scope: Scope, kind: Si
 
 /** Make one photo the first (the big photo at the top of the page). */
 export async function makeCoverPhoto(admin: AdminClient, scope: Scope, url: string): Promise<void> {
-  const company = await loadCompanyImages(admin, scope);
-  const photos = profilePhotos(company.profile);
-  if (!photos.includes(url)) throw new UserFacingError("That photo isn't on your page.");
-  const profile = { ...asRecord(company.profile), photos: [url, ...photos.filter((p) => p !== url)] };
-  const { error } = await admin.from("companies").update({ profile: profile as Json }).eq("organization_id", scope.organizationId).eq("id", scope.companyId);
-  if (error) throw error;
+  await updatePhotos(admin, scope, (photos) => {
+    if (!photos.includes(url)) throw new UserFacingError("That photo isn't on your page.");
+    return [url, ...photos.filter((p) => p !== url)];
+  });
   await syncSiteImages(admin, scope);
 }

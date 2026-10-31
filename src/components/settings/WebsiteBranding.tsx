@@ -246,9 +246,16 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
 
       {d && d.status !== "active" && (
         <div className="space-y-3" data-testid="domain-dns">
-          <p className="text-sm text-foreground">
-            <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add these records:
-          </p>
+          {d.dns.records.length === 0 ? (
+            <p className="text-sm text-foreground">
+              <span className="font-medium">{d.name}</span> isn't set up on our side right now. Disconnect it below and connect it again.
+            </p>
+          ) : (
+            <p className="text-sm text-foreground">
+              <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add these records:
+            </p>
+          )}
+          {d.dns.records.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-xs">
               <thead className="bg-secondary text-muted-foreground">
@@ -279,9 +286,10 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
               </tbody>
             </table>
           </div>
+          )}
           <p className={hintCls}>
             {d.dns.records.some((r) => r.name === "@") ? "\"@\" means the domain itself. If your provider won't take a CNAME on \"@\", use ALIAS or ANAME, or use www instead. " : ""}
-            Changes usually show up within an hour, sometimes up to a day. We check again whenever you open this page.
+            Changes usually show up within an hour, sometimes up to a day. We check again whenever you open this page. If it isn't working after a week, we disconnect it so you can try again.
           </p>
           {canManage && (
             <div className="flex flex-wrap gap-2">

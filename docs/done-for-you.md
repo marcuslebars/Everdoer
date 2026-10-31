@@ -364,24 +364,40 @@ Also in Settings → Your website (`WebsiteBranding.tsx`).
 - Saving checks the path is this company's and of the right kind, and that the object exists.
 - Replacing or removing an image deletes our old file. URLs outside our bucket are never deleted.
 - The bucket has a 5 MB limit and allows PNG and JPEG only (no SVG, because the bucket is public).
+- The bucket has no `storage.objects` select policy, so it can't be listed. Public URLs work
+  without one.
+- Photo changes are conditional on `companies.updated_at`, so two saves at once don't lose one.
 
 **Your own domain** (`dfy/site-domain.ts`, route `.../site/domain`).
 - **Connect.** The owner types a domain. It is added to the web service through Railway's
-  public API (`customDomainCreate`).
-- **DNS to add.** Settings shows the records to create: a CNAME (or ALIAS/ANAME on the root) to
-  Railway's target, plus Railway's ownership TXT record.
-  - Railway's API returns only the TXT token. The record is shown as `_railway-verify[.<sub>]` /
-    `railway-verify=<token>` (`verificationRecord`).
-  - Check the first real domain against the Railway dashboard and adjust there if Railway names
-    it differently.
-- **Going live.** Settings re-checks a pending domain at most once a minute, plus a "Check now"
-  button. It goes `active` once the CNAME is valid and the certificate is issued.
-- **Disconnect** removes the domain from Railway too.
-- **Env [web]:** `RAILWAY_API_TOKEN` (an account or workspace token). Railway sets
-  `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID` and `RAILWAY_SERVICE_ID` itself. Without the
-  token, Settings says domains aren't switched on yet.
-- **Railway limit:** custom domains per service are capped (Pro: 20 by default, raised on
-  request). Ask Railway before offering this widely.
+  public GraphQL API (`customDomainCreate`). Field and enum names were checked against Railway's
+  schema by introspection.
+  - If the domain is already on our service in Railway (an earlier attempt whose reply was lost),
+    it is taken over instead of failing with "in use".
+  - If the site's form key only accepts listed websites, `https://<domain>` is added to that list.
+- **DNS to add.** Settings shows each record with its state:
+  - the routing CNAME (or ALIAS/ANAME on the root), from `status.dnsRecords`;
+  - Railway's ownership TXT record, from `status.verificationDnsHost` and `verificationToken`.
+  Names are shown relative to the domain the owner bought.
+- **Going live.** The domain goes `active` only when all three are true:
+  - `status.verified` (the TXT record is in place);
+  - every routing record is `DNS_RECORD_STATUS_PROPAGATED`;
+  - the certificate is `CERTIFICATE_STATUS_TYPE_VALID`.
+- **Re-checks.** Opening Settings as an owner or admin re-checks the domain: a pending one at most
+  once a minute, a live one every 6 hours. There's also a "Check now" button. Members never
+  trigger Railway calls, and calls time out after 8 s.
+  - A live domain that's gone from Railway goes back to pending, with a message to disconnect and
+    reconnect.
+  - A domain still pending after 7 days is released.
+- **Disconnect** removes the domain from Railway first. If Railway fails, the domain is kept and
+  the owner is told to try again. A domain already gone from Railway is simply cleared.
+- **Env [web]:**
+  - `RAILWAY_API_TOKEN`: an account or workspace token. Railway sets `RAILWAY_PROJECT_ID`,
+    `RAILWAY_ENVIRONMENT_ID` and `RAILWAY_SERVICE_ID` itself. Without the token, Settings says
+    domains aren't switched on yet.
+  - `SITE_DOMAINS_MAX`: how many sites may have a domain at once. The default is 15, leaving
+    room under Railway's per-service cap (Pro: 20 by default, raised on request) for our own and
+    tenant hosts.
 
 **Serving on the domain.**
 - `src/middleware.ts` rewrites `/` on any host that isn't ours to `/s/_domain`. "Ours" means the
@@ -395,7 +411,9 @@ Also in Settings → Your website (`WebsiteBranding.tsx`).
   - The canonical URL is `https://<domain>/` (`sitePublicUrl`, also shown in Settings).
   - The quote form is the app's embeddable form (`<APP>/embed/v1.js`), because Turnstile only
     runs on our own hostnames.
-  - A form key with `allowed_origins` set must list the domain.
+  - The site's form key accepts the domain (added on connect if the key is restricted).
+- **Known limit:** only `/` is the business's page. Other paths on the domain (`/login`, `/q/…`,
+  and so on) are the app, as on any host pointed at the service.
 
 ### Serving and caching
 

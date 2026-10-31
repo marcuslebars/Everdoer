@@ -87,7 +87,7 @@ let storage: ReturnType<typeof fakeStorage>;
 
 function seed(company: Record<string, unknown> = {}, site: Record<string, unknown> | null = {}) {
   db = createFakeDb({
-    companies: [{ id: CO, organization_id: ORG, name: "Northshore Snow", brand_logo_url: null, profile: {}, ...company }],
+    companies: [{ id: CO, organization_id: ORG, name: "Northshore Snow", brand_logo_url: null, profile: {}, updated_at: "2026-10-31T11:00:00.000Z", ...company }],
     company_sites: site
       ? [
           {
@@ -103,12 +103,13 @@ function seed(company: Record<string, unknown> = {}, site: Record<string, unknow
             custom_domain_status: "none",
             custom_domain_dns: null,
             custom_domain_checked_at: null,
+            custom_domain_added_at: null,
             updated_at: "2026-10-31T12:00:00.000Z",
             ...site,
           },
         ]
       : [],
-    public_form_keys: [{ organization_id: ORG, company_id: CO, public_key: "evpk_0123456789abcdef0123456789abcdef", form_type: "quote", active: true, created_at: "2026-10-01T00:00:00Z" }],
+    public_form_keys: [{ id: "k1", allowed_origins: [], organization_id: ORG, company_id: CO, public_key: "evpk_0123456789abcdef0123456789abcdef", form_type: "quote", active: true, created_at: "2026-10-01T00:00:00Z" }],
   });
   storage = fakeStorage();
   Object.assign(db.client, { storage: storage.api });
@@ -230,39 +231,78 @@ describe("domains (pure)", () => {
     }
   });
 
-  it("Railway status → records to add, live once routing is valid and the certificate issued", () => {
-    const pending = readRailwayStatus("www.acme.ca", { verificationToken: "abc123", certificateStatus: "PENDING", dnsRecords: [{ hostlabel: "www", requiredValue: "x1.up.railway.app.", status: "PENDING" }] });
+  // Railway's real enums (introspected): DNS_RECORD_STATUS_*, DNS_RECORD_TYPE_*, CERTIFICATE_STATUS_TYPE_*.
+  const cname = (status: string, over: Record<string, unknown> = {}) => ({
+    hostlabel: "www",
+    zone: "acme.ca",
+    recordType: "DNS_RECORD_TYPE_CNAME",
+    purpose: "DNS_RECORD_PURPOSE_TRAFFIC_ROUTE",
+    requiredValue: "x1.up.railway.app.",
+    currentValue: "",
+    status,
+    ...over,
+  });
+
+  it("Railway status → records to add (names relative to the domain)", () => {
+    const pending = readRailwayStatus("www.acme.ca", {
+      verified: false,
+      verificationDnsHost: "_railway-verify.www.acme.ca",
+      verificationToken: "railway-verify=abc123",
+      certificateStatus: "CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP",
+      dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE")],
+    });
     expect(pending.active).toBe(false);
     expect(pending.dns.records).toEqual([
-      { type: "CNAME", name: "www", value: "x1.up.railway.app", status: "PENDING" },
+      { type: "CNAME", name: "www", value: "x1.up.railway.app", status: null },
       { type: "TXT", name: "_railway-verify.www", value: "railway-verify=abc123", status: null },
     ]);
-    expect(readRailwayStatus("www.acme.ca", { certificateStatus: "ISSUED", dnsRecords: [{ hostlabel: "www", requiredValue: "x1.up.railway.app", status: "VALID" }] }).active).toBe(true);
-    expect(readRailwayStatus("acme.ca", { dnsRecords: [{ hostlabel: "", requiredValue: "x1.up.railway.app", status: "VALID" }] }).dns.records[0].name).toBe("@");
+    const root = readRailwayStatus("acme.ca", { verified: false, verificationDnsHost: "_railway-verify", verificationToken: "t", dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE", { hostlabel: "@" })] });
+    expect(root.dns.records.map((r) => r.name)).toEqual(["@", "_railway-verify"]);
   });
 
-  it("verification record for the root and a token that already has its prefix", () => {
-    expect(verificationRecord("@", "railway-verify=zz")).toEqual({ type: "TXT", name: "_railway-verify", value: "railway-verify=zz", status: null });
+  it("live only when ownership is verified, every routing record propagated and the certificate valid", () => {
+    const live = { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [cname("DNS_RECORD_STATUS_PROPAGATED")] };
+    expect(readRailwayStatus("www.acme.ca", live).active).toBe(true);
+    expect(readRailwayStatus("www.acme.ca", { ...live, verified: false }).active).toBe(false);
+    expect(readRailwayStatus("www.acme.ca", { ...live, certificateStatus: "CERTIFICATE_STATUS_TYPE_ISSUING" }).active).toBe(false);
+    expect(readRailwayStatus("www.acme.ca", { ...live, dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE")] }).active).toBe(false);
+    expect(readRailwayStatus("www.acme.ca", { ...live, dnsRecords: [] }).active).toBe(false);
+    expect(readRailwayStatus("www.acme.ca", live).dns.records[0].status).toBe("VALID");
   });
 
-  it("re-checks a pending domain at most once a minute", () => {
+  it("verification record: prefix added only when missing; verified shows as found", () => {
+    expect(verificationRecord("@", "railway-verify=zz")).toEqual({ type: "TXT", name: "@", value: "railway-verify=zz", status: null });
+    expect(verificationRecord("_railway-verify", "zz", true)).toEqual({ type: "TXT", name: "_railway-verify", value: "railway-verify=zz", status: "VALID" });
+  });
+
+  it("punycode domains are fine", () => {
+    expect(normalizeDomain("xn--caf-dma.ca")).toBe("xn--caf-dma.ca");
+    expect(normalizeDomain("shop.xn--p1ai")).toBe("shop.xn--p1ai");
+  });
+
+  it("re-checks a pending domain at most once a minute, a live one every six hours", () => {
     const now = Date.parse("2026-10-31T12:00:00Z");
     expect(domainCheckDue({ custom_domain_status: "pending", custom_domain_checked_at: "2026-10-31T11:58:00Z" }, now)).toBe(true);
     expect(domainCheckDue({ custom_domain_status: "pending", custom_domain_checked_at: "2026-10-31T11:59:30Z" }, now)).toBe(false);
-    expect(domainCheckDue({ custom_domain_status: "active", custom_domain_checked_at: null }, now)).toBe(false);
+    expect(domainCheckDue({ custom_domain_status: "active", custom_domain_checked_at: "2026-10-31T09:00:00Z" }, now)).toBe(false);
+    expect(domainCheckDue({ custom_domain_status: "active", custom_domain_checked_at: "2026-10-31T05:00:00Z" }, now)).toBe(true);
+    expect(domainCheckDue({ custom_domain_status: "none", custom_domain_checked_at: null }, now)).toBe(false);
   });
 });
 
 describe("connecting a domain (Railway)", () => {
   let calls: Array<{ query: string; variables: Record<string, unknown> }>;
-  let responses: Array<unknown>;
+  /** Replies by operation: domains / customDomainAvailable / customDomainCreate / customDomain / customDomainDelete. */
+  let replies: Record<string, unknown>;
 
   function deps(over: Partial<DomainDeps> = {}): DomainDeps {
     const fetchImpl: RailwayFetch = async (_url, init) => {
       const body = JSON.parse(init.body) as { query: string; variables: Record<string, unknown> };
       calls.push(body);
-      const next = responses.shift() ?? { data: {} };
-      return { ok: true, status: 200, json: async () => next };
+      const op = ["customDomainAvailable", "customDomainCreate", "customDomainDelete", "customDomain(", "domains("].find((k) => body.query.includes(k)) ?? "";
+      const reply = replies[op.replace("(", "")] ?? { data: {} };
+      if (reply instanceof Error) throw reply;
+      return { ok: true, status: 200, json: async () => reply };
     };
     return {
       config: { token: "t", projectId: "proj", environmentId: "env", serviceId: "svc", targetPort: 8080 },
@@ -271,25 +311,44 @@ describe("connecting a domain (Railway)", () => {
       ...over,
     };
   }
+  const ops = () => calls.map((c) => ["customDomainAvailable", "customDomainCreate", "customDomainDelete", "customDomain(", "domains("].find((k) => c.query.includes(k))?.replace("(", ""));
+  const pendingStatus = {
+    verified: false,
+    verificationDnsHost: "_railway-verify.www.acme.ca",
+    verificationToken: "railway-verify=tok",
+    certificateStatus: "CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP",
+    dnsRecords: [{ hostlabel: "www", zone: "acme.ca", recordType: "DNS_RECORD_TYPE_CNAME", purpose: "DNS_RECORD_PURPOSE_TRAFFIC_ROUTE", requiredValue: "x1.up.railway.app", status: "DNS_RECORD_STATUS_REQUIRES_UPDATE" }],
+  };
 
   beforeEach(() => {
     seed();
     calls = [];
-    responses = [];
+    replies = {
+      domains: { data: { domains: { customDomains: [{ id: "tenant-host", domain: "quotes.a1marinecare.ca" }] } } },
+      customDomainAvailable: { data: { customDomainAvailable: { available: true } } },
+      customDomainCreate: { data: { customDomainCreate: { id: "dom-1", domain: "www.acme.ca", status: pendingStatus } } },
+      customDomainDelete: { data: { customDomainDelete: true } },
+    };
   });
 
   it("adds it to the web service and stores the records to show", async () => {
-    responses = [
-      { data: { customDomainAvailable: { available: true } } },
-      { data: { customDomainCreate: { id: "dom-1", domain: "www.acme.ca", status: { verificationToken: "tok", dnsRecords: [{ hostlabel: "www", requiredValue: "x1.up.railway.app", status: "PENDING" }] } } } },
-    ];
     await connectSiteDomain(db.client, scope, "https://www.acme.ca", deps());
-    expect(calls[1].variables).toEqual({ input: { domain: "www.acme.ca", projectId: "proj", environmentId: "env", serviceId: "svc", targetPort: 8080 } });
-    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending" });
-    expect((siteRow().custom_domain_dns as { records: unknown[] }).records).toHaveLength(2);
+    expect(ops()).toEqual(["domains", "customDomainAvailable", "customDomainCreate"]);
+    expect(calls[2].variables).toEqual({ input: { domain: "www.acme.ca", projectId: "proj", environmentId: "env", serviceId: "svc", targetPort: 8080 } });
+    expect(calls[2].query).toContain("verificationDnsHost");
+    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T12:00:00.000Z" });
+    expect((siteRow().custom_domain_dns as { records: Array<{ type: string; name: string }> }).records.map((r) => `${r.type} ${r.name}`)).toEqual(["CNAME www", "TXT _railway-verify.www"]);
   });
 
-  it("refuses without the Railway token, without a page, a second domain, or a taken one", async () => {
+  it("already on our service in Railway (an earlier reply was lost) → taken over, not 'in use'", async () => {
+    replies.domains = { data: { domains: { customDomains: [{ id: "dom-old", domain: "www.acme.ca" }] } } };
+    replies.customDomain = { data: { customDomain: { id: "dom-old", status: pendingStatus } } };
+    await connectSiteDomain(db.client, scope, "www.acme.ca", deps());
+    expect(ops()).not.toContain("customDomainCreate");
+    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "dom-old", custom_domain_status: "pending" });
+  });
+
+  it("refuses without the Railway token, without a page, a second domain, a taken one, or past the cap", async () => {
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps({ config: null }))).rejects.toThrow(/isn't switched on/);
     seed({}, null);
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/Create your page first/);
@@ -298,29 +357,82 @@ describe("connecting a domain (Railway)", () => {
     seed();
     db.tables.company_sites.push({ id: "site-2", organization_id: ORG, company_id: "other", slug: "other", custom_domain: "www.acme.ca" });
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/another business/);
+    process.env.SITE_DOMAINS_MAX = "1";
+    await expect(connectSiteDomain(db.client, scope, "www.other.ca", deps())).rejects.toThrow(/can't connect more domains/);
+    delete process.env.SITE_DOMAINS_MAX;
     expect(calls).toHaveLength(0);
   });
 
   it("Railway says it's in use elsewhere → a plain message, nothing stored", async () => {
-    responses = [{ data: { customDomainAvailable: { available: false, message: "Domain is already in use" } } }];
+    replies.customDomainAvailable = { data: { customDomainAvailable: { available: false, message: "Domain is already in use" } } };
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/already in use/);
     expect(siteRow().custom_domain).toBeNull();
   });
 
-  it("check: goes live once DNS is valid; keeps showing the TXT record", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_dns: { records: [{ type: "TXT", name: "_railway-verify.www", value: "railway-verify=tok", status: null }], certificate: null } });
-    responses = [{ data: { customDomain: { status: { certificateStatus: "ISSUED", dnsRecords: [{ hostlabel: "www", requiredValue: "x1.up.railway.app", status: "VALID" }] } } } }];
+  it("the site's form, if limited to listed websites, gets the domain added", async () => {
+    db.tables.public_form_keys[0] = { ...(db.tables.public_form_keys[0] as object), id: "k1", allowed_origins: ["https://acme-old.ca"] };
+    await connectSiteDomain(db.client, scope, "www.acme.ca", deps());
+    expect((db.tables.public_form_keys[0] as { allowed_origins: string[] }).allowed_origins).toEqual(["https://acme-old.ca", "https://www.acme.ca"]);
+  });
+
+  it("check: goes live once verified, propagated and certified; keeps the TXT record", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z", custom_domain_dns: { records: [{ type: "TXT", name: "_railway-verify.www", value: "railway-verify=tok", status: null }], certificate: null } });
+    replies.customDomain = { data: { customDomain: { id: "dom-1", status: { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [{ ...pendingStatus.dnsRecords[0], status: "DNS_RECORD_STATUS_PROPAGATED" }] } } } };
     expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
     expect(siteRow().custom_domain_status).toBe("active");
     expect((siteRow().custom_domain_dns as { records: Array<{ type: string }> }).records.map((r) => r.type)).toEqual(["CNAME", "TXT"]);
   });
 
-  it("remove: deleted in Railway and cleared; a Railway failure doesn't trap the owner", async () => {
+  it("check: still waiting after a week → released (removed in Railway, cleared)", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-20T10:00:00Z" });
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("none");
+    expect(ops()).toEqual(["customDomainDelete"]);
+    expect(siteRow()).toMatchObject({ custom_domain: null, custom_domain_status: "none" });
+  });
+
+  it("check: a live domain that's gone from Railway goes back to waiting (no records)", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
+    replies.customDomain = { data: { customDomain: null } };
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("pending");
+    expect(siteRow().custom_domain_dns).toEqual({ records: [], certificate: null });
+  });
+
+  it("check racing a reconnect doesn't touch the new domain", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    replies.customDomain = { data: { customDomain: { id: "dom-1", status: { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [{ ...pendingStatus.dnsRecords[0], status: "DNS_RECORD_STATUS_PROPAGATED" }] } } } };
+    const d = deps();
+    const slowFetch: RailwayFetch = async (url, init) => {
+      // While Railway answers, the owner disconnects and connects another domain.
+      Object.assign(siteRow(), { custom_domain: "www.new.ca", custom_domain_ref: "dom-2", custom_domain_status: "pending" });
+      return d.fetch(url, init);
+    };
+    await checkSiteDomain(db.client, scope, { ...d, fetch: slowFetch });
+    expect(siteRow()).toMatchObject({ custom_domain: "www.new.ca", custom_domain_ref: "dom-2", custom_domain_status: "pending" });
+  });
+
+  it("remove: deleted in Railway and cleared; a Railway failure keeps it and says try again", async () => {
     seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
     vi.spyOn(console, "error").mockImplementation(() => {});
     const failing: RailwayFetch = async () => ({ ok: false, status: 500, json: async () => ({ errors: [{ message: "boom" }] }) });
-    await removeSiteDomain(db.client, scope, deps({ fetch: failing }));
+    await expect(removeSiteDomain(db.client, scope, deps({ fetch: failing }))).rejects.toThrow(/Try again/);
+    expect(siteRow().custom_domain).toBe("www.acme.ca");
+    await removeSiteDomain(db.client, scope, deps());
     expect(siteRow()).toMatchObject({ custom_domain: null, custom_domain_ref: null, custom_domain_status: "none" });
+  });
+
+  it("remove: already gone in Railway is fine", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
+    const gone: RailwayFetch = async () => ({ ok: true, status: 200, json: async () => ({ errors: [{ message: "Custom domain not found" }] }) });
+    await removeSiteDomain(db.client, scope, deps({ fetch: gone }));
+    expect(siteRow().custom_domain).toBeNull();
+  });
+
+  it("Railway hanging or down → 'try again', not a crash", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    const down: RailwayFetch = async () => {
+      throw new Error("The operation was aborted due to timeout");
+    };
+    await expect(checkSiteDomain(db.client, scope, deps({ fetch: down }))).rejects.toThrow(/couldn't reach/);
   });
 });
 
