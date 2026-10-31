@@ -42,7 +42,7 @@ export interface SiteView {
     domain: null | {
       name: string;
       status: "pending" | "active" | "none";
-      dns: { records: Array<{ type: "CNAME" | "TXT"; name: string; value: string; status: string | null }>; certificate: string | null };
+      dns: { records: Array<{ type: "CNAME" | "TXT"; name: string; value: string; status: string | null }>; certificate: string | null; problem?: string | null };
       checkedAt: string | null;
     };
   };

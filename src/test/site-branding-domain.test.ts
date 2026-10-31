@@ -3,9 +3,6 @@
  * (site-domain.ts), serving a page on that domain (site-host.ts, /s/[slug] route), and the
  * renderer's favicon, gallery and embedded form.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeDb, type FakeDb } from "@/test/helpers/fake-supabase";
@@ -21,13 +18,13 @@ import {
   connectSiteDomain,
   domainCheckDue,
   normalizeDomain,
-  readRailwayStatus,
+  readHostname,
+  recordName,
   removeSiteDomain,
-  verificationRecord,
   type DomainDeps,
-  type RailwayFetch,
+  type ApiFetch,
 } from "@/server/services/dfy/site-domain";
-import { customDomainRewritePath, CUSTOM_DOMAIN_SITE_PATH } from "@/server/services/dfy/site-host";
+import { edgeSiteHost } from "@/server/services/dfy/site-host";
 import {
   createSiteImageUpload,
   makeCoverPhoto,
@@ -223,61 +220,36 @@ describe("domains (pure)", () => {
     expect(normalizeDomain("https://WWW.Acme-Roofing.ca/contact")).toBe("www.acme-roofing.ca");
     expect(normalizeDomain(" acme.ca. ")).toBe("acme.ca");
     expect(normalizeDomain("acme.ca:443")).toBe("acme.ca");
+    expect(normalizeDomain("xn--caf-dma.ca")).toBe("xn--caf-dma.ca");
   });
 
   it("refuses non-domains and our own", () => {
-    for (const bad of ["", "acme", "acme..ca", "-acme.ca", "http://", "1.2.3.4", "app.everdoer.com", "x.up.railway.app", "acme.example.com"]) {
+    for (const bad of ["", "acme", "acme..ca", "-acme.ca", "http://", "1.2.3.4", "app.everdoer.com", "sites.everdoer.com", "x.up.railway.app", "acme.example.com"]) {
       expect(() => normalizeDomain(bad)).toThrow();
     }
   });
 
-  // Railway's real enums (introspected): DNS_RECORD_STATUS_*, DNS_RECORD_TYPE_*, CERTIFICATE_STATUS_TYPE_*.
-  const cname = (status: string, over: Record<string, unknown> = {}) => ({
-    hostlabel: "www",
-    zone: "acme.ca",
-    recordType: "DNS_RECORD_TYPE_CNAME",
-    purpose: "DNS_RECORD_PURPOSE_TRAFFIC_ROUTE",
-    requiredValue: "x1.up.railway.app.",
-    currentValue: "",
-    status,
-    ...over,
+  it("the DNS Name field: '@' for the root, else the part before the domain", () => {
+    expect(recordName("acme.ca")).toBe("@");
+    expect(recordName("www.acme.ca")).toBe("www");
+    expect(recordName("shop.www.acme.ca")).toBe("shop.www");
+    expect(recordName("acme.co.uk")).toBe("@");
+    expect(recordName("www.acme.co.uk")).toBe("www");
   });
 
-  it("Railway status → records to add (names relative to the domain)", () => {
-    const pending = readRailwayStatus("www.acme.ca", {
-      verified: false,
-      verificationDnsHost: "_railway-verify.www.acme.ca",
-      verificationToken: "railway-verify=abc123",
-      certificateStatus: "CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP",
-      dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE")],
-    });
+  it("Cloudflare state → one CNAME to our target; live only when the hostname and certificate are active", () => {
+    const pending = readHostname("www.acme.ca", "sites.everdoer.com", { id: "h1", hostname: "www.acme.ca", status: "pending", ssl: { status: "pending_validation" } });
     expect(pending.active).toBe(false);
-    expect(pending.dns.records).toEqual([
-      { type: "CNAME", name: "www", value: "x1.up.railway.app", status: null },
-      { type: "TXT", name: "_railway-verify.www", value: "railway-verify=abc123", status: null },
-    ]);
-    const root = readRailwayStatus("acme.ca", { verified: false, verificationDnsHost: "_railway-verify", verificationToken: "t", dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE", { hostlabel: "@" })] });
-    expect(root.dns.records.map((r) => r.name)).toEqual(["@", "_railway-verify"]);
+    expect(pending.dns.records).toEqual([{ type: "CNAME", name: "www", value: "sites.everdoer.com", status: null }]);
+    expect(readHostname("www.acme.ca", "sites.everdoer.com", { id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "pending_validation" } }).active).toBe(false);
+    const live = readHostname("www.acme.ca", "sites.everdoer.com", { id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } });
+    expect(live.active).toBe(true);
+    expect(live.dns.records[0].status).toBe("VALID");
   });
 
-  it("live only when ownership is verified, every routing record propagated and the certificate valid", () => {
-    const live = { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [cname("DNS_RECORD_STATUS_PROPAGATED")] };
-    expect(readRailwayStatus("www.acme.ca", live).active).toBe(true);
-    expect(readRailwayStatus("www.acme.ca", { ...live, verified: false }).active).toBe(false);
-    expect(readRailwayStatus("www.acme.ca", { ...live, certificateStatus: "CERTIFICATE_STATUS_TYPE_ISSUING" }).active).toBe(false);
-    expect(readRailwayStatus("www.acme.ca", { ...live, dnsRecords: [cname("DNS_RECORD_STATUS_REQUIRES_UPDATE")] }).active).toBe(false);
-    expect(readRailwayStatus("www.acme.ca", { ...live, dnsRecords: [] }).active).toBe(false);
-    expect(readRailwayStatus("www.acme.ca", live).dns.records[0].status).toBe("VALID");
-  });
-
-  it("verification record: prefix added only when missing; verified shows as found", () => {
-    expect(verificationRecord("@", "railway-verify=zz")).toEqual({ type: "TXT", name: "@", value: "railway-verify=zz", status: null });
-    expect(verificationRecord("_railway-verify", "zz", true)).toEqual({ type: "TXT", name: "_railway-verify", value: "railway-verify=zz", status: "VALID" });
-  });
-
-  it("punycode domains are fine", () => {
-    expect(normalizeDomain("xn--caf-dma.ca")).toBe("xn--caf-dma.ca");
-    expect(normalizeDomain("shop.xn--p1ai")).toBe("shop.xn--p1ai");
+  it("passes Cloudflare's explanation on while it isn't live", () => {
+    const r = readHostname("www.acme.ca", "sites.everdoer.com", { id: "h1", hostname: "www.acme.ca", status: "pending", verification_errors: ["custom hostname does not CNAME to this zone."], ssl: { status: "pending_validation" } });
+    expect(r.dns.problem).toMatch(/does not CNAME/);
   });
 
   it("re-checks a pending domain at most once a minute, a live one every six hours", () => {
@@ -290,65 +262,50 @@ describe("domains (pure)", () => {
   });
 });
 
-describe("connecting a domain (Railway)", () => {
-  let calls: Array<{ query: string; variables: Record<string, unknown> }>;
-  /** Replies by operation: domains / customDomainAvailable / customDomainCreate / customDomain / customDomainDelete. */
-  let replies: Record<string, unknown>;
+describe("connecting a domain (Cloudflare for SaaS)", () => {
+  let calls: Array<{ method: string; url: string; body: unknown }>;
+  /** Replies keyed "METHOD path-suffix" (matched by the first key the URL ends with / contains). */
+  let replies: Array<{ match: (method: string, url: string) => boolean; status?: number; body: unknown }>;
 
   function deps(over: Partial<DomainDeps> = {}): DomainDeps {
-    const fetchImpl: RailwayFetch = async (_url, init) => {
-      const body = JSON.parse(init.body) as { query: string; variables: Record<string, unknown> };
-      calls.push(body);
-      const op = ["customDomainAvailable", "customDomainCreate", "customDomainDelete", "customDomain(", "domains("].find((k) => body.query.includes(k)) ?? "";
-      const reply = replies[op.replace("(", "")] ?? { data: {} };
-      if (reply instanceof Error) throw reply;
-      return { ok: true, status: 200, json: async () => reply };
+    const fetchImpl: ApiFetch = async (url, init) => {
+      calls.push({ method: init.method, url, body: init.body ? JSON.parse(init.body) : undefined });
+      const r = replies.find((x) => x.match(init.method, url));
+      const status = r?.status ?? 200;
+      return { ok: status < 400, status, json: async () => r?.body ?? { success: true, result: null } };
     };
-    return {
-      config: { token: "t", projectId: "proj", environmentId: "env", serviceId: "svc", targetPort: 8080 },
-      fetch: fetchImpl,
-      now: () => new Date("2026-10-31T12:00:00Z"),
-      ...over,
-    };
+    return { config: { token: "t", zoneId: "zone", target: "sites.everdoer.com" }, fetch: fetchImpl, now: () => new Date("2026-10-31T12:00:00Z"), ...over };
   }
-  const ops = () => calls.map((c) => ["customDomainAvailable", "customDomainCreate", "customDomainDelete", "customDomain(", "domains("].find((k) => c.query.includes(k))?.replace("(", ""));
-  const pendingStatus = {
-    verified: false,
-    verificationDnsHost: "_railway-verify.www.acme.ca",
-    verificationToken: "railway-verify=tok",
-    certificateStatus: "CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP",
-    dnsRecords: [{ hostlabel: "www", zone: "acme.ca", recordType: "DNS_RECORD_TYPE_CNAME", purpose: "DNS_RECORD_PURPOSE_TRAFFIC_ROUTE", requiredValue: "x1.up.railway.app", status: "DNS_RECORD_STATUS_REQUIRES_UPDATE" }],
-  };
+  const reply = (method: string, contains: string, body: unknown, status?: number) => ({ match: (m: string, u: string) => m === method && u.includes(contains), body, status });
+  const ok = (result: unknown) => ({ success: true, result });
+  const ops = () => calls.map((c) => `${c.method} ${c.url.replace("https://api.cloudflare.com/client/v4/zones/zone", "")}`);
 
   beforeEach(() => {
     seed();
     calls = [];
-    replies = {
-      domains: { data: { domains: { customDomains: [{ id: "tenant-host", domain: "quotes.a1marinecare.ca" }] } } },
-      customDomainAvailable: { data: { customDomainAvailable: { available: true } } },
-      customDomainCreate: { data: { customDomainCreate: { id: "dom-1", domain: "www.acme.ca", status: pendingStatus } } },
-      customDomainDelete: { data: { customDomainDelete: true } },
-    };
+    replies = [
+      reply("GET", "/custom_hostnames?hostname=", ok([])),
+      reply("POST", "/custom_hostnames", ok({ id: "h1", hostname: "www.acme.ca", status: "pending", ssl: { status: "initializing" } })),
+    ];
   });
 
-  it("adds it to the web service and stores the records to show", async () => {
+  it("adds a custom hostname (HTTP validation) and stores the one CNAME to show", async () => {
     await connectSiteDomain(db.client, scope, "https://www.acme.ca", deps());
-    expect(ops()).toEqual(["domains", "customDomainAvailable", "customDomainCreate"]);
-    expect(calls[2].variables).toEqual({ input: { domain: "www.acme.ca", projectId: "proj", environmentId: "env", serviceId: "svc", targetPort: 8080 } });
-    expect(calls[2].query).toContain("verificationDnsHost");
-    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T12:00:00.000Z" });
-    expect((siteRow().custom_domain_dns as { records: Array<{ type: string; name: string }> }).records.map((r) => `${r.type} ${r.name}`)).toEqual(["CNAME www", "TXT _railway-verify.www"]);
+    expect(ops()).toEqual(["GET /custom_hostnames?hostname=www.acme.ca", "POST /custom_hostnames"]);
+    expect(calls[1].body).toEqual({ hostname: "www.acme.ca", ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } });
+    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T12:00:00.000Z" });
+    expect((siteRow().custom_domain_dns as { records: unknown[] }).records).toEqual([{ type: "CNAME", name: "www", value: "sites.everdoer.com", status: null }]);
   });
 
-  it("already on our service in Railway (an earlier reply was lost) → taken over, not 'in use'", async () => {
-    replies.domains = { data: { domains: { customDomains: [{ id: "dom-old", domain: "www.acme.ca" }] } } };
-    replies.customDomain = { data: { customDomain: { id: "dom-old", status: pendingStatus } } };
+  it("already on our zone (a lost reply) → taken over and checked", async () => {
+    replies.unshift(reply("GET", "/custom_hostnames?hostname=", ok([{ id: "h-old", hostname: "www.acme.ca", status: "pending", ssl: { status: "pending_validation" } }])));
+    replies.unshift(reply("GET", "/custom_hostnames/h-old", ok({ id: "h-old", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } })));
     await connectSiteDomain(db.client, scope, "www.acme.ca", deps());
-    expect(ops()).not.toContain("customDomainCreate");
-    expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "dom-old", custom_domain_status: "pending" });
+    expect(ops()).not.toContain("POST /custom_hostnames");
+    expect(siteRow()).toMatchObject({ custom_domain_ref: "h-old", custom_domain_status: "active" });
   });
 
-  it("refuses without the Railway token, without a page, a second domain, a taken one, or past the cap", async () => {
+  it("refuses without Cloudflare set up, without a page, a second domain, a taken one, or past the cap", async () => {
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps({ config: null }))).rejects.toThrow(/isn't switched on/);
     seed({}, null);
     await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/Create your page first/);
@@ -363,114 +320,110 @@ describe("connecting a domain (Railway)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("Railway says it's in use elsewhere → a plain message, nothing stored", async () => {
-    replies.customDomainAvailable = { data: { customDomainAvailable: { available: false, message: "Domain is already in use" } } };
-    await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/already in use/);
+  it("Cloudflare refuses the hostname → its reason, nothing stored", async () => {
+    replies.unshift(reply("POST", "/custom_hostnames", { success: false, errors: [{ code: 1414, message: "Hostname is a blocked or reserved domain." }] }, 400));
+    await expect(connectSiteDomain(db.client, scope, "www.acme.ca", deps())).rejects.toThrow(/can't be added: Hostname is a blocked/);
     expect(siteRow().custom_domain).toBeNull();
   });
 
   it("the site's form, if limited to listed websites, gets the domain added", async () => {
-    db.tables.public_form_keys[0] = { ...(db.tables.public_form_keys[0] as object), id: "k1", allowed_origins: ["https://acme-old.ca"] };
+    db.tables.public_form_keys[0] = { ...(db.tables.public_form_keys[0] as object), allowed_origins: ["https://acme-old.ca"] };
     await connectSiteDomain(db.client, scope, "www.acme.ca", deps());
     expect((db.tables.public_form_keys[0] as { allowed_origins: string[] }).allowed_origins).toEqual(["https://acme-old.ca", "https://www.acme.ca"]);
   });
 
-  it("check: goes live once verified, propagated and certified; keeps the TXT record", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z", custom_domain_dns: { records: [{ type: "TXT", name: "_railway-verify.www", value: "railway-verify=tok", status: null }], certificate: null } });
-    replies.customDomain = { data: { customDomain: { id: "dom-1", status: { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [{ ...pendingStatus.dnsRecords[0], status: "DNS_RECORD_STATUS_PROPAGATED" }] } } } };
+  it("check: goes live once hostname and certificate are active", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } }))];
     expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
     expect(siteRow().custom_domain_status).toBe("active");
-    expect((siteRow().custom_domain_dns as { records: Array<{ type: string }> }).records.map((r) => r.type)).toEqual(["CNAME", "TXT"]);
   });
 
-  it("check: still waiting after a week → released (removed in Railway, cleared)", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-20T10:00:00Z" });
+  it("check: still waiting after a week → released", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-20T10:00:00Z" });
     expect(await checkSiteDomain(db.client, scope, deps())).toBe("none");
-    expect(ops()).toEqual(["customDomainDelete"]);
+    expect(ops()).toEqual(["DELETE /custom_hostnames/h1"]);
     expect(siteRow()).toMatchObject({ custom_domain: null, custom_domain_status: "none" });
   });
 
-  it("check: a live domain that's gone from Railway goes back to waiting (no records)", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
-    replies.customDomain = { data: { customDomain: null } };
+  it("check: gone from Cloudflare → back to waiting with no records", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "active" });
+    replies = [reply("GET", "/custom_hostnames/h1", { success: false, errors: [{ code: 1436, message: "The custom hostname was not found." }] }, 404)];
     expect(await checkSiteDomain(db.client, scope, deps())).toBe("pending");
-    expect(siteRow().custom_domain_dns).toEqual({ records: [], certificate: null });
+    expect((siteRow().custom_domain_dns as { records: unknown[] }).records).toEqual([]);
   });
 
   it("check racing a reconnect doesn't touch the new domain", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
-    replies.customDomain = { data: { customDomain: { id: "dom-1", status: { verified: true, certificateStatus: "CERTIFICATE_STATUS_TYPE_VALID", dnsRecords: [{ ...pendingStatus.dnsRecords[0], status: "DNS_RECORD_STATUS_PROPAGATED" }] } } } };
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } }))];
     const d = deps();
-    const slowFetch: RailwayFetch = async (url, init) => {
-      // While Railway answers, the owner disconnects and connects another domain.
-      Object.assign(siteRow(), { custom_domain: "www.new.ca", custom_domain_ref: "dom-2", custom_domain_status: "pending" });
+    const slow: ApiFetch = async (url, init) => {
+      Object.assign(siteRow(), { custom_domain: "www.new.ca", custom_domain_ref: "h2", custom_domain_status: "pending" });
       return d.fetch(url, init);
     };
-    await checkSiteDomain(db.client, scope, { ...d, fetch: slowFetch });
-    expect(siteRow()).toMatchObject({ custom_domain: "www.new.ca", custom_domain_ref: "dom-2", custom_domain_status: "pending" });
+    await checkSiteDomain(db.client, scope, { ...d, fetch: slow });
+    expect(siteRow()).toMatchObject({ custom_domain: "www.new.ca", custom_domain_ref: "h2", custom_domain_status: "pending" });
   });
 
-  it("remove: deleted in Railway and cleared; a Railway failure keeps it and says try again", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
+  it("remove: deleted on Cloudflare and cleared; a failure keeps it; already gone is fine", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "active" });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const failing: RailwayFetch = async () => ({ ok: false, status: 500, json: async () => ({ errors: [{ message: "boom" }] }) });
-    await expect(removeSiteDomain(db.client, scope, deps({ fetch: failing }))).rejects.toThrow(/Try again/);
+    replies = [reply("DELETE", "/custom_hostnames/h1", { success: false, errors: [{ message: "boom" }] }, 500)];
+    await expect(removeSiteDomain(db.client, scope, deps())).rejects.toThrow(/Try again/);
     expect(siteRow().custom_domain).toBe("www.acme.ca");
+    replies = [reply("DELETE", "/custom_hostnames/h1", { success: false, errors: [{ code: 1436, message: "not found" }] }, 404)];
     await removeSiteDomain(db.client, scope, deps());
     expect(siteRow()).toMatchObject({ custom_domain: null, custom_domain_ref: null, custom_domain_status: "none" });
   });
 
-  it("remove: already gone in Railway is fine", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "active" });
-    const gone: RailwayFetch = async () => ({ ok: true, status: 200, json: async () => ({ errors: [{ message: "Custom domain not found" }] }) });
-    await removeSiteDomain(db.client, scope, deps({ fetch: gone }));
-    expect(siteRow().custom_domain).toBeNull();
-  });
-
-  it("Railway hanging or down → 'try again', not a crash", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "dom-1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
-    const down: RailwayFetch = async () => {
+  it("Cloudflare hanging or down → 'try again', not a crash", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    const down: ApiFetch = async () => {
       throw new Error("The operation was aborted due to timeout");
     };
     await expect(checkSiteDomain(db.client, scope, deps({ fetch: down }))).rejects.toThrow(/couldn't reach/);
   });
 });
 
-describe("serving on the business's own domain", () => {
-  it("only '/' on a host that isn't ours is rewritten", () => {
-    expect(customDomainRewritePath("www.acme.ca", "/", null)).toBe(CUSTOM_DOMAIN_SITE_PATH);
-    expect(customDomainRewritePath("quotes.a1marinecare.ca", "/", null)).toBe(CUSTOM_DOMAIN_SITE_PATH);
-    expect(customDomainRewritePath("www.acme.ca", "/q/abc", null)).toBeNull();
-    for (const ours of ["app.everdoer.com", "api.everdoer.com", "app.empirevu.com", "pages.everdoer.com", "localhost:3000", "x.up.railway.app", "127.0.0.1:3000"]) {
-      expect(customDomainRewritePath(ours, "/", "https://pages.everdoer.com")).toBeNull();
-    }
-    expect(customDomainRewritePath("pages.crankleads.com", "/", "https://pages.everdoer.com", "pages.crankleads.com")).toBeNull();
+describe("serving on the business's own domain (via the sites-edge Worker)", () => {
+  const KEY = "k".repeat(32);
+  const edgeRequest = (host: string, key = KEY) =>
+    new Request("https://app.everdoer.com/s/_domain", { headers: { "x-everdoer-site-host": host, "x-everdoer-edge-key": key } });
+
+  afterEach(() => {
+    delete process.env.SITES_EDGE_KEY;
+    delete process.env.EVERDOER_APP_BASE_URL;
   });
 
-  it("a live connected domain gets its page (canonical on the domain, form embedded from the app)", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_status: "active" });
+  it("trusts the domain header only with the right key", () => {
+    const h = (o: Record<string, string>) => new Headers(o);
+    expect(edgeSiteHost(h({ "x-everdoer-site-host": "WWW.Acme.ca.", "x-everdoer-edge-key": KEY }), KEY)).toBe("www.acme.ca");
+    expect(edgeSiteHost(h({ "x-everdoer-site-host": "www.acme.ca", "x-everdoer-edge-key": "wrong".repeat(7) }), KEY)).toBeNull();
+    expect(edgeSiteHost(h({ "x-everdoer-site-host": "www.acme.ca" }), KEY)).toBeNull();
+    expect(edgeSiteHost(h({ "x-everdoer-site-host": "www.acme.ca", "x-everdoer-edge-key": "short" }), "short")).toBeNull();
+    expect(edgeSiteHost(h({ "x-everdoer-site-host": "bad host/<x>", "x-everdoer-edge-key": KEY }), KEY)).toBeNull();
+  });
+
+  it("a live connected domain gets its page: canonical on the domain, form embedded from the app, varies by domain", async () => {
+    process.env.SITES_EDGE_KEY = KEY;
     process.env.EVERDOER_APP_BASE_URL = "https://app.everdoer.com";
-    const res = await siteGET(new Request("https://www.acme.ca/", { headers: { host: "www.acme.ca" } }), { params: { slug: "_domain" } });
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_status: "active" });
+    const res = await siteGET(edgeRequest("www.acme.ca"), { params: { slug: "_domain" } });
     expect(res.status).toBe(200);
+    expect(res.headers.get("vary")).toBe("x-everdoer-site-host");
     const html = await res.text();
     expect(html).toContain('<link rel="canonical" href="https://www.acme.ca/">');
     expect(html).toContain('src="https://app.everdoer.com/embed/v1.js"');
     expect(html).not.toContain('id="quote-form"');
-    delete process.env.EVERDOER_APP_BASE_URL;
   });
 
-  it("any other host (or a domain still pending) gets the app as before", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "spa-"));
-    mkdirSync(path.join(dir, "public"));
-    writeFileSync(path.join(dir, "public", "index.html"), "<!doctype html><div id=root></div>");
-    vi.spyOn(process, "cwd").mockReturnValue(dir);
+  it("wrong key, a pending domain, or no header → the neutral 404", async () => {
+    process.env.SITES_EDGE_KEY = KEY;
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_status: "active" });
+    expect((await siteGET(edgeRequest("www.acme.ca", "x".repeat(32)), { params: { slug: "_domain" } })).status).toBe(404);
+    expect((await siteGET(new Request("https://app.everdoer.com/s/_domain"), { params: { slug: "_domain" } })).status).toBe(404);
     seed({}, { custom_domain: "www.acme.ca", custom_domain_status: "pending" });
-    const res = await siteGET(new Request("https://www.acme.ca/", { headers: { host: "www.acme.ca" } }), { params: { slug: "_domain" } });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("cache-control")).toBe("no-cache");
-    expect(await res.text()).toBe("<!doctype html><div id=root></div>");
-    const other = await siteGET(new Request("https://quotes.a1marinecare.ca/", { headers: { host: "quotes.a1marinecare.ca" } }), { params: { slug: "_domain" } });
-    expect(await other.text()).toContain("id=root");
+    expect((await siteGET(edgeRequest("www.acme.ca"), { params: { slug: "_domain" } })).status).toBe(404);
   });
 
   it("the public URL is the domain only once it's live", () => {

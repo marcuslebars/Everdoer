@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
-import { requestHost } from "@/server/services/dfy/site-host";
+import { CUSTOM_DOMAIN_SLUG, edgeSiteHost } from "@/server/services/dfy/site-host";
 import { loadPublishedSiteForDomain, loadPublishedSitePage } from "@/server/services/dfy/site-public";
 import { renderSiteNotFound } from "@/server/services/dfy/site-render";
 
@@ -16,9 +13,9 @@ import { renderSiteNotFound } from "@/server/services/dfy/site-render";
  * pages host absorbs traffic while a publish/unpublish/edit shows up within a minute, plus an
  * ETag so repeat visits revalidate with a 304.
  *
- * A business's own domain: middleware sends "/" on a host that isn't ours here as slug
- * "_domain" (no real slug has an underscore). A connected, live domain gets its page; any other
- * host gets the app exactly as before (tenant hosts like quotes.<business>.ca).
+ * A business's own domain (docs/custom-domains.md): Cloudflare serves it, and our sites-edge
+ * Worker forwards "/" here as slug "_domain" with the domain in a signed header. A connected,
+ * live domain gets its page; anything else is the neutral 404.
  */
 export const dynamic = "force-dynamic";
 
@@ -35,21 +32,13 @@ function notFound(): NextResponse {
   });
 }
 
-/** The SPA shell (what "/" served before), for hosts that aren't a connected domain. */
-async function appShell(request: Request): Promise<NextResponse> {
-  try {
-    const html = await readFile(path.join(process.cwd(), "public", "index.html"), "utf8");
-    return new NextResponse(request.method === "HEAD" ? null : html, { status: 200, headers: { "content-type": HTML, "cache-control": "no-cache" } });
-  } catch {
-    return notFound();
-  }
-}
-
 async function handle(request: Request, context: RouteContext): Promise<NextResponse> {
   try {
-    const onDomain = context.params.slug === "_domain";
-    const page = onDomain ? await loadPublishedSiteForDomain(requestHost(request.headers)) : await loadPublishedSitePage(context.params.slug);
-    if (!page) return onDomain ? appShell(request) : notFound();
+    const page =
+      context.params.slug === CUSTOM_DOMAIN_SLUG
+        ? await loadPublishedSiteForDomain(edgeSiteHost(request.headers, process.env.SITES_EDGE_KEY))
+        : await loadPublishedSitePage(context.params.slug);
+    if (!page) return notFound();
     const headers: Record<string, string> = {
       "content-type": HTML,
       "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
@@ -57,12 +46,12 @@ async function handle(request: Request, context: RouteContext): Promise<NextResp
       "x-content-type-options": "nosniff",
       "referrer-policy": "strict-origin-when-cross-origin",
     };
+    // Every business domain arrives on the same URL (/s/_domain): a cache must key on the domain.
+    if (context.params.slug === CUSTOM_DOMAIN_SLUG) headers.vary = "x-everdoer-site-host";
     if (request.headers.get("if-none-match") === page.etag) return new NextResponse(null, { status: 304, headers });
     return new NextResponse(request.method === "HEAD" ? null : page.html, { status: 200, headers });
   } catch (err) {
     console.error("[sites] public render failed:", err instanceof Error ? err.message : err);
-    // Never let a lookup failure take the app down on a host that isn't a site.
-    if (context.params.slug === "_domain") return appShell(request);
     return new NextResponse(renderSiteNotFound(), { status: 503, headers: { "content-type": HTML, "cache-control": "no-store" } });
   }
 }

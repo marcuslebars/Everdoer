@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 import { corsHeadersFor } from "@/server/api/cors";
-import { customDomainRewritePath, isLegacyPagesHost, pagesRewritePath, requestHost } from "@/server/services/dfy/site-host";
+import { isLegacyPagesHost, pagesRewritePath, requestHost } from "@/server/services/dfy/site-host";
 import {
   isApiLikePath,
   isLegacyApiHost,
@@ -47,13 +47,6 @@ export async function middleware(request: NextRequest) {
       noteLegacyUsage("host", (host ?? "").trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, ""), legacyPathSample(pathname));
     }
     return NextResponse.rewrite(new URL(sitePath, request.url));
-  }
-
-  // A business's own domain: "/" goes to the site route, which serves that business's page (or
-  // the app as before when the host isn't a connected domain).
-  const domainPath = customDomainRewritePath(host, pathname, process.env.PAGES_BASE_URL, process.env.PAGES_LEGACY_HOSTS);
-  if (domainPath) {
-    return NextResponse.rewrite(new URL(domainPath, request.url));
   }
 
   // Rebrand shim (remove in PR 8 once legacy_usage shows no host/<old host> for 30 days)

@@ -7,7 +7,7 @@ import { loadOrganizationBrand } from "@/server/services/platform-brand";
 import type { TenantServiceContext } from "@/server/services/shared";
 
 import { effectiveCopy, parseSiteContent } from "./site-content";
-import { railwayConfig, type DomainDns, type DomainStatus } from "./site-domain";
+import { cloudflareConfig, type DomainDns, type DomainStatus } from "./site-domain";
 import { MAX_SITE_PHOTOS, profilePhotos } from "./site-images";
 import { sitePublicUrl } from "./site-public";
 import { siteUrl } from "./site-url";
@@ -30,7 +30,7 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
     logoUrl: company?.brand_logo_url?.startsWith("https://") ? company.brand_logo_url : null,
     photos: profilePhotos(company?.profile),
     maxPhotos: MAX_SITE_PHOTOS,
-    domainsEnabled: railwayConfig() !== null,
+    domainsEnabled: cloudflareConfig() !== null,
   };
   if (!site) return { ...base, site: null };
   const brand = await loadOrganizationBrand(ctx.supabase, ctx.organizationId);
