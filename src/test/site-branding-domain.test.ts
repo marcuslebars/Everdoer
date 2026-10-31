@@ -237,7 +237,7 @@ describe("domains (pure)", () => {
     expect(recordName("www.acme.co.uk")).toBe("www");
   });
 
-  it("Cloudflare state → one CNAME to our target; live only when the hostname and certificate are active", () => {
+  it("Cloudflare state → the CNAME to our target; live only when the hostname and certificate are active", () => {
     const pending = readHostname("www.acme.ca", "sites.everdoer.com", { id: "h1", hostname: "www.acme.ca", status: "pending", ssl: { status: "pending_validation" } });
     expect(pending.active).toBe(false);
     expect(pending.dns.records).toEqual([{ type: "CNAME", name: "www", value: "sites.everdoer.com", status: null }]);
@@ -266,6 +266,7 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
   let calls: Array<{ method: string; url: string; body: unknown }>;
   /** Replies keyed "METHOD path-suffix" (matched by the first key the URL ends with / contains). */
   let replies: Array<{ match: (method: string, url: string) => boolean; status?: number; body: unknown }>;
+  let txt: Record<string, string[]>;
 
   function deps(over: Partial<DomainDeps> = {}): DomainDeps {
     const fetchImpl: ApiFetch = async (url, init) => {
@@ -274,7 +275,14 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
       const status = r?.status ?? 200;
       return { ok: status < 400, status, json: async () => r?.body ?? { success: true, result: null } };
     };
-    return { config: { token: "t", zoneId: "zone", target: "sites.everdoer.com" }, fetch: fetchImpl, now: () => new Date("2026-10-31T12:00:00Z"), ...over };
+    return {
+      config: { token: "t", zoneId: "zone", target: "sites.everdoer.com" },
+      fetch: fetchImpl,
+      now: () => new Date("2026-10-31T12:00:00Z"),
+      resolveTxt: async (name) => txt[name] ?? [],
+      newToken: () => "tok123",
+      ...over,
+    };
   }
   const reply = (method: string, contains: string, body: unknown, status?: number) => ({ match: (m: string, u: string) => m === method && u.includes(contains), body, status });
   const ok = (result: unknown) => ({ success: true, result });
@@ -283,6 +291,7 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
   beforeEach(() => {
     seed();
     calls = [];
+    txt = {};
     replies = [
       reply("GET", "/custom_hostnames?hostname=", ok([])),
       reply("POST", "/custom_hostnames", ok({ id: "h1", hostname: "www.acme.ca", status: "pending", ssl: { status: "initializing" } })),
@@ -294,15 +303,21 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
     expect(ops()).toEqual(["GET /custom_hostnames?hostname=www.acme.ca", "POST /custom_hostnames"]);
     expect(calls[1].body).toEqual({ hostname: "www.acme.ca", ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } });
     expect(siteRow()).toMatchObject({ custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T12:00:00.000Z" });
-    expect((siteRow().custom_domain_dns as { records: unknown[] }).records).toEqual([{ type: "CNAME", name: "www", value: "sites.everdoer.com", status: null }]);
+    expect((siteRow().custom_domain_dns as { records: unknown[] }).records).toEqual([
+      { type: "CNAME", name: "www", value: "sites.everdoer.com", status: null },
+      { type: "TXT", name: "_everdoer-verify.www", value: "everdoer-verify=tok123", status: null },
+    ]);
   });
 
-  it("already on our zone (a lost reply) → taken over and checked", async () => {
+  it("already on our zone (a lost reply) → taken over and checked; still needs our ownership record", async () => {
     replies.unshift(reply("GET", "/custom_hostnames?hostname=", ok([{ id: "h-old", hostname: "www.acme.ca", status: "pending", ssl: { status: "pending_validation" } }])));
     replies.unshift(reply("GET", "/custom_hostnames/h-old", ok({ id: "h-old", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } })));
     await connectSiteDomain(db.client, scope, "www.acme.ca", deps());
     expect(ops()).not.toContain("POST /custom_hostnames");
-    expect(siteRow()).toMatchObject({ custom_domain_ref: "h-old", custom_domain_status: "active" });
+    // Routed by Cloudflare (someone's CNAME is still there), but not proven ours: not live.
+    expect(siteRow()).toMatchObject({ custom_domain_ref: "h-old", custom_domain_status: "pending" });
+    txt["_everdoer-verify.www.acme.ca"] = ["everdoer-verify=tok123"];
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
   });
 
   it("refuses without Cloudflare set up, without a page, a second domain, a taken one, or past the cap", async () => {
@@ -332,11 +347,43 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
     expect((db.tables.public_form_keys[0] as { allowed_origins: string[] }).allowed_origins).toEqual(["https://acme-old.ca", "https://www.acme.ca"]);
   });
 
-  it("check: goes live once hostname and certificate are active", async () => {
-    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+  const pendingDns = { records: [], certificate: null, token: "tok123" };
+
+  it("check: live once ownership is proven and hostname + certificate are active (and stays proven)", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z", custom_domain_dns: pendingDns });
     replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } }))];
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("pending"); // no TXT yet
+    txt["_everdoer-verify.www.acme.ca"] = ['"everdoer-verify=tok123"'.replace(/"/g, "")];
     expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
-    expect(siteRow().custom_domain_status).toBe("active");
+    const dns = siteRow().custom_domain_dns as { verifiedAt: string; liveSince: string; records: Array<{ type: string; status: string | null }> };
+    expect(dns.verifiedAt).toBeTruthy();
+    expect(dns.liveSince).toBe("2026-10-31T12:00:00.000Z");
+    expect(dns.records.map((r) => `${r.type}:${r.status}`)).toEqual(["CNAME:VALID", "TXT:VALID"]);
+    txt = {}; // the owner removes the TXT later: still theirs
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
+  });
+
+  it("check: not live yet → asks Cloudflare to validate again now (no-change PATCH)", async () => {
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z", custom_domain_dns: pendingDns });
+    replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "pending", ssl: { status: "pending_validation" } }))];
+    await checkSiteDomain(db.client, scope, deps());
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } });
+  });
+
+  it("a live domain stays live while its certificate renews or Cloudflare redeploys it", async () => {
+    const live = { ...pendingDns, verifiedAt: "2026-09-01T00:00:00Z", liveSince: "2026-09-01T00:00:00Z" };
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "active", custom_domain_added_at: "2026-09-01T00:00:00Z", custom_domain_dns: live });
+    replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "active_redeploying", ssl: { status: "pending_validation" } }))];
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("active");
+  });
+
+  it("a once-live domain that drops to pending is never released by the 7-day rule", async () => {
+    const live = { ...pendingDns, verifiedAt: "2026-09-01T00:00:00Z", liveSince: "2026-09-01T00:00:00Z" };
+    seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-09-01T00:00:00Z", custom_domain_dns: live });
+    replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "moved", ssl: { status: "active" } }))];
+    expect(await checkSiteDomain(db.client, scope, deps())).toBe("pending");
+    expect(ops()).not.toContain("DELETE /custom_hostnames/h1");
+    expect(siteRow().custom_domain).toBe("www.acme.ca");
   });
 
   it("check: still waiting after a week → released", async () => {
@@ -355,6 +402,7 @@ describe("connecting a domain (Cloudflare for SaaS)", () => {
 
   it("check racing a reconnect doesn't touch the new domain", async () => {
     seed({}, { custom_domain: "www.acme.ca", custom_domain_ref: "h1", custom_domain_status: "pending", custom_domain_added_at: "2026-10-31T10:00:00Z" });
+    txt["_everdoer-verify.www.acme.ca"] = ["everdoer-verify=tok123"];
     replies = [reply("GET", "/custom_hostnames/h1", ok({ id: "h1", hostname: "www.acme.ca", status: "active", ssl: { status: "active" } }))];
     const d = deps();
     const slow: ApiFetch = async (url, init) => {

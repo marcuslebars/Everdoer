@@ -46,8 +46,12 @@ async function handle(request: Request, context: RouteContext): Promise<NextResp
       "x-content-type-options": "nosniff",
       "referrer-policy": "strict-origin-when-cross-origin",
     };
-    // Every business domain arrives on the same URL (/s/_domain): a cache must key on the domain.
-    if (context.params.slug === CUSTOM_DOMAIN_SLUG) headers.vary = "x-everdoer-site-host";
+    // Every business domain arrives on the same URL (/s/_domain), and some caches ignore Vary on
+    // HTML: never let a shared cache store it (the Worker doesn't cache it either).
+    if (context.params.slug === CUSTOM_DOMAIN_SLUG) {
+      headers["cache-control"] = "private, no-cache";
+      headers.vary = "x-everdoer-site-host";
+    }
     if (request.headers.get("if-none-match") === page.etag) return new NextResponse(null, { status: 304, headers });
     return new NextResponse(request.method === "HEAD" ? null : page.html, { status: 200, headers });
   } catch (err) {

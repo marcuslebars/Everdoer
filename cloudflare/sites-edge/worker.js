@@ -22,6 +22,14 @@ export default {
       return fetch(request);
     }
 
+    // Certificate validation (Cloudflare's HTTP DCV, at issue and every renewal) must reach
+    // Cloudflare untouched: never redirect or forward these.
+    if (url.pathname.startsWith("/.well-known/")) {
+      return fetch(request);
+    }
+    if (url.protocol === "http:") {
+      return Response.redirect(`https://${host}${url.pathname}${url.search}`, 301);
+    }
     if (url.pathname === "/robots.txt") {
       return new Response(`User-agent: *\nAllow: /\n`, { headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" } });
     }
@@ -43,7 +51,10 @@ export default {
     });
     const etag = request.headers.get("if-none-match");
     if (etag) headers.set("if-none-match", etag);
-    const res = await fetch(upstream, { method: request.method, headers, redirect: "manual" });
+    const ip = request.headers.get("cf-connecting-ip");
+    if (ip) headers.set("x-forwarded-for", ip);
+    // Every business domain is the same upstream URL: never let a cache share it between them.
+    const res = await fetch(upstream, { method: request.method, headers, redirect: "manual", cf: { cacheTtl: 0, cacheEverything: false } });
     const out = new Response(res.body, res);
     out.headers.delete("set-cookie");
     out.headers.set("x-served-by", "everdoer-sites-edge");

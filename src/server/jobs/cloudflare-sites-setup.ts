@@ -118,6 +118,9 @@ export async function runCloudflareSitesSetup(
   }
   if (fallback?.origin === originHost) {
     log(`ok    fallback origin ${originHost} (${fallback.status ?? "?"})`);
+  } else if (fallback?.origin) {
+    log(`STOP  The fallback origin is already ${fallback.origin}. Not changing it.`);
+    return 1;
   } else if (apply) {
     await call(deps.fetch, env, "PUT", `/zones/${env.zoneId}/custom_hostnames/fallback_origin`, { origin: originHost });
     log(`set   fallback origin ${originHost}`);

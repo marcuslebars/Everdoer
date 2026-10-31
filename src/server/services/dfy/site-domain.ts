@@ -40,6 +40,12 @@ export interface DomainDns {
   certificate: string | null;
   /** Cloudflare's own explanation when something's wrong (e.g. the CNAME points elsewhere). */
   problem?: string | null;
+  /** Our ownership token (the TXT record), so a domain can't be claimed by pointing a CNAME. */
+  token?: string;
+  /** When the TXT record was first seen (ownership proven; not re-checked after). */
+  verifiedAt?: string | null;
+  /** When the domain first went live: a live domain isn't released or dropped during renewals. */
+  liveSince?: string | null;
 }
 
 /** Domains that can never be a business's site (ours, Railway's, test names). */
@@ -84,23 +90,67 @@ export interface CloudflareHostname {
   verification_errors?: string[] | null;
 }
 
-/** Cloudflare's state → the record to show and whether the domain is live. PURE. */
-export function readHostname(domain: string, target: string, h: CloudflareHostname | null | undefined): { dns: DomainDns; active: boolean } {
-  const active = h?.status === "active" && h?.ssl?.status === "active";
+/** Our ownership TXT record for a domain (name relative to the domain they bought). PURE. */
+export function ownershipRecord(domain: string, token: string, verified: boolean): DnsRecord {
+  const label = recordName(domain);
+  return { type: "TXT", name: label === "@" ? "_everdoer-verify" : `_everdoer-verify.${label}`, value: `everdoer-verify=${token}`, status: verified ? "VALID" : null };
+}
+
+/** The full name to look the ownership record up at. PURE. */
+export function ownershipLookupName(domain: string): string {
+  return `_everdoer-verify.${domain}`;
+}
+
+const HOST_LIVE = new Set(["active", "active_redeploying"]);
+/** Certificate states a live domain passes through while renewing (it keeps serving the old cert). */
+const SSL_RENEWING = new Set(["pending_validation", "pending_issuance", "pending_deployment", "initializing", "renewing"]);
+
+/**
+ * Cloudflare's state (+ our ownership check) → the records to show and whether the domain is live:
+ * ownership proven, hostname active (or redeploying), and its certificate active — or, for a
+ * domain that has already been live, renewing. PURE.
+ */
+export function readHostname(
+  domain: string,
+  target: string,
+  h: CloudflareHostname | null | undefined,
+  own: { token: string; verified: boolean; liveSince?: string | null } = { token: "", verified: true },
+): { dns: DomainDns; active: boolean } {
+  const ssl = h?.ssl?.status ?? null;
+  const hostLive = HOST_LIVE.has(h?.status ?? "");
+  const sslLive = ssl === "active" || (Boolean(own.liveSince) && SSL_RENEWING.has(ssl ?? ""));
+  const routed = hostLive && sslLive;
+  const active = own.verified && routed;
   const problem =
     [...(h?.verification_errors ?? []), ...((h?.ssl?.validation_errors ?? []).map((e) => e?.message ?? "").filter(Boolean) as string[])]
       .map((m) => m.trim())
       .filter(Boolean)
       .join(" ")
       .slice(0, 300) || null;
+  const records: DnsRecord[] = [{ type: "CNAME", name: recordName(domain), value: target, status: routed ? "VALID" : null }];
+  if (own.token) records.push(ownershipRecord(domain, own.token, own.verified));
   return {
-    dns: {
-      records: [{ type: "CNAME", name: recordName(domain), value: target, status: active ? "VALID" : null }],
-      certificate: h?.ssl?.status ?? null,
-      problem: active ? null : problem,
-    },
+    dns: { records, certificate: ssl, problem: active ? null : problem, token: own.token || undefined, liveSince: own.liveSince ?? null },
     active,
   };
+}
+
+/** TXT values at a name, through Cloudflare's public DNS-over-HTTPS (no DNS library needed). */
+export async function resolveTxtOverHttps(name: string, fetchImpl: ApiFetch = (u, i) => fetch(u, i)): Promise<string[]> {
+  try {
+    const res = await fetchImpl(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`, {
+      method: "GET",
+      headers: { accept: "application/dns-json" },
+      signal: typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(5000) : undefined,
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { Answer?: Array<{ type?: number; data?: string }> };
+    return (body.Answer ?? [])
+      .filter((a) => a.type === 16 && typeof a.data === "string")
+      .map((a) => (a.data as string).replace(/"\s*"/g, "").replace(/^"|"$/g, "").trim());
+  } catch {
+    return [];
+  }
 }
 
 export interface CloudflareConfig {
@@ -173,11 +223,22 @@ export interface DomainDeps {
   config: CloudflareConfig | null;
   fetch: ApiFetch;
   now: () => Date;
+  resolveTxt: (name: string) => Promise<string[]>;
+  newToken: () => string;
 }
 
 function defaultDeps(): DomainDeps {
-  return { config: cloudflareConfig(), fetch: (url, init) => fetch(url, init), now: () => new Date() };
+  return {
+    config: cloudflareConfig(),
+    fetch: (url, init) => fetch(url, init),
+    now: () => new Date(),
+    resolveTxt: (name) => resolveTxtOverHttps(name),
+    newToken: () => crypto.randomUUID().replace(/-/g, ""),
+  };
 }
+
+/** No-change PATCH: Cloudflare re-runs validation now instead of on its backoff (up to 4 h). */
+const SSL_SETTINGS = { method: "http", type: "dv", settings: { min_tls_version: "1.2" } };
 
 type SiteDomainRow = Pick<
   Tables<"company_sites">,
@@ -236,7 +297,7 @@ export async function connectSiteDomain(admin: AdminClient, scope: Scope, input:
         cfg,
         "POST",
         `/zones/${cfg.zoneId}/custom_hostnames`,
-        { hostname: domain, ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } },
+        { hostname: domain, ssl: SSL_SETTINGS },
         deps.fetch,
       );
     } catch (err) {
@@ -246,7 +307,8 @@ export async function connectSiteDomain(admin: AdminClient, scope: Scope, input:
       throw err;
     }
   }
-  const { dns } = readHostname(domain, cfg.target, hostname);
+  const token = deps.newToken();
+  const { dns } = readHostname(domain, cfg.target, hostname, { token, verified: false });
   const now = deps.now().toISOString();
   const { error } = await admin
     .from("company_sites")
@@ -284,11 +346,24 @@ export async function checkSiteDomain(admin: AdminClient, scope: Scope, deps: Do
   if (!deps.config) return site.custom_domain_status as DomainStatus;
   const cfg = deps.config;
   const ref = site.custom_domain_ref;
+  const domain = site.custom_domain;
+  const prev = (site.custom_domain_dns as unknown as DomainDns | null) ?? { records: [], certificate: null };
+  const liveSince = prev.liveSince ?? null;
 
-  if (site.custom_domain_status === "pending" && site.custom_domain_added_at && deps.now().getTime() - Date.parse(site.custom_domain_added_at) > PENDING_DOMAIN_TTL_MS) {
+  // Released only if it never went live: a live domain is never dropped for a blip or a renewal.
+  if (!liveSince && site.custom_domain_status === "pending" && site.custom_domain_added_at && deps.now().getTime() - Date.parse(site.custom_domain_added_at) > PENDING_DOMAIN_TTL_MS) {
     await removeSiteDomain(admin, scope, deps);
     return "none";
   }
+
+  // Ownership: our TXT record, checked until it's been seen once.
+  const token = prev.token ?? "";
+  let verifiedAt = prev.verifiedAt ?? null;
+  if (!verifiedAt && token) {
+    const values = await deps.resolveTxt(ownershipLookupName(domain));
+    if (values.includes(`everdoer-verify=${token}`)) verifiedAt = deps.now().toISOString();
+  }
+  const verified = Boolean(verifiedAt) || !token; // a domain connected before tokens existed
 
   let found: CloudflareHostname | null;
   try {
@@ -297,9 +372,17 @@ export async function checkSiteDomain(admin: AdminClient, scope: Scope, deps: Do
     if (!isNotFound(err)) throw err;
     found = null;
   }
-  const { dns, active } = found
-    ? readHostname(site.custom_domain, cfg.target, found)
-    : { dns: { records: [], certificate: null, problem: null } as DomainDns, active: false };
+  const read = found ? readHostname(domain, cfg.target, found, { token, verified, liveSince }) : null;
+  const active = read?.active ?? false;
+  const dns: DomainDns = read
+    ? { ...read.dns, verifiedAt, liveSince: active ? (liveSince ?? deps.now().toISOString()) : liveSince }
+    : { records: [], certificate: null, problem: null, token: token || undefined, verifiedAt, liveSince };
+
+  // Not live yet (or Cloudflare moved it): ask Cloudflare to validate again now.
+  if (found && !(HOST_LIVE.has(found.status ?? "") && found.ssl?.status === "active")) {
+    await cf(cfg, "PATCH", `/zones/${cfg.zoneId}/custom_hostnames/${ref}`, { ssl: SSL_SETTINGS }, deps.fetch).catch(() => undefined);
+  }
+
   const status: DomainStatus = active ? "active" : "pending";
   // Only if it's still the same domain: a check racing a disconnect + reconnect must not mark
   // the new domain live with the old one's state.

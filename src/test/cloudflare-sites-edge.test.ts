@@ -35,6 +35,22 @@ describe("sites-edge Worker", () => {
     expect((await w.fetch(new Request("https://www.acme.ca/", { method: "POST" }), env)).status).toBe(405);
   });
 
+  it("certificate validation paths reach Cloudflare untouched (issue and every renewal)", async () => {
+    const passthrough = vi.fn(async () => new Response("token"));
+    vi.stubGlobal("fetch", passthrough);
+    const res = await w.fetch(new Request("http://www.acme.ca/.well-known/acme-challenge/abc"), env);
+    expect(await res.text()).toBe("token");
+    expect(passthrough).toHaveBeenCalledTimes(1);
+    expect((await w.fetch(new Request("https://www.acme.ca/.well-known/pki-validation/x.txt"), env)).status).toBe(200);
+  });
+
+  it("plain http on a business domain → https", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const res = await w.fetch(new Request("http://www.acme.ca/?a=1"), env);
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe("https://www.acme.ca/?a=1");
+  });
+
   it("our own hostnames pass through untouched; the CNAME target answers itself", async () => {
     const passthrough = vi.fn(async () => new Response("app"));
     vi.stubGlobal("fetch", passthrough);

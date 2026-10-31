@@ -230,7 +230,7 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
           ) : (
             <p className={hintCls}>Ask an owner or admin to connect a domain.</p>
           )}
-          {view.domainsEnabled && <p className={hintCls}>You'll need to sign in where you bought the domain (GoDaddy, Namecheap, Cloudflare…) to add one record. We show you exactly what to type. Use the www address (www.yourbusiness.com): it works with every provider.</p>}
+          {view.domainsEnabled && <p className={hintCls}>You'll need to sign in where you bought the domain (GoDaddy, Namecheap, Cloudflare…) to add two records. We show you exactly what to type. Use the www address (www.yourbusiness.com): it works with every provider.</p>}
         </>
       )}
 
@@ -252,7 +252,7 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
             </p>
           ) : (
             <p className="text-sm text-foreground">
-              <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add this record (replace any existing record with the same name):
+              <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add these two records (replace any existing record with the same name). The second one proves the domain is yours:
             </p>
           )}
           {d.dns.records.length > 0 && (

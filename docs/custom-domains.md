@@ -27,7 +27,11 @@ visitor ─► www.acmeroofing.ca ──CNAME──► sites.everdoer.com
     `sites-origin`. Our own records (`app`, `api`, the apex) are DNS-only, and if one is ever
     proxied it passes straight through.
   - On a business domain, `/` is forwarded to the app with the domain in a header signed by
-    `SITES_EDGE_KEY`.
+    `SITES_EDGE_KEY`. That request is never cached, because every business shares the same
+    upstream URL.
+  - `/.well-known/*` passes straight through to Cloudflare. Certificate validation, both the
+    first issue and every renewal, depends on it.
+  - Plain http redirects to https.
   - Every other path redirects to `/`, so the Everdoer app is never served on a customer's
     domain. `robots.txt` allows crawling.
 - **The app** (`src/app/s/[slug]/route.ts`, slug `_domain`) trusts the domain header only with
@@ -40,17 +44,34 @@ visitor ─► www.acmeroofing.ca ──CNAME──► sites.everdoer.com
 
 ## What the owner does
 
-They type their domain and add **one record** at their DNS provider: a CNAME from `www` (or
-whatever subdomain they typed) to `sites.everdoer.com`.
+They type their domain and add **two records** at their DNS provider:
+
+- **A CNAME** from `www` (or whatever subdomain they typed) to `sites.everdoer.com`. This routes
+  the domain, and Cloudflare uses it to issue the certificate.
+- **Our ownership TXT record:** `_everdoer-verify[.www]` = `everdoer-verify=<token>`. A CNAME
+  alone isn't proof: a CNAME left behind after a business disconnects could otherwise let
+  another business claim that domain. We check the TXT record over DNS-over-HTTPS until it's
+  seen once, and the domain can't go live without it.
 
 The root domain (`acmeroofing.ca`) only works where the provider supports a CNAME at the root
 (Cloudflare, Namecheap and others). Settings recommends the www address. Owners usually point the
 bare domain at www with their registrar's forwarding.
 
 **Status.** Settings re-checks when an owner or admin opens it: a pending domain at most once a
-minute, a live one every 6 hours. There's also a "Check now" button. Cloudflare's explanation,
-such as "does not CNAME to this zone", is shown while the domain isn't live. A domain still
-pending after 7 days is released.
+minute, a live one every 6 hours. There's also a "Check now" button.
+
+- **Going live:** the domain is live when ownership is proven, the hostname is `active` (or
+  `active_redeploying`), and its certificate is `active`.
+- **Renewals:** a domain that has been live stays live while its certificate renews (the
+  `pending_*` states, while the old certificate keeps serving).
+- **Not live yet:** each check sends Cloudflare a no-change PATCH, so validation re-runs right
+  away instead of on Cloudflare's backoff of up to 4 hours. Cloudflare's own explanation, such as
+  "does not CNAME to this zone", is shown.
+- **Release:** a domain that has never been live is released after 7 days. One that has been live
+  is never released automatically. If it turns `moved` because the owner's DNS broke, it shows as
+  waiting until they fix it.
+- **CAA records:** if the owner's domain has CAA records, they must allow Cloudflare's
+  certificate authorities, or the certificate can't be issued.
 
 **Disconnect** deletes the custom hostname. If Cloudflare fails, the domain is kept and the owner
 is told to try again. One already gone is simply cleared.
