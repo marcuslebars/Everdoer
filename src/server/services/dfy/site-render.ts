@@ -38,6 +38,13 @@ export interface SiteRenderOptions {
   preview?: boolean;
   /** Link for the small "Powered by Everdoer" credit (done-for-you orgs only); null hides it. */
   creditUrl?: string | null;
+  /** The browser-tab icon the owner uploaded; falls back to the logo. */
+  faviconUrl?: string | null;
+  /**
+   * Served on the business's own domain: the quote form is the app's embeddable form (an iframe
+   * from this origin), because the bot check only runs on our own hosts. Null → inline form.
+   */
+  embedFormOrigin?: string | null;
 }
 
 // ── Escaping ─────────────────────────────────────────────────────────────────
@@ -236,6 +243,19 @@ function quoteForm(content: SiteContent, opts: SiteRenderOptions): string {
   </div>
 </section>`;
   }
+  const embedOrigin = safeHref(opts.embedFormOrigin)?.replace(/\/+$/, "") ?? null;
+  if (embedOrigin && !opts.preview) {
+    return `<section class="section quote" id="quote" aria-labelledby="quote-title">
+  <div class="wrap quote-wrap">
+    <div class="quote-intro">
+      <h2 id="quote-title">Ask for a quote</h2>
+      <p>Tell us what you need and where. We'll get back to you with a price.</p>
+      ${tel ? `<p class="quote-call">Rather talk? <a href="${esc(tel)}">Call ${esc(f.phoneDisplay)}</a></p>` : ""}
+    </div>
+    <div class="form form-embed"><script src="${embedOrigin}/embed/v1.js" data-form="${esc(opts.formKey)}" data-mode="inline" data-label="Ask for a quote" async></script></div>
+  </div>
+</section>`;
+  }
   const options = f.services
     .map((s) => `<option value="${esc(s.label)}">${esc(s.label)}</option>`)
     .join("");
@@ -296,6 +316,10 @@ h1,h2,h3{line-height:1.08;margin:0;font-weight:800}
 h2{font-size:clamp(1.6rem,4.6vw,2.3rem);font-variation-settings:var(--wide);letter-spacing:-.01em}
 .wrap{width:100%;max-width:1080px;margin:0 auto;padding:0 20px}
 .skip{position:absolute;left:-999px}.skip:focus{left:12px;top:12px;background:#fff;padding:8px 12px;z-index:50}
+.gallery{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.gallery li{aspect-ratio:4/3;overflow:hidden;border-radius:10px;background:var(--rule)}
+.gallery img{width:100%;height:100%;object-fit:cover}
+.form-embed{min-height:420px}
 .preview{background:#fff4c2;color:#4a3b00;text-align:center;font-size:14px;padding:8px 12px;border-bottom:1px solid #e9d27a}
 /* top bar */
 .top{background:var(--card);border-bottom:1px solid var(--rule)}
@@ -445,6 +469,7 @@ function head(content: SiteContent, opts: SiteRenderOptions, theme: SiteTheme): 
   const description = (copy.subhead.length >= 60 ? copy.subhead : `${copy.subhead} ${copy.about}`).slice(0, 300);
   const image = safeHref(f.photos[0]) ?? safeHref(f.logoUrl);
   const canonical = safeHref(opts.url);
+  const icon = safeHref(opts.faviconUrl) ?? safeHref(f.logoUrl);
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${esc(title)}</title>
@@ -460,7 +485,7 @@ ${canonical ? `<meta property="og:url" content="${canonical}">` : ""}
 <meta property="og:locale" content="en_CA">
 ${image ? `<meta property="og:image" content="${image}">` : ""}
 <meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">
-${safeHref(f.logoUrl) ? `<link rel="icon" href="${safeHref(f.logoUrl)}">` : ""}
+${icon ? `<link rel="icon" href="${icon}">\n<link rel="apple-touch-icon" href="${icon}">` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
@@ -475,6 +500,7 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   const isPricePage = content.mode === "price_page";
   const tel = telHref(f.phoneE164);
   const hasForm = Boolean(opts.formKey);
+  const embedForm = Boolean(safeHref(opts.embedFormOrigin)) && !opts.preview;
   const booking = safeHref(opts.bookingUrl);
   const website = safeHref(f.website);
   const logo = safeHref(f.logoUrl);
@@ -539,6 +565,17 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   </div>
 </section>`;
 
+  // The first photo is the big one at the top; the rest are a small gallery.
+  const more = f.photos.slice(1, 6).map((p) => safeHref(p)).filter((p): p is string => Boolean(p));
+  const gallery = more.length
+    ? `<section class="section flow" id="photos" aria-labelledby="photos-title">
+  <div class="wrap">
+    <div class="section-head"><h2 id="photos-title">Our work</h2></div>
+    <ul class="gallery">${more.map((src) => `<li><img src="${src}" alt="" loading="lazy" decoding="async"></li>`).join("")}</ul>
+  </div>
+</section>`
+    : "";
+
   const facts = [areaBlock(f), hoursBlock(f)].filter(Boolean).join("");
   const about = !isPricePage || facts
     ? `<section class="section flow" id="about" aria-labelledby="about-title"${f.services.length ? '' : ""}>
@@ -588,7 +625,9 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
     ? `<nav class="bar" aria-label="Quick actions">${tel ? `<a class="btn btn-call" href="${esc(tel)}">${ICON.phone}<span>Call</span></a>` : ""}${quoteHref && hasForm ? `<a class="btn btn-accent" href="#quote">Get a quote</a>` : ""}${!hasForm && booking ? `<a class="btn btn-accent" href="${booking}">Book online</a>` : ""}</nav>`
     : "";
 
-  const body = isPricePage ? [hero, services, about, reviews, faqs, quoteForm(content, opts)] : [hero, services, steps, about, reviews, faqs, quoteForm(content, opts)];
+  const body = isPricePage
+    ? [hero, services, gallery, about, reviews, faqs, quoteForm(content, opts)]
+    : [hero, services, steps, gallery, about, reviews, faqs, quoteForm(content, opts)];
 
   return `<!doctype html>
 <html lang="en-CA">
@@ -607,8 +646,8 @@ ${body.filter(Boolean).join("\n")}
 </main>
 ${footer}
 ${bar}
-${hasForm && opts.turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ""}
-${hasForm ? `<script>${FORM_JS}</script>` : ""}
+${hasForm && !embedForm && opts.turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ""}
+${hasForm && !embedForm ? `<script>${FORM_JS}</script>` : ""}
 </body>
 </html>`;
 }

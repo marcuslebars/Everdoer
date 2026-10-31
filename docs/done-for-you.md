@@ -339,6 +339,82 @@ change; the company must belong to the org):
 
 Help article: `your-website`.
 
+### Images and your own domain
+
+Also in Settings → Your website (`WebsiteBranding.tsx`).
+
+**Logo and photos.**
+- The logo is `companies.brand_logo_url`, the same logo quotes and invoices use.
+- Photos are `companies.profile.photos`, up to 6. The first is the big photo at the top of the
+  page; the rest show under "Our work". There's a "make cover" button.
+- Saving copies the live logo and photos into the page's content snapshot
+  (`syncSiteImages`), so nothing needs regenerating.
+
+**Browser tab icon.**
+- Stored in `company_sites.favicon_url`.
+- Rendered as `<link rel="icon">` plus `apple-touch-icon`, and falls back to the logo.
+- Needs the page to exist first.
+
+**How uploads work** (`dfy/site-images.ts`, route `.../site/images`).
+- The browser re-encodes first: the logo as PNG up to 800 px, the icon as a 256 px square PNG,
+  photos as JPEG up to 1600 px, which also strips EXIF.
+- It then uploads straight to the public `site-images` bucket through a signed upload URL
+  minted after the owner/admin check.
+- Paths are `{org}/{company}/{logo|photo|favicon}-{uuid}.{png|jpg}`.
+- Saving checks the path is this company's and of the right kind, and that the object exists.
+- Replacing or removing an image deletes our old file. URLs outside our bucket are never deleted.
+- The bucket has a 5 MB limit and allows PNG and JPEG only (no SVG, because the bucket is public).
+- The bucket has no `storage.objects` select policy, so it can't be listed. Public URLs work
+  without one.
+- Photo changes are conditional on `companies.updated_at`, so two saves at once don't lose one.
+
+**Your own domain** (`dfy/site-domain.ts`, route `.../site/domain`).
+- **Connect.** The owner types a domain. It is added to the web service through Railway's
+  public GraphQL API (`customDomainCreate`). Field and enum names were checked against Railway's
+  schema by introspection.
+  - If the domain is already on our service in Railway (an earlier attempt whose reply was lost),
+    it is taken over instead of failing with "in use".
+  - If the site's form key only accepts listed websites, `https://<domain>` is added to that list.
+- **DNS to add.** Settings shows each record with its state:
+  - the routing CNAME (or ALIAS/ANAME on the root), from `status.dnsRecords`;
+  - Railway's ownership TXT record, from `status.verificationDnsHost` and `verificationToken`.
+  Names are shown relative to the domain the owner bought.
+- **Going live.** The domain goes `active` only when all three are true:
+  - `status.verified` (the TXT record is in place);
+  - every routing record is `DNS_RECORD_STATUS_PROPAGATED`;
+  - the certificate is `CERTIFICATE_STATUS_TYPE_VALID`.
+- **Re-checks.** Opening Settings as an owner or admin re-checks the domain: a pending one at most
+  once a minute, a live one every 6 hours. There's also a "Check now" button. Members never
+  trigger Railway calls, and calls time out after 8 s.
+  - A live domain that's gone from Railway goes back to pending, with a message to disconnect and
+    reconnect.
+  - A domain still pending after 7 days is released.
+- **Disconnect** removes the domain from Railway first. If Railway fails, the domain is kept and
+  the owner is told to try again. A domain already gone from Railway is simply cleared.
+- **Env [web]:**
+  - `RAILWAY_API_TOKEN`: an account or workspace token. Railway sets `RAILWAY_PROJECT_ID`,
+    `RAILWAY_ENVIRONMENT_ID` and `RAILWAY_SERVICE_ID` itself. Without the token, Settings says
+    domains aren't switched on yet.
+  - `SITE_DOMAINS_MAX`: how many sites may have a domain at once. The default is 15, leaving
+    room under Railway's per-service cap (Pro: 20 by default, raised on request) for our own and
+    tenant hosts.
+
+**Serving on the domain.**
+- `src/middleware.ts` rewrites `/` on any host that isn't ours to `/s/_domain`. "Ours" means the
+  platform hosts, `*.everdoer.com`, the pages hosts, `*.railway.app`, localhost and IPs.
+- The route looks the host up (`loadPublishedSiteForDomain`, `active` and `published` only) and
+  renders the page.
+- Any other host (tenant hosts like `quotes.<business>.ca`, a pending domain, or a lookup error)
+  gets the SPA shell (`public/index.html`), exactly as before. Only `/` is rewritten; every other
+  path passes untouched.
+- On the domain:
+  - The canonical URL is `https://<domain>/` (`sitePublicUrl`, also shown in Settings).
+  - The quote form is the app's embeddable form (`<APP>/embed/v1.js`), because Turnstile only
+    runs on our own hostnames.
+  - The site's form key accepts the domain (added on connect if the key is restricted).
+- **Known limit:** only `/` is the business's page. Other paths on the domain (`/login`, `/q/…`,
+  and so on) are the app, as on any host pointed at the service.
+
 ### Serving and caching
 
 - `/s/<slug>` on the app host (route handler `src/app/s/[slug]/route.ts`; excluded from the SPA
