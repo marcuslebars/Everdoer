@@ -230,7 +230,7 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
           ) : (
             <p className={hintCls}>Ask an owner or admin to connect a domain.</p>
           )}
-          {view.domainsEnabled && <p className={hintCls}>You'll need to sign in where you bought the domain (GoDaddy, Namecheap, Cloudflare…) to add two records. We show you exactly what to type.</p>}
+          {view.domainsEnabled && <p className={hintCls}>You'll need to sign in where you bought the domain (GoDaddy, Namecheap, Cloudflare…) to add two records. We show you exactly what to type. Use the www address (www.yourbusiness.com): it works with every provider.</p>}
         </>
       )}
 
@@ -252,7 +252,7 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
             </p>
           ) : (
             <p className="text-sm text-foreground">
-              <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add these records:
+              <span className="font-medium">{d.name}</span> is waiting for DNS. Sign in where you bought the domain, open its DNS settings, and add these two records (replace any existing record with the same name). The second one proves the domain is yours:
             </p>
           )}
           {d.dns.records.length > 0 && (
@@ -287,8 +287,9 @@ export function SiteDomainCard({ orgId, view }: { orgId: string; view: SiteView 
             </table>
           </div>
           )}
+          {d.dns.problem && <p className="text-xs text-amber-600">{d.dns.problem}</p>}
           <p className={hintCls}>
-            {d.dns.records.some((r) => r.name === "@") ? "\"@\" means the domain itself. If your provider won't take a CNAME on \"@\", use ALIAS or ANAME, or use www instead. " : ""}
+            {d.dns.records.some((r) => r.name === "@") ? "\"@\" means the domain itself. Many providers won't take a CNAME there; if yours doesn't, disconnect and use www.yourbusiness.com instead. " : ""}
             Changes usually show up within an hour, sometimes up to a day. We check again whenever you open this page. If it isn't working after a week, we disconnect it so you can try again.
           </p>
           {canManage && (

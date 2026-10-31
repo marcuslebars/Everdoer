@@ -15,7 +15,7 @@
  * only the pure host list in rebrand/platform-hosts.ts.
  */
 
-import { isAllowedEverdoerAppHost, isNewPlatformHost, isOldPlatformHost } from "@/server/services/rebrand/platform-hosts";
+import { isNewPlatformHost, isOldPlatformHost } from "@/server/services/rebrand/platform-hosts";
 
 /** Lower-cased host (with port) of PAGES_BASE_URL, or null when unset/invalid. */
 export function pagesHostOf(pagesBaseUrl: string | null | undefined): string | null {
@@ -107,26 +107,27 @@ export function pagesRewritePath(
   return jobs ? `/s/${jobs[1]}/jobs${jobs[2] ?? ""}` : "/s/_";
 }
 
-/** The path a business's own domain is served from: the route resolves the host to its site. */
-export const CUSTOM_DOMAIN_SITE_PATH = "/s/_domain";
+/** The site route's slug for a business's own domain (no real slug has an underscore). */
+export const CUSTOM_DOMAIN_SLUG = "_domain";
+
+/** Constant-time string compare (edge-safe: no node:crypto). PURE. */
+function sameSecret(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 /**
- * A business's own domain (Settings → Your website): `/` on a host that isn't ours is handed to
- * the site route, which looks the host up and serves that business's page, or the app as before
- * when it isn't a connected domain (tenant hosts like quotes.<business>.ca keep working).
- * Only `/` is rewritten: every other path (assets, /api, /q/…, /embed) passes untouched. PURE.
+ * The business domain a request from our sites-edge Worker is for (cloudflare/sites-edge): the
+ * Worker forwards "/" on a customer's domain to /s/_domain with the domain in
+ * x-everdoer-site-host, signed with x-everdoer-edge-key = SITES_EDGE_KEY. Null when the key is
+ * unset, missing or wrong (then nothing is trusted). PURE.
  */
-export function customDomainRewritePath(
-  host: string | null,
-  pathname: string,
-  pagesBaseUrl: string | null | undefined,
-  legacyHosts?: string | null,
-): string | null {
-  if (pathname !== "/" || !host) return null;
-  const h = host.toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
-  if (!h.includes(".") || /^[\d.]+$/.test(h) || h.startsWith("[")) return null;
-  if (isOldPlatformHost(h) || isNewPlatformHost(h) || isAllowedEverdoerAppHost(h)) return null;
-  if (h.endsWith(".railway.app") || h.endsWith(".railway.internal")) return null;
-  if (h === pagesHostOf(pagesBaseUrl)?.replace(/:\d+$/, "") || isLegacyPagesHost(host, pagesBaseUrl, legacyHosts)) return null;
-  return CUSTOM_DOMAIN_SITE_PATH;
+export function edgeSiteHost(headers: { get(name: string): string | null }, edgeKey: string | null | undefined): string | null {
+  const key = edgeKey?.trim();
+  const given = headers.get("x-everdoer-edge-key")?.trim();
+  if (!key || key.length < 16 || !given || !sameSecret(given, key)) return null;
+  const host = headers.get("x-everdoer-site-host")?.trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+  return host && host.length <= 253 && /^[a-z0-9.-]+$/.test(host) ? host : null;
 }
