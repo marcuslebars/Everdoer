@@ -335,7 +335,7 @@ export default function InboxPage() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Inbox</h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(280px,360px)_1fr] gap-4 h-[calc(100vh-180px)]">
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(280px,360px)_1fr] gap-4 h-[calc(100vh-180px-4rem)] lg:h-[calc(100vh-180px)]">
         {/* Left: list */}
         <div className="bg-card border border-border rounded-xl flex flex-col overflow-hidden">
           <div className="p-3 border-b border-border space-y-2">

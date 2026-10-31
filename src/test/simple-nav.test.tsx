@@ -15,6 +15,7 @@ vi.mock("@/lib/supabase", () => ({ getSupabaseConfigDiagnostic: () => ({ isConfi
 
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { MoneyTabs } from "@/components/layout/MoneyTabs";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { MORE_NAV, PRIMARY_NAV, isNavActive, isUnderMore, moneyTabFor } from "@/components/layout/nav-items";
 import { BrandProvider } from "@/lib/brand-context";
 import { greetingFor, needsYouItems, todaysJobs } from "@/lib/today";
@@ -133,6 +134,25 @@ describe("sidebar", () => {
     renderAt(<AppSidebar />, "/");
     fireEvent.click(desktopNav().getByRole("button", { name: /More/ }));
     expect(desktopNav().getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+});
+
+describe("phone tab bar", () => {
+  it("the five places plus More; the current one marked; More opens the menu", () => {
+    const onMore = vi.fn();
+    renderAt(<MobileTabBar onMore={onMore} />, "/quotes");
+    const bar = within(screen.getByRole("navigation", { name: "Quick" }));
+    expect(bar.getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Inbox", "Schedule", "Customers", "Money"]);
+    expect(bar.getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(bar.getByRole("button", { name: "More" }));
+    expect(onMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("More is highlighted on a page that lives under it", () => {
+    renderAt(<MobileTabBar onMore={() => {}} />, "/reports/weekly");
+    const bar = within(screen.getByRole("navigation", { name: "Quick" }));
+    expect(bar.getByRole("button", { name: "More" }).className).toMatch(/text-primary/);
+    expect(bar.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
   });
 });
 
