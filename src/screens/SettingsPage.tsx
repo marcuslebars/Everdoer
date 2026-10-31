@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useBrand } from "@/lib/brand-context";
 import { receptionistCopy } from "@/lib/platform-brand";
-import { Building2, Users, Bell, Puzzle, Palette, Link2, Loader2, Phone, Send, Copy, Trash2, Mail, CreditCard, Landmark, Package, Receipt, ListChecks, Star, CalendarCheck, Globe, BookOpenCheck, AppWindow, Bot } from "lucide-react";
+import { Sparkles, ChevronDown, Building2, Users, Bell, Puzzle, Link2, Loader2, Phone, Send, Copy, Trash2, Mail, CreditCard, Landmark, Package, Receipt, ListChecks, Star, CalendarCheck, Globe, BookOpenCheck, AppWindow, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sections, sectionFromUrl, type SectionId } from "@/lib/settings-sections";
 import { toast } from "@/components/ui/sonner";
 import { useOrg } from "@/lib/org-context";
 import { useAuth } from "@/lib/auth-context";
@@ -35,25 +36,6 @@ import { AiFrontDeskSettings } from "@/components/settings/AiFrontDeskSettings";
 import { AI_FRONT_DESK_SECTIONS } from "@/components/settings/ai-front-desk-sections";
 import { MemberPhoneField } from "@/components/settings/staff/MemberPhoneField";
 
-const sections = [
-  { id: "org", label: "Organization", icon: Building2, description: "Manage organization name, slug, and companies" },
-  { id: "packs", label: "Industry pack", icon: Package, description: "Apply a starter pack for your trade and price its services" },
-  { id: "front-desk", label: "AI front desk", icon: Bot, description: "Your assistant that answers customer texts and calls" },
-  { id: "voice", label: "Voice (Marina)", icon: Phone, description: "Set each company's outbound agent, caller ID, and system prompt" },
-  { id: "members", label: "Members & Permissions", icon: Users, description: "Manage team roles and access controls" },
-  { id: "billing", label: "Billing & Plans", icon: CreditCard, description: "Manage your subscription and plan" },
-  { id: "payments", label: "Payments", icon: Landmark, description: "Connect each company's Stripe account to take deposits" },
-  { id: "invoices", label: "Invoices", icon: Receipt, description: "HST number, payment methods, terms and reminders for each company's invoices" },
-  { id: "accounting", label: "Accounting", icon: BookOpenCheck, description: "Sync invoices, payments and expenses to QuickBooks or Xero" },
-  { id: "website", label: "Your website", icon: AppWindow, description: "Your hosted page: preview, publish and edit the wording" },
-  { id: "booking", label: "Online booking", icon: Globe, description: "Your booking page: hours, services and deposits" },
-  { id: "visits", label: "Confirm & reschedule", icon: CalendarCheck, description: "Let customers confirm, move or cancel visits from the reminder" },
-  { id: "reviews", label: "Reviews", icon: Star, description: "Ask customers for a review after each job" },
-  { id: "checklists", label: "Job checklists", icon: ListChecks, description: "Reusable checklists your crew ticks off on each kind of job" },
-  { id: "notifications", label: "Notifications", icon: Bell, description: "Owner daily digest and notification preferences" },
-  { id: "integrations", label: "Integrations", icon: Puzzle, description: "Connect third-party tools and services" },
-  { id: "appearance", label: "Appearance", icon: Palette, description: "Customize theme and display options" },
-];
 
 function OrganizationSettings() {
   const { organizationId } = useOrg();
@@ -393,42 +375,72 @@ function MembersSettings() {
   );
 }
 
+function SectionButton({ section, active, onSelect }: { section: (typeof sections)[number]; active: boolean; onSelect: (id: SectionId) => void }) {
+  const brand = useBrand();
+  return (
+    <button
+      onClick={() => onSelect(section.id)}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left",
+        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+      )}
+    >
+      <section.icon className="w-4 h-4 shrink-0" />
+      {receptionistCopy(section.label, brand)}
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const brand = useBrand();
-  const [active, setActive] = useState(() => {
-    if (location.pathname.endsWith("/payments")) return "payments";
-    if (location.pathname.endsWith("/invoices")) return "invoices";
-    if (location.pathname.endsWith("/billing")) return "billing";
-    const requested = new URLSearchParams(location.search).get("section");
-    return requested && sections.some((s) => s.id === requested) ? requested : "org";
-  });
+  // The URL is the source of truth, so links like "Customize" (?section=front-desk) work even
+  // when Settings is already open, and Back goes to the previous section.
+  const active = sectionFromUrl(location.pathname, location.search);
+  const setActive = (id: SectionId) => navigate({ pathname: "/settings", search: `?section=${id}` });
   const activeSection = sections.find((s) => s.id === active);
+  const activeIsAdvanced = activeSection?.group === "advanced";
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const showAdvanced = advancedOpen || activeIsAdvanced;
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       <div className="opacity-0 animate-fade-in">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Manage your organization and preferences</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Your business, team and payments. What your AI does is on the Your AI page.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 opacity-0 animate-fade-in" style={{ animationDelay: "100ms" }}>
         {/* Sidebar nav */}
-        <div className="lg:col-span-1 space-y-1">
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActive(s.id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left",
-                active === s.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-              )}
-            >
-              <s.icon className="w-4 h-4 shrink-0" />
-              {receptionistCopy(s.label, brand)}
-            </button>
-          ))}
-        </div>
+        <nav className="lg:col-span-1 space-y-1" aria-label="Settings sections">
+          <Link
+            to="/ai"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left text-muted-foreground hover:text-foreground hover:bg-secondary"
+          >
+            <Sparkles className="w-4 h-4 shrink-0 text-primary" />
+            Your AI
+          </Link>
+          {sections
+            .filter((s) => s.group === "basics")
+            .map((s) => (
+              <SectionButton key={s.id} section={s} active={active === s.id} onSelect={setActive} />
+            ))}
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen(!showAdvanced)}
+            aria-expanded={showAdvanced}
+            className="w-full flex items-center gap-3 px-3 pt-4 pb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+          >
+            <span className="flex-1 text-left">Advanced</span>
+            <ChevronDown className={cn("w-4 h-4 transition-transform", showAdvanced ? "rotate-180" : "")} />
+          </button>
+          {showAdvanced &&
+            sections
+              .filter((s) => s.group === "advanced")
+              .map((s) => <SectionButton key={s.id} section={s} active={active === s.id} onSelect={setActive} />)}
+        </nav>
 
         {/* Content */}
         <div className="lg:col-span-3 bg-card border border-border rounded-xl p-4 sm:p-6">

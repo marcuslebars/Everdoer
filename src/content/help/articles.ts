@@ -216,7 +216,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         heading: "Your booking link",
         body:
-          "Go to Settings → Organization and click \"Copy booking link\" next to your company. Customers use it to request a time. Each request comes in as pending, and the customer is told they'll get a confirmation once you approve it. You'll find requests in your Calendar.",
+          "Go to Settings → Business and click \"Copy booking link\" next to your company. Customers use it to request a time. Each request comes in as pending, and the customer is told they'll get a confirmation once you approve it. You'll find requests in your Calendar.",
       },
       {
         heading: "Booking reminders",
@@ -537,7 +537,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         heading: "Inviting someone",
         body:
-          "Go to Settings → Members & Permissions (or the Team step in setup), enter their email, choose Member or Admin, and click Invite. They get an email invitation; pending invitations are listed until accepted.",
+          "Go to Settings → Team (or the Team step in setup), enter their email, choose Member or Admin, and click Invite. They get an email invitation; pending invitations are listed until accepted.",
       },
       {
         heading: "What admins can do",
