@@ -22,12 +22,12 @@ export async function GET(_request: Request, context: RouteContext): Promise<Nex
   return siteRoute(organizationId, companyId, async ({ ctx }) => {
     const { data, error } = await ctx.supabase
       .from("company_sites")
-      .select("organization_id, company_id, slug, content")
+      .select("organization_id, company_id, slug, content, favicon_url, custom_domain, custom_domain_status")
       .eq("organization_id", organizationId)
       .eq("company_id", companyId)
       .maybeSingle();
     if (error) throw error;
-    const site = data as Pick<Tables<"company_sites">, "organization_id" | "company_id" | "slug" | "content"> | null;
+    const site = data as Pick<Tables<"company_sites">, "organization_id" | "company_id" | "slug" | "content" | "favicon_url" | "custom_domain" | "custom_domain_status"> | null;
     const content = site ? parseSiteContent(site.content) : null;
     if (!site || !content) {
       return NextResponse.json({ error: "This company doesn't have a page yet." }, { status: 404 });

@@ -2245,6 +2245,12 @@ export type Database = {
           company_id: string
           content: Json
           created_at: string
+          custom_domain: string | null
+          custom_domain_checked_at: string | null
+          custom_domain_dns: Json | null
+          custom_domain_ref: string | null
+          custom_domain_status: string
+          favicon_url: string | null
           generated_at: string | null
           id: string
           mode: string
@@ -2260,6 +2266,12 @@ export type Database = {
           company_id: string
           content?: Json
           created_at?: string
+          custom_domain?: string | null
+          custom_domain_checked_at?: string | null
+          custom_domain_dns?: Json | null
+          custom_domain_ref?: string | null
+          custom_domain_status?: string
+          favicon_url?: string | null
           generated_at?: string | null
           id?: string
           mode?: string
@@ -2274,6 +2286,12 @@ export type Database = {
           company_id?: string
           content?: Json
           created_at?: string
+          custom_domain?: string | null
+          custom_domain_checked_at?: string | null
+          custom_domain_dns?: Json | null
+          custom_domain_ref?: string | null
+          custom_domain_status?: string
+          favicon_url?: string | null
           generated_at?: string | null
           id?: string
           mode?: string

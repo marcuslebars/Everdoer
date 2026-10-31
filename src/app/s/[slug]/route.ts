@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { loadPublishedSitePage } from "@/server/services/dfy/site-public";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { requestHost } from "@/server/services/dfy/site-host";
+import { loadPublishedSiteForDomain, loadPublishedSitePage } from "@/server/services/dfy/site-public";
 import { renderSiteNotFound } from "@/server/services/dfy/site-render";
 
 /**
@@ -11,6 +15,10 @@ import { renderSiteNotFound } from "@/server/services/dfy/site-render";
  * Caching: short shared cache (s-maxage=60, stale-while-revalidate=300) so a CDN in front of the
  * pages host absorbs traffic while a publish/unpublish/edit shows up within a minute, plus an
  * ETag so repeat visits revalidate with a 304.
+ *
+ * A business's own domain: middleware sends "/" on a host that isn't ours here as slug
+ * "_domain" (no real slug has an underscore). A connected, live domain gets its page; any other
+ * host gets the app exactly as before (tenant hosts like quotes.<business>.ca).
  */
 export const dynamic = "force-dynamic";
 
@@ -27,10 +35,21 @@ function notFound(): NextResponse {
   });
 }
 
+/** The SPA shell (what "/" served before), for hosts that aren't a connected domain. */
+async function appShell(request: Request): Promise<NextResponse> {
+  try {
+    const html = await readFile(path.join(process.cwd(), "public", "index.html"), "utf8");
+    return new NextResponse(request.method === "HEAD" ? null : html, { status: 200, headers: { "content-type": HTML, "cache-control": "no-cache" } });
+  } catch {
+    return notFound();
+  }
+}
+
 async function handle(request: Request, context: RouteContext): Promise<NextResponse> {
   try {
-    const page = await loadPublishedSitePage(context.params.slug);
-    if (!page) return notFound();
+    const onDomain = context.params.slug === "_domain";
+    const page = onDomain ? await loadPublishedSiteForDomain(requestHost(request.headers)) : await loadPublishedSitePage(context.params.slug);
+    if (!page) return onDomain ? appShell(request) : notFound();
     const headers: Record<string, string> = {
       "content-type": HTML,
       "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
@@ -42,6 +61,8 @@ async function handle(request: Request, context: RouteContext): Promise<NextResp
     return new NextResponse(request.method === "HEAD" ? null : page.html, { status: 200, headers });
   } catch (err) {
     console.error("[sites] public render failed:", err instanceof Error ? err.message : err);
+    // Never let a lookup failure take the app down on a host that isn't a site.
+    if (context.params.slug === "_domain") return appShell(request);
     return new NextResponse(renderSiteNotFound(), { status: 503, headers: { "content-type": HTML, "cache-control": "no-store" } });
   }
 }

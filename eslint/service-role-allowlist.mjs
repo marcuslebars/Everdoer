@@ -69,6 +69,8 @@ export const SERVICE_ROLE_ALLOWLIST = [
   "src/app/api/organizations/[organizationId]/companies/[companyId]/payroll/periods/[periodId]/route.ts",
   "src/app/api/organizations/[organizationId]/companies/[companyId]/site/preview/route.ts",
   "src/app/api/organizations/[organizationId]/companies/[companyId]/site/route.ts",
+  "src/app/api/organizations/[organizationId]/companies/[companyId]/site/images/route.ts",
+  "src/app/api/organizations/[organizationId]/companies/[companyId]/site/domain/route.ts",
   "src/app/api/organizations/[organizationId]/device-tokens/route.ts",
   "src/app/api/organizations/[organizationId]/inbound-webhook-jobs/[jobId]/retry/route.ts",
   "src/app/api/organizations/[organizationId]/inbox/[contactId]/assistant/route.ts",

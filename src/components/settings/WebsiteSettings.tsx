@@ -9,6 +9,7 @@ import { useOrg } from "@/lib/org-context";
 import { useSaveSiteEdits, useSite, useSiteAction, type SiteMode, type SiteView } from "@/lib/site-api";
 import { cn } from "@/lib/utils";
 import { useSettingsCompany } from "@/lib/settings-company";
+import { SiteDomainCard, SiteImagesCard } from "@/components/settings/WebsiteBranding";
 
 const inputCls =
   "w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-60";
@@ -78,20 +79,23 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
 
   if (!site) {
     return (
-      <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
-        <p className="text-sm text-foreground font-medium">{data.companyName} doesn't have a page yet.</p>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          {data.hasWebsite
-            ? "We'll build a services, prices and booking page you can link to from your website."
-            : "We'll build a one-page website from your business details, services and prices."}
-        </p>
-        {canManage ? (
-          <button type="button" disabled={busy} onClick={() => void run("generate", "Page created. Preview it, then publish.")} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-            {action.isPending ? "Building…" : "Build my page"}
-          </button>
-        ) : (
-          <p className={hintCls}>Ask an owner or admin to build it.</p>
-        )}
+      <div className="space-y-6">
+        <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
+          <p className="text-sm text-foreground font-medium">{data.companyName} doesn't have a page yet.</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            {data.hasWebsite
+              ? "We'll build a services, prices and booking page you can link to from your website."
+              : "We'll build a one-page website from your business details, services and prices."}
+          </p>
+          {canManage ? (
+            <button type="button" disabled={busy} onClick={() => void run("generate", "Page created. Preview it, then publish.")} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+              {action.isPending ? "Building…" : "Build my page"}
+            </button>
+          ) : (
+            <p className={hintCls}>Ask an owner or admin to build it.</p>
+          )}
+        </div>
+        <SiteImagesCard orgId={orgId} view={data} />
       </div>
     );
   }
@@ -164,6 +168,9 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
           Regenerate rebuilds the page from your current business details, services and prices. Your own wording below is kept.
         </p>
       </div>
+
+      <SiteImagesCard orgId={orgId} view={data} />
+      <SiteDomainCard orgId={orgId} view={data} />
 
       {form && (
         <>
