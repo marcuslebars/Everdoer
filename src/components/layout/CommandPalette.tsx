@@ -7,6 +7,7 @@ import {
   Repeat,
   Timer,
   Wallet,
+  Sparkles,
   LayoutDashboard,
   Users,
   CheckSquare,
@@ -39,6 +40,7 @@ interface CommandPaletteProps {
 
 const NAV_ITEMS = [
   { label: "Home", to: "/", icon: Home, keywords: "today dashboard overview" },
+  { label: "Your AI", to: "/ai", icon: Sparkles, keywords: "assistant switches turn on off follow up reviews weather name tone" },
   { label: "Activity", to: "/activity", icon: LayoutDashboard, keywords: "dashboard command center feed automation impact" },
   { label: "Inbox", to: "/inbox", icon: Inbox, keywords: "messages texts conversations" },
   { label: "Customers", to: "/crm", icon: Users, keywords: "crm contacts leads pipeline" },

@@ -197,6 +197,15 @@ export function AiFrontDeskSettings({ sections = [] }: { sections?: AiFrontDeskS
   const canManage = role === "owner" || role === "admin";
   const { data: companies, isLoading } = useCompanies(organizationId);
   const list = companies ?? [];
+  // ?focus=estimator (from "Your AI" → Customize): scroll to that card once it has rendered.
+  const focus = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("focus") : null;
+  useEffect(() => {
+    if (!focus || isLoading || list.length === 0) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector(`[data-ai-section="${CSS.escape(focus)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [focus, isLoading, list.length]);
 
   return (
     <div className="space-y-6">
@@ -224,9 +233,13 @@ export function AiFrontDeskSettings({ sections = [] }: { sections?: AiFrontDeskS
             return (
               <div key={company.id} className="space-y-3">
                 {list.length > 1 && <h3 className="text-sm font-semibold text-foreground">{company.name}</h3>}
-                <SmsConversationsSection {...props} />
+                <div data-ai-section="texts">
+                  <SmsConversationsSection {...props} />
+                </div>
                 {sections.map((slot) => (
-                  <div key={slot.id}>{slot.render(props)}</div>
+                  <div key={slot.id} data-ai-section={slot.id}>
+                    {slot.render(props)}
+                  </div>
                 ))}
               </div>
             );
