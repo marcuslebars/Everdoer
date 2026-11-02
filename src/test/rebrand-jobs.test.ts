@@ -412,5 +412,23 @@ describe("job:retell-repoint live-binding guard", () => {
     expect(rows[0].detail).toContain("ag-hand-bound");
     expect(resync).not.toHaveBeenCalled();
   });
+
+  it("reads the binding from Retell's inbound_agents list (the single inbound_agent_id field is gone)", async () => {
+    const reader = {
+      getAgent: vi.fn(() => Promise.resolve({ webhook_url: "https://app.empirevu.com/api/retell/webhook", response_engine: { llm_id: "llm-stale" } })),
+      getLlm: vi.fn(() => Promise.resolve({ general_tools: [] })),
+      getPhoneNumber: vi.fn(() =>
+        Promise.resolve({ inbound_webhook_url: "https://app.empirevu.com/api/retell/inbound", inbound_agents: [{ agent_id: "ag-hand-bound", weight: 1 }] }),
+      ),
+    } as unknown as RetellReader;
+    const resync = vi.fn();
+    const rows = await runRetellRepoint(
+      { db: retellDb().client, reader, resync, ensureMessage: null, env: ENV },
+      { apply: true, all: true, companyId: "co-stale" },
+    );
+    expect(rows[0]).toMatchObject({ action: "skipped_guard" });
+    expect(rows[0].detail).toContain("ag-hand-bound");
+    expect(resync).not.toHaveBeenCalled();
+  });
 });
 
