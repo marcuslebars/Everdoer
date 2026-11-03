@@ -77,8 +77,8 @@ export interface Inspection {
   agentName: string | null;
   stale: string[];
   error: string | null;
-  /** The agent the company's Retell number is LIVE-bound to (Retell's inbound_agent_id), if read. */
-  boundAgentId?: string | null;
+  /** The agents the company's Retell number is LIVE-bound to (Retell's inbound_agents), if read. */
+  boundAgentIds?: string[];
 }
 
 interface Tool {
@@ -153,10 +153,25 @@ export async function inspectAgent(
     if ("error" in num) return { agentName, stale, error: `number: ${String(num.error)}` };
     const inbound = urlStale("inbound webhook", num.inbound_webhook_url as string | null, expected);
     if (inbound) stale.push(inbound);
-    const bound = typeof num.inbound_agent_id === "string" && num.inbound_agent_id.trim() ? num.inbound_agent_id.trim() : null;
-    return { agentName, stale, error: null, boundAgentId: bound };
+    return { agentName, stale, error: null, boundAgentIds: boundInboundAgents(num) };
   }
   return { agentName, stale, error: null };
+}
+
+/**
+ * The agent ids a Retell number answers with: the weighted `inbound_agents` list (Retell removed
+ * the single `inbound_agent_id` field 2026-03-31; it's still read if a number has it). PURE.
+ */
+export function boundInboundAgents(num: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  if (Array.isArray(num.inbound_agents)) {
+    for (const entry of num.inbound_agents) {
+      const id = entry && typeof entry === "object" ? (entry as Record<string, unknown>).agent_id : null;
+      if (typeof id === "string" && id.trim()) ids.add(id.trim());
+    }
+  }
+  if (typeof num.inbound_agent_id === "string" && num.inbound_agent_id.trim()) ids.add(num.inbound_agent_id.trim());
+  return [...ids];
 }
 
 export interface RetellRepointArgs {
@@ -185,8 +200,9 @@ function skipCompanies(env: Record<string, string | undefined>): Set<string> {
 async function guardReason(db: Db, r: ProvisionedReceptionist, skip: Set<string>, inspection: Inspection): Promise<string | null> {
   if (skip.has(r.companyId)) return "listed in RETELL_REPOINT_SKIP_COMPANIES";
   // Retell's own live binding beats our DB row (catches a number re-bound by hand in Retell).
-  if (inspection.boundAgentId && inspection.boundAgentId !== r.agentId) {
-    return `its Retell number ${r.phoneNumber} is bound to a different agent (${inspection.boundAgentId}) in Retell: re-point that one by hand`;
+  const bound = inspection.boundAgentIds ?? [];
+  if (bound.length > 0 && !bound.includes(r.agentId)) {
+    return `its Retell number ${r.phoneNumber} is bound to a different agent (${bound.join(", ")}) in Retell: re-point that one by hand`;
   }
   const { data, error } = await db
     .from("voice_numbers")

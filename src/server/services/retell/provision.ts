@@ -5,11 +5,12 @@
 // re-running the Phone step never duplicates an LLM, agent, or number. Secrets
 // (RETELL_API_KEY) are read server-side only.
 //
-// Endpoints (verified against docs.retellai.com, 2026-09):
+// Endpoints (verified against docs.retellai.com, 2026-09; list moved to v2 2026-11):
 //   POST   /create-retell-llm            PATCH /update-retell-llm/{llm_id}
 //   POST   /create-agent                 PATCH /update-agent/{agent_id}
 //   POST   /create-phone-number          PATCH /update-phone-number/{phone_number}
-//   GET    /list-phone-numbers
+//   GET    /v2/list-phone-numbers?limit=&pagination_key=   → { items, has_more, pagination_key }
+// (the legacy GET /list-phone-numbers was removed 2026-06-15 and now answers 400).
 // Phone→agent binding uses the weighted `inbound_agents`/`outbound_agents` lists (the
 // single `inbound_agent_id` fields were deprecated 2026-03-31).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,6 +62,41 @@ export function getRetellApiKey(): string | null {
   return process.env.RETELL_API_KEY?.trim() || null;
 }
 
+/** One page of a Retell v2 list endpoint. */
+export interface RetellListPage<T> {
+  items?: T[];
+  has_more?: boolean;
+  pagination_key?: string | null;
+}
+
+/** Retell's v2 list page size. */
+export const RETELL_LIST_PAGE_SIZE = 100;
+/** Safety stop: at most this many pages (a looping pagination_key can't spin forever). */
+const RETELL_LIST_MAX_PAGES = 50;
+
+/**
+ * Every item of a Retell v2 list endpoint: follow `pagination_key` while `has_more`.
+ * `fetchPage` gets the key for the next page (null for the first).
+ */
+export async function listAllPages<T>(fetchPage: (paginationKey: string | null) => Promise<RetellListPage<T>>): Promise<T[]> {
+  const out: T[] = [];
+  let key: string | null = null;
+  for (let page = 0; page < RETELL_LIST_MAX_PAGES; page++) {
+    const res = await fetchPage(key);
+    out.push(...(Array.isArray(res.items) ? res.items : []));
+    if (!res.has_more || !res.pagination_key || res.pagination_key === key) break;
+    key = res.pagination_key;
+  }
+  return out;
+}
+
+/** The v2 list path for one page (PURE). */
+export function phoneNumberListPath(paginationKey: string | null): string {
+  const q = new URLSearchParams({ limit: String(RETELL_LIST_PAGE_SIZE) });
+  if (paginationKey) q.set("pagination_key", paginationKey);
+  return `/v2/list-phone-numbers?${q.toString()}`;
+}
+
 /** Real fetch-backed client (Bearer auth). Never constructed in tests. */
 export function createRetellClient(apiKey: string): RetellClient {
   const call = async (method: string, path: string, body?: unknown): Promise<unknown> => {
@@ -84,7 +120,7 @@ export function createRetellClient(apiKey: string): RetellClient {
     updateAgent: (id, b) => call("PATCH", `/update-agent/${id}`, b) as Promise<{ agent_id: string }>,
     createPhoneNumber: (b) => call("POST", "/create-phone-number", b) as Promise<RetellPhoneNumber>,
     updatePhoneNumber: (num, b) => call("PATCH", `/update-phone-number/${encodeURIComponent(num)}`, b) as Promise<RetellPhoneNumber>,
-    listPhoneNumbers: () => call("GET", "/list-phone-numbers") as Promise<RetellPhoneNumber[]>,
+    listPhoneNumbers: () => listAllPages((key) => call("GET", phoneNumberListPath(key)) as Promise<RetellListPage<RetellPhoneNumber>>),
   };
 }
 
