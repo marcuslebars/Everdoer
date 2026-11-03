@@ -23,6 +23,18 @@ describe("sites-edge Worker", () => {
     const headers = new Headers(init?.headers);
     expect(headers.get("x-everdoer-site-host")).toBe("www.acme.ca");
     expect(headers.get("x-everdoer-edge-key")).toBe(env.EDGE_KEY);
+    // Never through Cloudflare's cache (one upstream URL for every business), and no cf cache knobs.
+    expect(init?.cache).toBe("no-store");
+    expect((init as { cf?: unknown } | undefined)?.cf).toBeUndefined();
+    // No caching rule from the app → the visitor's browser always checks.
+    expect(res.headers.get("cache-control")).toBe("private, no-cache");
+  });
+
+  it("passes the app's own caching rule through untouched", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>page</html>", { status: 200, headers: { "cache-control": "private, no-cache", etag: '"abc"' } })));
+    const res = await w.fetch(new Request("https://www.acme.ca/"), env);
+    expect(res.headers.get("cache-control")).toBe("private, no-cache");
+    expect(res.headers.get("etag")).toBe('"abc"');
   });
 
   it("any other path on a business domain → its page (the app is never served there); robots.txt allowed", async () => {

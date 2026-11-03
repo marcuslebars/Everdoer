@@ -28,7 +28,10 @@ visitor ─► www.acmeroofing.ca ──CNAME──► sites.everdoer.com
     proxied it passes straight through.
   - On a business domain, `/` is forwarded to the app with the domain in a header signed by
     `SITES_EDGE_KEY`. That request is never cached, because every business shares the same
-    upstream URL.
+    upstream URL: the Worker fetches with `cache: "no-store"` and passes the app's
+    `private, no-cache` through. (Don't use `cf.cacheTtl: 0` for this: it caches the page as
+    already stale and swaps in the zone's 4-hour browser cache.) A Worker change goes live only
+    when `npm run job:cloudflare-sites-setup -- --apply` re-uploads it; a Railway deploy doesn't.
   - `/.well-known/*` passes straight through to Cloudflare. Certificate validation, both the
     first issue and every renewal, depends on it.
   - Plain http redirects to https.

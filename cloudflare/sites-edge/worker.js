@@ -54,8 +54,13 @@ export default {
     const ip = request.headers.get("cf-connecting-ip");
     if (ip) headers.set("x-forwarded-for", ip);
     // Every business domain is the same upstream URL: never let a cache share it between them.
-    const res = await fetch(upstream, { method: request.method, headers, redirect: "manual", cf: { cacheTtl: 0, cacheEverything: false } });
+    // `cache: "no-store"` keeps the subrequest out of Cloudflare's cache entirely. (cf.cacheTtl: 0
+    // did NOT: it cached the page as already stale, revalidated it on every visit, and swapped the
+    // app's "private, no-cache" for the zone's 4-hour browser cache.)
+    const res = await fetch(upstream, { method: request.method, headers, redirect: "manual", cache: "no-store" });
     const out = new Response(res.body, res);
+    // The app's own caching rule, or "always check" if a response ever arrives without one.
+    out.headers.set("cache-control", res.headers.get("cache-control") || "private, no-cache");
     out.headers.delete("set-cookie");
     out.headers.set("x-served-by", "everdoer-sites-edge");
     return out;
