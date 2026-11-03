@@ -106,8 +106,7 @@ purchase is in, and the job dead-letters. The payment and the purchase row are n
 `checkout.session.async_payment_succeeded`.
 
 **Safety-net sweep** (`npm run job:dfy-provision -- --stuck`, Railway cron every 15 min —
-`railway.dfy-sweep.json`; the old `job:crankleads-provision` script and
-`railway.crankleads-sweep.json` still work until the Railway service is switched): every
+the Railway service `crankleads-sweep`; the old `job:crankleads-provision` script still works): every
 purchase still `checkout_created / paid / provisioning` whose row hasn't changed for 15 minutes (`--older-than-minutes N`) and was created in the last
 26 h: `paid` / stuck `provisioning` → provisioned now; `checkout_created` → asks Stripe and
 provisions if the session is paid (a missed webhook), otherwise leaves it (abandoned/expired).
@@ -221,9 +220,8 @@ is a credential; this public endpoint stops minting them).
      the SMS starter automations install **active** — the worker never sends SMS).
    - **[reconcile]**: `STRIPE_PRICE_EVERDOER_*` (plan-drift check).
    - **[dfy-sweep]** (Railway service still named `crankleads-sweep` until it is renamed) —
-     Railway **cron** service, config file `railway.dfy-sweep.json`
-     (`npm run job:dfy-provision -- --stuck`, `*/15 * * * *`; the old
-     `railway.crankleads-sweep.json` is kept unchanged):
+     Railway **cron** service ([railway-services.md](railway-services.md):
+     `npm run job:dfy-provision -- --stuck`, `*/15 * * * *`):
      `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `APP_BASE_URL`,
      `RESEND_API_KEY`, `OUTBOUND_FROM_EMAIL`, `OWNER_EMAIL`, `TWILIO_*` (same values as web).
 4. **Stripe webhook** (Dashboard → Developers → Webhooks → the `/api/webhooks/stripe` endpoint):

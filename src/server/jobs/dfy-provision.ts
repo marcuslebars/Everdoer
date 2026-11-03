@@ -11,7 +11,7 @@
  *   npm run job:dfy-provision -- --stuck [--older-than-minutes 15]
  *
  * `--stuck` is the safety-net sweep, deployed as a Railway cron every 15 minutes
- * (railway.dfy-sweep.json; the old railway.crankleads-sweep.json is kept). It needs STRIPE_SECRET_KEY.
+ * (Railway service crankleads-sweep, docs/railway-services.md). It needs STRIPE_SECRET_KEY.
  */
 import {
   parseProvisionJobArgs,

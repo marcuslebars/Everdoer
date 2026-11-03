@@ -6,7 +6,7 @@
  * Close company's call_answering.included_minutes. Going over used to show only as "N min over
  * cap" in Settings → Billing. This pass bills it:
  *
- *   run daily by the voice-overage cron (railway.voice-overage.json → job:voice-overage --run):
+ *   run daily by the voice-overage cron (Railway service voice-overage → job:voice-overage --run; docs/railway-services.md):
  *   once a Toronto month has closed (from 06:00 on the 1st), for every org that went over,
  *   one `voice_overage_charges` row (the claim; unique per org + month) and — in charge mode —
  *   one Stripe invoice item: STRIPE_PRICE_VOICE_OVERAGE (a per-minute price; the amount lives in

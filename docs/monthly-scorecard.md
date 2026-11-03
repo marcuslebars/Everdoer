@@ -23,7 +23,7 @@ statement can reuse this service's metric definitions and month helpers.
 | Send pass (idempotent, opt-out, dry-run) | `src/server/services/monthly-scorecard/send.ts` |
 | Email template (HTML + text, pure) | `src/server/templates/monthly-scorecard.ts` |
 | Platform brand (the ONE place) | `src/server/services/monthly-scorecard/platform-brand.ts` (`EVERDOER_BRAND_NAME`, old `PLATFORM_BRAND_NAME` still read; default `Everdoer`) |
-| Cron job | `src/server/jobs/monthly-scorecard.ts`, `npm run job:monthly-scorecard`, `railway.monthly-scorecard.json` |
+| Cron job | `src/server/jobs/monthly-scorecard.ts`, `npm run job:monthly-scorecard`, the `monthly-scorecard` service |
 | API | `GET/PUT /api/organizations/:orgId/ui/monthly-scorecard` |
 | In-app page | `src/screens/ReportsMonthlyPage.tsx` (`/reports/monthly`, linked from the attribution report and the command palette) |
 

@@ -1,7 +1,7 @@
 /**
  * Voice overage — the billing pass, and a preview. See docs/billing.md → "Voice overage".
  *
- * The daily cron service (railway.voice-overage.json, `-- --run`) bills the month that just
+ * The daily cron service (Railway service voice-overage, `-- --run`; docs/railway-services.md) bills the month that just
  * closed, once, when VOICE_OVERAGE_BILLING is set. It's a cron of its own because it needs
  * STRIPE_SECRET_KEY, which the workflow worker deliberately doesn't carry. Without flags it
  * only prints what would be billed.

@@ -22,7 +22,7 @@ function sleep(durationMs: number): Promise<void> {
  * Dedicated Railway worker for the Stripe billing event queue. Same poll/claim
  * loop as the workflow-event worker, isolated so billing throughput and failures
  * never affect (or are affected by) workflow processing. Runs via
- * `npm run worker:billing-events` (see railway.billing-worker.json).
+ * `npm run worker:billing-events` (Railway service billiing-worker; docs/railway-services.md).
  */
 async function main(): Promise<void> {
   initServerSentry("billing-worker");

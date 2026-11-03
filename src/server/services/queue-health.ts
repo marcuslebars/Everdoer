@@ -16,7 +16,7 @@ export interface QueueTableSpec {
   failedStatuses: readonly string[];
   /** Human label for the operator email. */
   label: string;
-  /** The Railway service that drains it (railway.*.json). */
+  /** The Railway service that drains it (docs/railway-services.md). */
   service: string;
 }
 
