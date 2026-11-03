@@ -346,6 +346,11 @@ otherwise it's an answer and goes to the conversation.
   than one is pending for that owner (across all their businesses; the business name is added for
   multi-business owners). Done-for-you orgs get a `CrankLeads: ` prefix and other orgs none, until `EVERDOER_SMS_BRANDING=1` signs every org's texts `Everdoer: ` (docs/messaging-compliance.md).
   Idempotent: `notified_at` is claimed before sending and released only if the send fails.
+- **A failed send backs off.** It's retried by the sweep after 5 min, 15 min, 1 h and 3 h
+  (`notify_attempts`, `notify_retry_at`), then given up after 5 tries: the approval stays on the app's
+  Approvals list and expires as usual. (Before 2026-11-03 it retried on every scheduler tick; a send
+  that couldn't succeed became ~3,800 failed owner texts. Migration
+  `20261103120000_owner_approval_notify_backoff.sql`.)
 - **Quiet hours** 21:00–08:00 company local: non-urgent approvals wait; the scheduler sweep sends
   them once quiet hours end. Urgent (sent any time): kinds `same_day_booking`, `urgent_callback`,
   `emergency`, or any approval with `payload.urgent = true`.
