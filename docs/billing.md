@@ -40,26 +40,22 @@ creates the webhook endpoint for you.
 
 ### In Railway
 
-Four services deploy from this one repo. Each reads a specific config file, set
-per service under **Service Settings → Config-as-Code → "Railway Config File"**. A
-service left on the default `railway.json` runs the **web** start command — so set
-the path explicitly for every non-web service (this is the same mechanism the
-existing workflow worker already relies on).
+Several services deploy from this one repo. Each one's build/start command, restart policy
+and cron are set on the service in Railway (Settings); [railway-services.md](railway-services.md)
+lists them. (They used to come from `railway*.json` files, retired with Config as Code.)
 
-- [ ] **Web** (`railway.json` → `npm run start`): `STRIPE_SECRET_KEY`,
+- [ ] **Web** (`npm run start`): `STRIPE_SECRET_KEY`,
       `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` (+ optional `STRIPE_SETUP_FEE_*`),
       `BILLING_PAST_DUE_GRACE_DAYS`, plus the existing Supabase URL + anon +
       service-role and `APP_BASE_URL`. (`STRIPE_PUBLISHABLE_KEY` is Phase-2/client —
       optional now.)
-- [ ] **Billing worker** — new service, config file **`railway.billing-worker.json`**
-      (`npm run worker:billing-events`): `NEXT_PUBLIC_SUPABASE_URL` +
+- [ ] **Billing worker** — new service, start **`npm run worker:billing-events`**: `NEXT_PUBLIC_SUPABASE_URL` +
       `SUPABASE_SERVICE_ROLE_KEY` + `STRIPE_PRICE_*` (+ optional `BILLING_EVENT_WORKER_*`).
       **No `STRIPE_SECRET_KEY`** — it never constructs a Stripe client.
-- [ ] **Reconcile cron** — new service, config file **`railway.billing-reconcile.json`**
-      (`npm run job:billing-reconcile`, nightly): `STRIPE_SECRET_KEY` + `STRIPE_PRICE_*`
+- [ ] **Reconcile cron** — new service, start **`npm run job:billing-reconcile`** (nightly): `STRIPE_SECRET_KEY` + `STRIPE_PRICE_*`
       + `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. Confirm the cron
       schedule (`0 8 * * *`) in service settings.
-- [ ] The existing **workflow worker** (`railway.worker.json`) is **unchanged** and
+- [ ] The existing **workflow worker** (`npm run worker:workflow-events`) is **unchanged** and
       needs **no** billing env — do not add Stripe vars to it.
 
 > **Secrets discipline:** `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are
@@ -166,7 +162,7 @@ See `.env.example` for the annotated, copy-ready list.
 
 AI call minutes are metered as `voice_minutes` usage events and counted against an allowance (`voice/minutes.ts` → `loadMinuteAllowance`). On **Front Desk** the allowance is the plan's org-wide minutes (`marina_reception`, 500, or a `feature_flags` override). On **Catch / Close** it is each company's `call_answering.included_minutes` (default 100). Going over shows as "N min over cap" in Settings → Billing. `billing/voice-overage.ts` bills it:
 
-- **When:** a daily cron service, `railway.voice-overage.json` (`npm run job:voice-overage -- --run`, 12:00 UTC), bills the Toronto month that just closed, starting from 06:00 on the 1st so late usage events can land. It is a cron of its own because it needs `STRIPE_SECRET_KEY`, which the workflow worker doesn't carry. It exits 1 when an org failed.
+- **When:** a daily cron service, `voice-overage` (`npm run job:voice-overage -- --run`, 12:00 UTC; [railway-services.md](railway-services.md)), bills the Toronto month that just closed, starting from 06:00 on the 1st so late usage events can land. It is a cron of its own because it needs `STRIPE_SECRET_KEY`, which the workflow worker doesn't carry. It exits 1 when an org failed.
 - **What:** for every org over its allowance, one `voice_overage_charges` row (unique per org + month, which also serves as the claim) and one Stripe **invoice item**: `STRIPE_PRICE_VOICE_OVERAGE` × the minutes over, rounded up. A pending invoice item is added to the customer's next subscription invoice. Catch / Close overage is the sum of every company's overage, with the per-company split in `detail`.
 - **Who:** never `internal` (house) plans. An org with no `stripe_customer_id` gets a `skipped` row.
 - **Safety:** the invoice item carries the idempotency key `voice-overage-{org}-{month}-{minutes}`. A failed charge is recorded (`failed`, `last_error`) and retried on later passes, up to 3 tries. A `charging` row left behind by a crash is taken over after 15 minutes.
@@ -183,7 +179,7 @@ Rollout:
 1. Create the price in Stripe test mode.
 2. Run `npm run job:voice-overage` to preview last month (`-- --month 2026-09` for another month). It writes nothing.
 3. Optionally set `VOICE_OVERAGE_BILLING=record` for a month and compare the rows with the preview.
-4. Create the cron service from `railway.voice-overage.json` with the env above, then set `charge`.
+4. Create the `voice-overage` cron service with the settings in [railway-services.md](railway-services.md) and the env above, then set `charge`.
 
 Rollback: unset `VOICE_OVERAGE_BILLING`. Invoice items already added stay in Stripe; delete pending ones there if needed. Migration `20261027100000_voice_overage_charges.sql`, rollback `supabase/rollback/20261027100000_voice_overage_charges.down.sql`.
 
@@ -314,10 +310,10 @@ Clean up/down/up = apply up → down → up again with no errors.
 
 ## Operational notes
 
-- **Service topology (4 total)**: `web` (`railway.json`) + the pre-existing
-  `workflow-event` worker (`railway.worker.json`) + two new services this phase
-  adds — the `billing-event` worker (`railway.billing-worker.json`) and the
-  reconcile cron (`railway.billing-reconcile.json`). The billing worker is
+- **Service topology (4 total)**: `web` (the `Everdoer` service) + the pre-existing
+  `workflow-event` worker (the `workflow-events` service) + two new services this phase
+  adds — the `billing-event` worker (the `billiing-worker` service) and the
+  reconcile cron (the `billing-reconcile` service). The billing worker is
   deliberately **separate** from the workflow worker so a billing bug can't stall
   workflow jobs (or vice versa), the two carry different credentials (billing
   needs Stripe price ids; the workflow worker needs AI/outbound keys), and they

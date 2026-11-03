@@ -1,6 +1,6 @@
 /**
  * Monthly results scorecard. Run via `npm run job:monthly-scorecard`
- * (Railway cron — see railway.monthly-scorecard.json: 13:00 UTC on the 1st).
+ * (Railway cron service monthly-scorecard, 13:00 UTC on the 1st; docs/railway-services.md).
  *
  * Emails each company owner last month's scorecard — leads caught, replies sent, jobs booked,
  * and what we're tuning next. See docs/monthly-scorecard.md.

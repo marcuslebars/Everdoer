@@ -9,17 +9,16 @@ existing routes — house tenants (`plan = 'internal'`) stay fully exempt.
 
 ## Service topology (ground truth)
 
-Four Railway services deploy from this one repo; each reads a specific config file
-(**Service Settings → Config-as-Code → "Railway Config File"**). A service left on
-the default `railway.json` runs the **web** start command, so the path must be set
-explicitly for every non-web service.
+Four Railway services deploy from this one repo. Each one's build and start commands are set on
+the service in Railway (Settings); see [railway-services.md](railway-services.md). (Phase 1 used
+`railway*.json` config files, retired with Railway's Config as Code on 2026-11-03.)
 
-| Service | Config file | Start command | Status |
+| Service | Railway service | Start command | Status |
 |---|---|---|---|
-| Web app | `railway.json` | `npm run start` (`next start`) | pre-existing |
-| Workflow worker | `railway.worker.json` | `npm run worker:workflow-events` | pre-existing — **unchanged** |
-| **Billing worker** | `railway.billing-worker.json` | `npm run worker:billing-events` | **new (Phase 1)** |
-| **Reconcile cron** | `railway.billing-reconcile.json` | `npm run job:billing-reconcile` (`0 8 * * *`) | **new (Phase 1)** |
+| Web app | `Everdoer` | `npm run start` (`next start`) | pre-existing |
+| Workflow worker | `workflow-events` | `npm run worker:workflow-events` | pre-existing — **unchanged** |
+| **Billing worker** | `billiing-worker` | `npm run worker:billing-events` | **new (Phase 1)** |
+| **Reconcile cron** | `billing-reconcile` | `npm run job:billing-reconcile` (`0 8 * * *`) | **new (Phase 1)** |
 
 There is no Procfile/nixpacks/Dockerfile — Railway builds via RAILPACK + the
 `buildCommand`/`startCommand` in each JSON.
@@ -60,8 +59,8 @@ Legend: ✅ required · ➕ recommended · ○ optional · — not needed.
 
 ### 3. Railway
 - [ ] Set web-service env (table above).
-- [ ] Create the **billing worker** service, config file `railway.billing-worker.json`, set its env.
-- [ ] Create the **reconcile cron** service, config file `railway.billing-reconcile.json`, set its env, confirm schedule.
+- [ ] Create the **billing worker** service with the settings in [railway-services.md](railway-services.md), set its env.
+- [ ] Create the **reconcile cron** service with the settings in [railway-services.md](railway-services.md), set its env, confirm schedule.
 - [ ] Leave the **workflow worker unchanged** (no billing env).
 - [ ] Deploy (merge to `main` triggers the web auto-deploy).
 

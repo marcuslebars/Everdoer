@@ -1,6 +1,6 @@
 /**
  * Nightly quote maintenance. Run via `npm run job:quote-maintenance`
- * (Railway cron — see railway.quote-maintenance.json).
+ * (Railway cron service quote-maintenance; docs/railway-services.md).
  *
  * Two sweeps, in this order and for this reason:
  *
