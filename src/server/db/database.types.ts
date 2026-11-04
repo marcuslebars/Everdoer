@@ -8126,6 +8126,8 @@ export type Database = {
           kind: string
           notified_at: string | null
           notified_to: string | null
+          notify_attempts: number
+          notify_retry_at: string | null
           organization_id: string
           payload: Json
           requested_by: string
@@ -8150,6 +8152,8 @@ export type Database = {
           kind: string
           notified_at?: string | null
           notified_to?: string | null
+          notify_attempts?: number
+          notify_retry_at?: string | null
           organization_id: string
           payload?: Json
           requested_by?: string
@@ -8173,6 +8177,8 @@ export type Database = {
           kind?: string
           notified_at?: string | null
           notified_to?: string | null
+          notify_attempts?: number
+          notify_retry_at?: string | null
           organization_id?: string
           payload?: Json
           requested_by?: string

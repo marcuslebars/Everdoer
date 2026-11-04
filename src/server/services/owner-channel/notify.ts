@@ -13,6 +13,28 @@ export const URGENT_APPROVAL_KINDS = new Set(["same_day_booking", "urgent_callba
 
 type ApprovalDbRow = Tables<"owner_approvals">;
 
+/**
+ * A failed approval text is retried after these waits (attempt 1 failed → 5 min, …), and given up
+ * after NOTIFY_MAX_ATTEMPTS tries: the approval stays on the app's Approvals list and still
+ * expires as usual. Before this, a failure was retried on every scheduler tick: with a send that
+ * could never succeed (platform Twilio account inactive, Oct 2026) that was ~3,800 failed texts.
+ */
+export const NOTIFY_BACKOFF_MINUTES = [5, 15, 60, 180] as const;
+export const NOTIFY_MAX_ATTEMPTS = 5;
+
+/** When to try again after `attempts` failed sends, or null to give up. PURE. */
+export function nextNotifyRetryAt(attempts: number, nowMs: number): Date | null {
+  if (attempts >= NOTIFY_MAX_ATTEMPTS) return null;
+  const minutes = NOTIFY_BACKOFF_MINUTES[Math.min(Math.max(attempts, 1), NOTIFY_BACKOFF_MINUTES.length) - 1];
+  return new Date(nowMs + minutes * 60_000);
+}
+
+/** Is this approval due a (re)try of its text? Waiting out a backoff, or given up, → no. PURE. */
+export function notifyDue(row: Pick<ApprovalDbRow, "notify_attempts" | "notify_retry_at">, nowMs: number): boolean {
+  if ((row.notify_attempts ?? 0) >= NOTIFY_MAX_ATTEMPTS) return false;
+  return !row.notify_retry_at || Date.parse(row.notify_retry_at) <= nowMs;
+}
+
 export function isUrgentApproval(row: Pick<ApprovalDbRow, "kind" | "payload">): boolean {
   if (URGENT_APPROVAL_KINDS.has(row.kind)) return true;
   const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? (row.payload as Record<string, unknown>) : {};
@@ -22,7 +44,8 @@ export function isUrgentApproval(row: Pick<ApprovalDbRow, "kind" | "payload">): 
 /**
  * Text the owner about a pending owner_approvals row ("Quote for Dana: $650. Reply Y to approve,
  * N to skip"), from the platform number. Idempotent: claims notified_at before sending (a
- * second call is a no-op) and releases it only if the send itself failed, so the sweep retries.
+ * second call is a no-op) and releases it only if the send itself failed, with a backoff
+ * (nextNotifyRetryAt) so the sweep retries a few times, further apart, then gives up.
  * Quiet hours: non-urgent approvals wait (the sweep sends them at 08:00). Never throws.
  */
 export async function notifyOwnerOfApproval(admin: AdminClient, approvalId: string, options: { nowMs?: number } = {}): Promise<{ notified: boolean }> {
@@ -30,7 +53,7 @@ export async function notifyOwnerOfApproval(admin: AdminClient, approvalId: stri
   try {
     const { data } = await admin.from("owner_approvals").select("*").eq("id", approvalId).maybeSingle();
     const row = data as ApprovalDbRow | null;
-    if (!row || row.status !== "pending" || row.notified_at || isExpired(row, nowMs)) return { notified: false };
+    if (!row || row.status !== "pending" || row.notified_at || isExpired(row, nowMs) || !notifyDue(row, nowMs)) return { notified: false };
 
     const { data: companyData } = await admin
       .from("companies")
@@ -77,7 +100,14 @@ export async function notifyOwnerOfApproval(admin: AdminClient, approvalId: stri
 
     const sent = await sendOwnerSms(admin, { to: ownerPhone, body, organizationId: row.organization_id, companyId: row.company_id, platformBrand: brand });
     if (sent.status === "failed") {
-      await admin.from("owner_approvals").update({ notified_at: null, notified_to: null }).eq("id", row.id).eq("status", "pending");
+      const attempts = (row.notify_attempts ?? 0) + 1;
+      const retryAt = nextNotifyRetryAt(attempts, nowMs);
+      await admin
+        .from("owner_approvals")
+        .update({ notified_at: null, notified_to: null, notify_attempts: attempts, notify_retry_at: retryAt ? retryAt.toISOString() : null })
+        .eq("id", row.id)
+        .eq("status", "pending");
+      if (!retryAt) console.error(`[owner-channel] gave up texting the owner about approval ${row.id} after ${attempts} failed tries; it stays in the app`);
       return { notified: false };
     }
     // "blocked" (owner opted out of platform texts): leave it claimed — it's on the app list.
@@ -117,13 +147,13 @@ export async function sweepOwnerApprovals(admin: AdminClient, nowMs: number = Da
 
   const { data: unsent } = await admin
     .from("owner_approvals")
-    .select("id, expires_at")
+    .select("id, expires_at, notify_attempts, notify_retry_at")
     .eq("status", "pending")
     .is("notified_at", null)
     .order("created_at", { ascending: true })
     .limit(50);
-  for (const row of (unsent ?? []) as Array<Pick<ApprovalDbRow, "id" | "expires_at">>) {
-    if (isExpired(row, nowMs)) continue;
+  for (const row of (unsent ?? []) as Array<Pick<ApprovalDbRow, "id" | "expires_at" | "notify_attempts" | "notify_retry_at">>) {
+    if (isExpired(row, nowMs) || !notifyDue(row, nowMs)) continue;
     if ((await notifyOwnerOfApproval(admin, row.id, { nowMs })).notified) notified++;
   }
 

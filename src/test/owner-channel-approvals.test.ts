@@ -337,11 +337,34 @@ describe("notifyOwnerOfApproval + sweep", () => {
     expect(lastReply()).toBe("CrankLeads: #2 Sam - book them for Fri 9am? Reply Y 2 to book it, N 2 to skip.");
   });
 
-  it("a failed send releases the claim so the sweep retries", async () => {
-    seed({ owner_approvals: [approval({ id: "a-1", notified_at: null })] });
+  it("a failed send releases the claim and the sweep retries later, further apart", async () => {
+    seed({ owner_approvals: [approval({ id: "a-1", notified_at: null, expires_at: new Date(NOW + 48 * HOUR).toISOString() })] });
     deliverMessage.mockResolvedValueOnce({ status: "failed", body: "" });
     expect((await notifyOwnerOfApproval(db.client, "a-1", { nowMs: NOW })).notified).toBe(false);
-    expect(db.tables.owner_approvals[0].notified_at).toBeNull();
+    expect(db.tables.owner_approvals[0]).toMatchObject({ notified_at: null, notify_attempts: 1, notify_retry_at: new Date(NOW + 5 * 60_000).toISOString() });
+    // Not before the wait is over (this used to retry on every scheduler tick).
+    expect((await sweepOwnerApprovals(db.client, NOW + 60_000)).notified).toBe(0);
+    expect(deliverMessage).toHaveBeenCalledTimes(1);
+    // After 5 minutes it tries again, and this time it goes through.
+    expect((await sweepOwnerApprovals(db.client, NOW + 5 * 60_000)).notified).toBe(1);
+    expect(deliverMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("a send that keeps failing is given up after 5 tries (5 min, 15 min, 1 h, 3 h apart); the approval stays pending in the app", async () => {
+    seed({ owner_approvals: [approval({ id: "a-1", notified_at: null, expires_at: new Date(NOW + 48 * HOUR).toISOString() })] });
+    for (let i = 0; i < 5; i++) deliverMessage.mockResolvedValueOnce({ status: "failed", body: "" });
+    let t = NOW;
+    await notifyOwnerOfApproval(db.client, "a-1", { nowMs: t });
+    for (const waitMin of [5, 15, 60, 180]) {
+      expect((await sweepOwnerApprovals(db.client, t + waitMin * 60_000 - 1000)).notified).toBe(0); // just before: nothing
+      t += waitMin * 60_000;
+      await sweepOwnerApprovals(db.client, t);
+    }
+    expect(deliverMessage).toHaveBeenCalledTimes(5);
+    expect(db.tables.owner_approvals[0]).toMatchObject({ status: "pending", notified_at: null, notify_attempts: 5, notify_retry_at: null });
+    // Hours of sweeps later: no more tries.
+    for (let h = 1; h <= 24; h++) await sweepOwnerApprovals(db.client, t + h * HOUR);
+    expect(deliverMessage).toHaveBeenCalledTimes(5);
   });
 
   it("quiet hours: waits overnight (urgent kinds go now), the sweep sends it after 08:00", async () => {
