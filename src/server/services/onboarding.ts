@@ -11,6 +11,7 @@ export const ONBOARDING_STEPS = [
   "business",
   "services",
   "phone",
+  "ai",
   "payments",
   "website",
   "test_call",

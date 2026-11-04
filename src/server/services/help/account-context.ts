@@ -40,6 +40,7 @@ export const STEP_LABELS: Record<string, string> = {
   business: "Business",
   services: "Services",
   phone: "Phone",
+  ai: "Your AI",
   payments: "Payments",
   website: "Website leads",
   test_call: "Test call",
@@ -91,6 +92,8 @@ export async function loadHelpAccountContext(
       result.companyName = company.name;
       const steps = await getOnboardingProgress(context, company.id);
       const done = new Set(steps.filter((s) => s.status === "complete").map((s) => s.step));
+      // "Your AI" was added later: a finished onboarding (every other step done) doesn't list it.
+      if (ONBOARDING_STEPS.every((s) => s === "ai" || done.has(s))) done.add("ai");
       result.setup = {
         done: ONBOARDING_STEPS.filter((s) => done.has(s)).map((s) => STEP_LABELS[s] ?? s),
         remaining: ONBOARDING_STEPS.filter((s) => !done.has(s)).map((s) => STEP_LABELS[s] ?? s),

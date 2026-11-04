@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { isDoneForYouBrand, receptionistCopy } from "@/lib/platform-brand";
 import {
   Building2, ClipboardList, Phone, CreditCard, Globe, PhoneCall, Users, Zap,
-  Check, Loader2, ArrowRight, Upload, Sparkles, ExternalLink, X,
+  Check, Loader2, ArrowRight, Upload, Sparkles, ExternalLink, X, Bot,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ForwardingTestPanel } from "@/components/onboarding/ForwardingTestPanel";
 import { PhoneModeStep } from "@/components/onboarding/PhoneModeStep";
+import { OwnerCellVerify } from "@/components/onboarding/OwnerCellVerify";
+import { YourAiStep } from "@/components/onboarding/YourAiStep";
 import { HelpButton } from "@/components/help/HelpPanel";
 import { useOrg } from "@/lib/org-context";
 import { SetupProgressScreen } from "@/components/onboarding/SetupProgress";
@@ -40,6 +42,8 @@ import {
   type CatalogDraft,
   type CatalogItemInput,
   type CreatedIntakeKey,
+  type OnboardingCompanyProfile,
+  type SaveBusinessInput,
 } from "@/lib/api-client";
 import { WebsiteFormStep } from "@/components/website-forms/WebsiteFormsPanel";
 import { IndustryPackPicker } from "@/components/onboarding/IndustryPackPicker";
@@ -51,6 +55,7 @@ const STEPS = [
   { key: "business", title: "Business", icon: Building2 },
   { key: "services", title: "Services", icon: ClipboardList },
   { key: "phone", title: "Phone", icon: Phone },
+  { key: "ai", title: "Your AI", icon: Bot },
   { key: "payments", title: "Payments", icon: CreditCard },
   { key: "website", title: "Website leads", icon: Globe },
   { key: "test_call", title: "Test call", icon: PhoneCall },
@@ -68,23 +73,41 @@ interface StepProps {
   orgId: string;
   companyId: string | null;
   companyName: string | null;
+  /** What the company already has (Business step pre-fill). */
+  profile: OnboardingCompanyProfile | null;
   stepData: Record<string, unknown>;
   onDone: () => void;
 }
 
 // ── Step 1: Business ──────────────────────────────────────────────────────────
-function BusinessStep({ orgId, companyId, onDone }: StepProps) {
+function BusinessStep({ orgId, companyId, companyName, profile, onDone }: StepProps) {
   const brand = useBrand();
   const save = useSaveOnboardingBusiness(orgId);
-  const [name, setName] = useState("");
-  const [website, setWebsite] = useState("");
-  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? "America/Toronto");
-  const [hours, setHours] = useState("");
-  const [serviceArea, setServiceArea] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
-  const [ownerPhone, setOwnerPhone] = useState("");
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  // Pre-filled from what's saved, and only CHANGED fields are sent — so coming back to this step
+  // and saving never wipes the website, hours or cell (it used to send blanks as null).
+  const initial = useMemo(
+    () => ({
+      name: companyName ?? "",
+      website: profile?.website ?? "",
+      timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "America/Toronto",
+      hours: profile?.hours ?? "",
+      serviceArea: profile?.serviceArea ?? "",
+      ownerEmail: profile?.ownerEmail ?? "",
+      ownerPhone: profile?.ownerPhone ?? "",
+    }),
+    [companyName, profile],
+  );
+  const [name, setName] = useState(initial.name);
+  const [website, setWebsite] = useState(initial.website);
+  const [timezone, setTimezone] = useState(initial.timezone);
+  const [hours, setHours] = useState(initial.hours);
+  const [serviceArea, setServiceArea] = useState(initial.serviceArea);
+  const [ownerEmail, setOwnerEmail] = useState(initial.ownerEmail);
+  const [ownerPhone, setOwnerPhone] = useState(initial.ownerPhone);
+  const [logoUrl, setLogoUrl] = useState<string | null>(profile?.logoUrl ?? null);
   const [uploading, setUploading] = useState(false);
+  // After saving with a cell that isn't confirmed yet: confirm it here, right away.
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleLogo = async (file: File) => {
@@ -106,24 +129,34 @@ function BusinessStep({ orgId, companyId, onDone }: StepProps) {
 
   const submit = async () => {
     if (!name.trim()) return;
+    const changed = (now: string, was: string) => now.trim() !== was.trim();
+    const body: SaveBusinessInput = { companyId: companyId ?? undefined, name: name.trim() };
+    if (!companyId || changed(website, initial.website)) body.website = website.trim() || null;
+    if (!companyId || !profile?.timezone || changed(timezone, initial.timezone)) body.timezone = timezone.trim() || null;
+    if (!companyId || changed(hours, initial.hours)) body.hours = hours.trim() ? { summary: hours.trim() } : null;
+    if (!companyId || changed(serviceArea, initial.serviceArea)) body.serviceArea = serviceArea.trim() || null;
+    if (!companyId || changed(ownerEmail, initial.ownerEmail)) body.ownerEmail = ownerEmail.trim() || null;
+    if (!companyId || changed(ownerPhone, initial.ownerPhone)) body.ownerPhone = ownerPhone.trim() || null;
+    if (logoUrl !== (profile?.logoUrl ?? null)) body.brandLogoUrl = logoUrl;
     try {
-      await save.mutateAsync({
-        companyId: companyId ?? undefined,
-        name: name.trim(),
-        website: website.trim() || null,
-        timezone: timezone.trim() || null,
-        hours: hours.trim() ? { summary: hours.trim() } : null,
-        serviceArea: serviceArea.trim() || null,
-        ownerEmail: ownerEmail.trim() || null,
-        ownerPhone: ownerPhone.trim() || null,
-        brandLogoUrl: logoUrl,
-      });
+      const saved = await save.mutateAsync(body);
       toast.success("Business profile saved");
-      onDone();
+      const cellChanged = !companyId || changed(ownerPhone, initial.ownerPhone);
+      if (ownerPhone.trim() && (cellChanged || !profile?.ownerPhoneVerified)) setConfirmFor(saved.company.id);
+      else onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't save.");
     }
   };
+
+  if (confirmFor) {
+    return (
+      <div className="space-y-4 max-w-xl">
+        <p className="text-sm text-muted-foreground">Saved. One more thing: confirm your cell so your AI can reach you.</p>
+        <OwnerCellVerify orgId={orgId} companyId={confirmFor} onConfirmed={onDone} onSkip={onDone} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 max-w-xl">
@@ -140,7 +173,13 @@ function BusinessStep({ orgId, companyId, onDone }: StepProps) {
       <div><label className={label}>Service area</label><input className={input} value={serviceArea} onChange={(e) => setServiceArea(e.target.value)} placeholder="Greater Toronto Area" /></div>
       <div className="grid grid-cols-2 gap-3">
         <div><label className={label}>Owner email</label><input className={input} value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} placeholder="you@company.com" /></div>
-        <div><label className={label}>Owner phone</label><input className={input} value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="+1 555 000 0000" /></div>
+        <div>
+          <label className={label}>
+            Your cell {profile?.ownerPhoneVerified && !(ownerPhone.trim() !== initial.ownerPhone.trim()) ? <span className="text-emerald-400">· confirmed</span> : null}
+          </label>
+          <input className={input} inputMode="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="(705) 555-0123" />
+          <p className="text-[11px] text-muted-foreground mt-1">Your AI texts you here when it needs your OK. We'll text a code to confirm it.</p>
+        </div>
       </div>
       <div>
         <label className={label}>Logo {!companyId && <span className="text-muted-foreground/60">(save first)</span>}</label>
@@ -617,6 +656,7 @@ function SelfServeWizard() {
     orgId: organizationId,
     companyId: company?.id ?? null,
     companyName: company?.name ?? null,
+    profile: company?.profile ?? null,
     stepData: dataByStep.get(active) ?? {},
     onDone: () => markComplete(active),
   };
@@ -681,6 +721,8 @@ function SelfServeWizard() {
               <ServicesStep {...stepProps} />
             ) : active === "phone" ? (
               <PhoneModeStep {...stepProps} aiStep={<PhoneStep {...stepProps} />} />
+            ) : active === "ai" ? (
+              <YourAiStep orgId={stepProps.orgId} companyId={stepProps.companyId} onDone={stepProps.onDone} goTo={(step) => setActive(step)} />
             ) : active === "payments" ? (
               <PaymentsStep {...stepProps} />
             ) : active === "website" ? (
