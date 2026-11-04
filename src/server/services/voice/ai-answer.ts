@@ -379,20 +379,31 @@ async function defaultBillingHealthy(admin: AdminClient, organizationId: string)
   return orgCan(admin as unknown as Parameters<typeof orgCan>[0], organizationId, "workflows");
 }
 
-/** The company's own Front Desk receptionist agent, if it has one (voice_numbers, provider retell). */
+/**
+ * The company's own Front Desk receptionist agent, if it has one: the agent on its Retell number
+ * (a dedicated AI line), else the agent pinned on its own Twilio number (one number for
+ * everything — onboarding-provision.ts provisionCatcherReceptionist).
+ */
 async function receptionistAgentId(admin: AdminClient, organizationId: string, companyId: string): Promise<string | null> {
   const { data, error } = await admin
     .from("voice_numbers")
-    .select("provider_agent_id")
+    .select("provider, mode, provider_agent_id")
     .eq("organization_id", organizationId)
     .eq("company_id", companyId)
-    .eq("provider", "retell")
     .eq("active", true)
-    .limit(1)
-    .maybeSingle();
+    .not("provider_agent_id", "is", null);
   if (error) throw error;
-  const id = (data as { provider_agent_id: string | null } | null)?.provider_agent_id ?? null;
-  return id?.trim() || null;
+  const rows = (data ?? []) as Array<{ provider: string; mode: string | null; provider_agent_id: string | null }>;
+  const pick = (match: (r: (typeof rows)[number]) => boolean) => rows.find((r) => match(r) && r.provider_agent_id?.trim())?.provider_agent_id?.trim() ?? null;
+  return pick((r) => r.provider === "retell") ?? pick((r) => r.provider === "twilio" && r.mode === CATCHER_NUMBER_MODE);
+}
+
+/** twilio/missed-call.ts CATCHER_MODE (not imported: missed-call imports this module). */
+const CATCHER_NUMBER_MODE = "missed_call_catcher";
+
+/** Plans whose forwarded calls go to the company's own quoting/booking receptionist. PURE. */
+export function isFrontDeskOrg(org: { plan?: string | null; crankleads_tier?: string | null } | null | undefined): boolean {
+  return org?.crankleads_tier === "front_desk" || org?.plan === "front_desk";
 }
 
 export interface CompanyAnsweringState {
@@ -442,7 +453,7 @@ export async function decideCallAnswering(admin: AdminClient, input: DecideInput
       return { kind: "voicemail", reason: "billing", timeZone };
     }
 
-    const frontDesk = state.org.crankleads_tier === "front_desk" || state.org.plan === "front_desk";
+    const frontDesk = isFrontDeskOrg(state.org);
     const ownAgent = frontDesk ? await receptionistAgentId(admin, input.organizationId, input.companyId) : null;
     const agentId = ownAgent ?? config.messageAgentId;
     if (!agentId) return { kind: "voicemail", reason: "no_agent", timeZone };

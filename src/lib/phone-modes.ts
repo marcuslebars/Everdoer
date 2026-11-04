@@ -24,3 +24,12 @@ export function availablePhoneModes(input: {
     ? ["missed_call_catcher"]
     : ["ai_receptionist", "missed_call_catcher"];
 }
+
+/** The Phone step's one line on who picks up a forwarded call (onboarding-number.ts AnsweringLevel). */
+export function answeringCopy(level: "receptionist" | "message" | "voicemail", receptionistIncluded: boolean): string {
+  if (level === "receptionist") return "Your AI receptionist answers: it quotes from your price list, books the job, and texts you a summary.";
+  if (level === "voicemail") return "AI answering is off: callers hear your greeting, can leave a voicemail, and get a text from you. Turn the AI on any time in Your AI.";
+  return receptionistIncluded
+    ? "Your AI answers, takes a message, and the caller gets a text right away. (Your quoting receptionist is being set up — try again in a minute if this doesn't change.)"
+    : "Your AI answers, takes a message, and the caller gets a text right away. On Front Desk it also quotes and books.";
+}

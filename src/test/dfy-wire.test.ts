@@ -282,9 +282,11 @@ describe("buyer message sequence", () => {
         dfy_progress: [{ organization_id: ORG, company_id: COMPANY, switched_on_at: "2026-10-05T15:01:00Z" }],
       }),
     );
-    expect(await pendingSiteCompanyIds(db.client)).toEqual([COMPANY]);
+    // The sweep looks back a fixed window from "now": pin now to the day of this story.
+    const now = Date.parse("2026-10-05T16:00:00Z");
+    expect(await pendingSiteCompanyIds(db.client, undefined, now)).toEqual([COMPANY]);
     publishPage("2026-10-05T15:05:00Z");
-    expect(await pendingSiteCompanyIds(db.client)).toEqual([]);
+    expect(await pendingSiteCompanyIds(db.client, undefined, now)).toEqual([]);
   });
 });
 

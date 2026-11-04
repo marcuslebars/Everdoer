@@ -103,13 +103,15 @@ export async function resolveRetellTenant(
     if (row) return { ...(await tenantFromCompany(admin, row.organization_id, row.company_id)), resolvedBy: "number" };
   }
 
-  // (2) by the Retell agent id.
+  // (2) by the Retell agent id — on the company's Retell number, or pinned on its own Twilio
+  // number (one number for everything: onboarding-provision.ts provisionCatcherReceptionist).
+  // Only we ever write provider_agent_id, so an agent id names exactly one company.
   if (input.agentId) {
     const { data } = await admin
       .from("voice_numbers")
       .select("organization_id, company_id")
       .eq("provider_agent_id", input.agentId)
-      .eq("provider", "retell")
+      .in("provider", ["retell", "twilio"])
       .eq("active", true)
       .limit(1)
       .maybeSingle();

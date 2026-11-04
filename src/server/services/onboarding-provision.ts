@@ -13,6 +13,7 @@ import {
   createRetellClient,
   getRetellApiKey,
   provisionRetellAgent,
+  provisionRetellLlmAndAgent,
   type ProvisionResult,
   type RetellClient,
 } from "@/server/services/retell/provision";
@@ -79,24 +80,13 @@ export function isMarineCompany(packId: string | null, serviceKeys: Array<string
   return packId === "marine" || serviceKeys.some((key) => typeof key === "string" && /^shrink_?wrap/.test(key));
 }
 
-export async function provisionPhoneForCompany(
-  context: TenantServiceContext,
-  input: ProvisionPhoneInput,
-  client?: RetellClient,
-): Promise<ProvisionResult> {
-  const apiKey = getRetellApiKey();
-  const retell = client ?? (apiKey ? createRetellClient(apiKey) : null);
-  if (!retell) {
-    console.error("[onboarding] RETELL_API_KEY is not set — can't provision a number.");
-    throw new UserFacingError("Phone setup isn't available right now. Please contact support.", { status: 503, code: "voice_not_configured" });
-  }
-
+/** Everything the receptionist is built from (prompt, tools, webhooks), for either kind of setup. */
+async function receptionistSetup(context: TenantServiceContext, companyId: string, transferOverride?: string | null) {
   // Services (with a price only when the owner or their site gave one), hours, service area and
   // booking link — the same facts outbound calls are built from (voice/company-facts.ts).
-  const facts = await loadCompanyFacts(context, input.companyId);
+  const facts = await loadCompanyFacts(context, companyId);
   const { company, items, services, bookingUrl } = facts;
   const baseUrl = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
-  const webhookUrl = `${baseUrl}/api/retell/webhook`;
 
   // The company's industry pack (if one was applied) adds trade FAQs / urgency keywords.
   const appliedPack = parseAppliedIndustryPack(company.industry_pack);
@@ -106,7 +96,7 @@ export async function provisionPhoneForCompany(
   // serve them (public base URL + the shared function secret). Marine keeps its own quote tool.
   const functionSecret = process.env.RETELL_FUNCTION_SECRET?.trim() || null;
   const marine = isMarineCompany(appliedPack?.id ?? null, items.map((i) => i.service_key));
-  const transferNumber = input.transferNumber ?? company.owner_phone_e164;
+  const transferNumber = transferOverride ?? company.owner_phone_e164;
   const tools = baseUrl && functionSecret ? buildReceptionistTools({ baseUrl, functionSecret, marine, transferNumber }) : null;
   if (!tools) console.warn("[onboarding] APP_BASE_URL or RETELL_FUNCTION_SECRET unset — receptionist provisioned WITHOUT tools.");
 
@@ -123,6 +113,27 @@ export async function provisionPhoneForCompany(
     },
     pack ? packReceptionistNotes(pack) : null,
   );
+  return { company, prompt, tools, baseUrl };
+}
+
+function retellClientOrThrow(client?: RetellClient): RetellClient {
+  const apiKey = getRetellApiKey();
+  const retell = client ?? (apiKey ? createRetellClient(apiKey) : null);
+  if (!retell) {
+    console.error("[onboarding] RETELL_API_KEY is not set — can't provision a receptionist.");
+    throw new UserFacingError("Phone setup isn't available right now. Please contact support.", { status: 503, code: "voice_not_configured" });
+  }
+  return retell;
+}
+
+export async function provisionPhoneForCompany(
+  context: TenantServiceContext,
+  input: ProvisionPhoneInput,
+  client?: RetellClient,
+): Promise<ProvisionResult> {
+  const retell = retellClientOrThrow(client);
+  const { company, prompt, tools, baseUrl } = await receptionistSetup(context, input.companyId, input.transferNumber);
+  const webhookUrl = `${baseUrl}/api/retell/webhook`;
 
   const result = await provisionRetellAgent(retell, {
     companyName: company.name,
@@ -151,4 +162,72 @@ export async function provisionPhoneForCompany(
   });
 
   return result;
+}
+
+// ── One number for everything (docs/front-desk-ai.md → "## Phone answering") ────────────────
+
+/** twilio/missed-call.ts CATCHER_MODE (not imported: missed-call → ai-answer → this module). */
+const CATCHER_MODE = "missed_call_catcher";
+
+export interface CatcherReceptionistInput {
+  companyId: string;
+  /** Ids from an earlier run (onboarding_progress phone data `catcherAgent`) → update, don't create. */
+  existing?: { llmId?: string | null; agentId?: string | null };
+  onCreated?: (ids: { llmId?: string; agentId?: string }) => Promise<void>;
+}
+
+/**
+ * The Front Desk receptionist WITHOUT a Retell number: the company's own Twilio number (the
+ * catcher — it also texts) hands forwarded calls to this agent over SIP (voice/ai-answer.ts
+ * decideCallAnswering). Builds the same prompt + tools as provisionPhoneForCompany, then pins
+ * the agent on the catcher's voice_numbers row (provider_agent_id), which is where the
+ * answering decision and the Retell tool calls (resolveRetellTenant, by agent) find it.
+ */
+export async function provisionCatcherReceptionist(
+  context: TenantServiceContext,
+  input: CatcherReceptionistInput,
+  client?: RetellClient,
+): Promise<{ llmId: string; agentId: string; catcherNumber: string }> {
+  const { data: row, error } = await context.supabase
+    .from("voice_numbers")
+    .select("id, phone_e164")
+    .eq("organization_id", context.organizationId)
+    .eq("company_id", input.companyId)
+    .eq("provider", "twilio")
+    .eq("mode", CATCHER_MODE)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const catcher = row as { id: string; phone_e164: string } | null;
+  if (!catcher) throw new UserFacingError("Set up your number first.", { status: 409, code: "no_business_number" });
+
+  const retell = retellClientOrThrow(client);
+  const { company, prompt, tools, baseUrl } = await receptionistSetup(context, input.companyId);
+  const { llmId, agentId } = await provisionRetellLlmAndAgent(retell, {
+    companyName: company.name,
+    prompt,
+    webhookUrl: baseUrl ? `${baseUrl}/api/retell/webhook` : null,
+    generalTools: tools,
+    postCallAnalysisData: RECEPTIONIST_ANALYSIS_FIELDS,
+    existing: input.existing,
+    onCreated: input.onCreated,
+  });
+
+  const { error: pinError } = await context.supabase
+    .from("voice_numbers")
+    .update({ provider_agent_id: agentId })
+    .eq("organization_id", context.organizationId)
+    .eq("id", catcher.id);
+  if (pinError) throw pinError;
+
+  await upsertCompanyVoiceProfile(context, {
+    companyId: input.companyId,
+    systemPrompt: prompt,
+    brandLabel: company.name,
+    fromNumber: catcher.phone_e164,
+    active: true,
+  });
+  return { llmId, agentId, catcherNumber: catcher.phone_e164 };
 }

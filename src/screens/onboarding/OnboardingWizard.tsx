@@ -631,7 +631,7 @@ function SelfServeWizard() {
             <p className="text-sm text-muted-foreground mt-0.5">
               {isDoneForYouBrand(brand)
                 ? "Your phone and website leads working in about 20 minutes."
-                : receptionistCopy("A working Marina number + website leads in about 20 minutes.", brand)}
+                : "Your number, your AI and website leads — working in about 20 minutes."}
             </p>
           </div>
           <div className="flex items-center gap-2">
