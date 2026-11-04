@@ -511,7 +511,42 @@ company-specific is a per-call dynamic variable set by our server: `company_name
   callback_requested, callback_time, booking_link_requested, do_not_text`.
 
 Front Desk companies whose catcher number gets the call are handed to **their own
-receptionist agent** (`voice_numbers` provider `retell`), with the same metadata.
+receptionist agent** — the one on their Retell number (`voice_numbers` provider `retell`),
+else the one pinned on the catcher number itself (below) — with the same metadata.
+
+### One number for everything (the self-serve Phone step)
+
+A new self-serve business no longer picks between "AI receptionist" (a Retell number that
+couldn't text) and "missed-call catcher" (a Twilio number answered by voicemail). The Phone step
+gets them **one** local Twilio number (`src/server/services/onboarding-number.ts`,
+`POST /api/organizations/:id/onboarding/number`):
+
+- It **is** the catcher number (`voice_numbers` provider `twilio`, mode `missed_call_catcher`),
+  bought in the business line's own area code (any local number if that one is sold out; an
+  area code the owner types is used as typed). Customers can text it — the texting agent
+  answers from it — and the business line forwards missed calls to it.
+- AI call answering is switched **on** (`ai_settings.call_answering.mode = "ai"`) unless the
+  owner already chose voicemail.
+- **Front Desk:** the company's own quoting / booking receptionist is built **without a Retell
+  number** (`provisionCatcherReceptionist`: same prompt + tools as the dedicated line, Retell
+  LLM + agent only) and its agent id is pinned on the catcher row's `provider_agent_id`.
+  `decideCallAnswering` hands forwarded calls to it; Retell tool calls find the company by that
+  agent id (`resolveRetellTenant` accepts an agent pinned on a Twilio row). The ids live in the
+  phone step data as `catcherAgent` (only the server writes the Phone step's data — the progress
+  route refuses it), so a re-run and every re-sync (`resyncReceptionistForContext`: persona,
+  blueprints, concierge) UPDATE the same agent; an active dedicated line still wins when a company
+  has both. If Retell fails, the number still works and the message-taking agent answers meanwhile.
+  The company voice profile (outbound caller ID / prompt) is not touched — Retell can't dial out
+  from a Twilio number.
+- Not yet: the receptionist health check (`retell/health.ts`) and the rebrand re-point job only
+  look at Retell numbers, so they skip receptionists pinned on a Twilio number.
+- Other plans (trial / Operate): the shared message-taking agent answers.
+- The step then shows forwarding steps for the owner's kind of phone and carrier
+  (`forwardingPlan`), the automatic forwarding test, and a test-it-yourself option.
+
+A dedicated AI line (a separate Retell number — the old "AI receptionist" choice,
+`/onboarding/phone`) is still there under "Advanced" for Front Desk / house accounts and anyone
+who already has one; a company with a dedicated line keeps it and nothing new is built.
 
 ### After the call (`voice/post-call.ts`, from `ingestRetellCall`)
 

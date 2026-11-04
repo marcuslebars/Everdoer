@@ -2361,6 +2361,42 @@ export function provisionMissedCallCatcher(
   return apiFetch(`/api/organizations/${orgId}/missed-call-catcher`, { method: "POST", body: JSON.stringify(input) });
 }
 
+// ── One number for everything (the self-serve Phone step; src/server/services/onboarding-number.ts) ──
+/** Who answers a forwarded call: the company's own receptionist, the message-taking AI, or voicemail. */
+export type AnsweringLevel = "receptionist" | "message" | "voicemail";
+
+export interface BusinessNumberStatus {
+  configured: boolean;
+  number: { phoneNumber: string; phoneNumberPretty: string } | null;
+  answering: AnsweringLevel;
+  receptionistIncluded: boolean;
+  dedicatedLine: boolean;
+  dedicatedLineAllowed: boolean;
+  textsOn: boolean;
+  forwardingVerifiedAt: string | null;
+}
+
+export interface BusinessNumberResult {
+  phoneNumber: string;
+  phoneNumberPretty: string;
+  purchased: boolean;
+  instructions: ForwardingInstructions;
+  answering: AnsweringLevel;
+  receptionist: "ready" | "dedicated_line" | "not_included" | "failed";
+  answeringTurnedOn: boolean;
+}
+
+export function getBusinessNumber(orgId: string, companyId: string): Promise<BusinessNumberStatus> {
+  return apiFetch(`/api/organizations/${orgId}/onboarding/number?companyId=${encodeURIComponent(companyId)}`);
+}
+
+export function setUpBusinessNumber(
+  orgId: string,
+  input: { companyId: string; areaCode?: number; attachNumber?: string },
+): Promise<BusinessNumberResult> {
+  return apiFetch(`/api/organizations/${orgId}/onboarding/number`, { method: "POST", body: JSON.stringify(input) });
+}
+
 // ── Forwarding verification (docs/missed-call-catcher.md → Forwarding verification) ──
 export type ForwardingTestStatus = "calling" | "passed" | "answered" | "busy" | "not_forwarded" | "failed";
 

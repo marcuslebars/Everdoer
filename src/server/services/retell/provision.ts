@@ -275,7 +275,15 @@ export interface ProvisionResult {
   purchasedNumber: boolean;
 }
 
-export async function provisionRetellAgent(client: RetellClient, input: ProvisionInput): Promise<ProvisionResult> {
+/**
+ * Steps 1–2 of provisionRetellAgent: the Retell LLM + the agent bound to it (update when ids
+ * from an earlier run are given, else create). No phone number — a receptionist reached over
+ * SIP from the company's own Twilio number (voice/ai-answer.ts) needs none.
+ */
+export async function provisionRetellLlmAndAgent(
+  client: RetellClient,
+  input: Omit<ProvisionInput, "inboundWebhookUrl" | "areaCode" | "attachNumber" | "countryCode">,
+): Promise<{ llmId: string; agentId: string }> {
   const model = "gpt-4.1";
   const beginMessage = input.beginMessage ?? receptionistBeginMessage(input.companyName);
   const existing = input.existing ?? {};
@@ -310,6 +318,12 @@ export async function provisionRetellAgent(client: RetellClient, input: Provisio
     agentId = (await client.createAgent(agentBody)).agent_id;
     await input.onCreated?.({ llmId, agentId });
   }
+  return { llmId, agentId };
+}
+
+export async function provisionRetellAgent(client: RetellClient, input: ProvisionInput): Promise<ProvisionResult> {
+  const { llmId, agentId } = await provisionRetellLlmAndAgent(client, input);
+  const existing = input.existing ?? {};
 
   // 3) Phone number — reuse the existing one (rebind), attach a supplied one, or purchase.
   const inboundAgents = [{ agent_id: agentId, agent_version: "latest", weight: 1 }];

@@ -359,7 +359,7 @@ async function saveCatcherRow(
 
   const { data: existing, error: readError } = await context.supabase
     .from("voice_numbers")
-    .select("id")
+    .select("id, company_id, provider, mode")
     .eq("organization_id", context.organizationId)
     .eq("phone_e164", phone)
     .maybeSingle();
@@ -370,16 +370,20 @@ async function saveCatcherRow(
     provider: "twilio",
     mode: CATCHER_MODE,
     provider_number_sid: number.sid,
-    provider_agent_id: null,
     brand_label: brandLabel,
     active: true,
   };
 
-  const existingId = (existing as { id: string } | null)?.id;
+  const prior = existing as { id: string; company_id: string; provider: string; mode: string } | null;
+  const existingId = prior?.id;
   if (existingId) {
+    // Re-provisioning the same company's catcher keeps the receptionist pinned on it (one number
+    // for everything — onboarding-provision.ts provisionCatcherReceptionist); anything else
+    // (another company's row, a different kind of number) drops a stale agent.
+    const sameCatcher = prior.company_id === companyId && prior.provider === "twilio" && prior.mode === CATCHER_MODE;
     const { error } = await context.supabase
       .from("voice_numbers")
-      .update(fields)
+      .update(sameCatcher ? fields : { ...fields, provider_agent_id: null })
       .eq("organization_id", context.organizationId)
       .eq("id", existingId);
     if (error) throw error;
@@ -388,7 +392,7 @@ async function saveCatcherRow(
 
   const { error } = await context.supabase
     .from("voice_numbers")
-    .insert({ ...fields, organization_id: context.organizationId, phone_e164: phone });
+    .insert({ ...fields, provider_agent_id: null, organization_id: context.organizationId, phone_e164: phone });
   if (error) {
     if (isUniqueViolation(error)) {
       throw new ValidationError("That number is already connected to another account.");
