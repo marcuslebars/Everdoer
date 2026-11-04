@@ -169,12 +169,13 @@ describe("nextOnboardingStep", () => {
   it("resumes at the first incomplete step", () => {
     expect(nextOnboardingStep([])).toBe("business");
     expect(nextOnboardingStep(["business"])).toBe("services");
-    expect(nextOnboardingStep(["business", "services", "phone"])).toBe("payments");
+    expect(nextOnboardingStep(["business", "services", "phone"])).toBe("ai");
+    expect(nextOnboardingStep(["business", "services", "phone", "ai"])).toBe("payments");
   });
   it("skips completed steps even out of order", () => {
     expect(nextOnboardingStep(["business", "phone"])).toBe("services");
   });
   it("returns the last step once everything is done", () => {
-    expect(nextOnboardingStep(["business", "services", "phone", "payments", "website", "test_call", "team", "recipes"])).toBe("recipes");
+    expect(nextOnboardingStep(["business", "services", "phone", "ai", "payments", "website", "test_call", "team", "recipes"])).toBe("recipes");
   });
 });

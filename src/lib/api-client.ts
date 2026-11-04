@@ -1677,8 +1677,19 @@ export interface OnboardingProgressStep {
   data: Record<string, unknown>;
   completed_at: string | null;
 }
+export interface OnboardingCompanyProfile {
+  website: string | null;
+  timezone: string | null;
+  hours: string | null;
+  serviceArea: string | null;
+  ownerEmail: string | null;
+  ownerPhone: string | null;
+  ownerPhoneVerified: boolean;
+  logoUrl: string | null;
+}
+
 export interface OnboardingProgressResponse {
-  company: { id: string; name: string } | null;
+  company: { id: string; name: string; profile?: OnboardingCompanyProfile } | null;
   steps: OnboardingProgressStep[];
   nextStep?: string;
 }
@@ -1742,6 +1753,29 @@ export interface SaveBusinessInput {
 }
 export function saveOnboardingBusiness(orgId: string, input: SaveBusinessInput): Promise<{ company: { id: string; name: string } }> {
   return apiFetch(`/api/organizations/${orgId}/onboarding/business`, { method: "POST", body: JSON.stringify(input) });
+}
+
+// ── Onboarding "Your AI" step (src/server/services/onboarding-ai.ts) ──────────────────
+export type TextAutonomy = "ask_first" | "standard";
+
+export interface YourAiStepView {
+  view: import("./your-ai-api").YourAiView;
+  readiness: import("./ai-readiness").AiReadiness;
+}
+
+export interface YourAiStepResult extends YourAiStepView {
+  blueprint: { applied: boolean; blueprint?: string; reason?: string };
+}
+
+export function getYourAiStep(orgId: string, companyId: string): Promise<YourAiStepView> {
+  return apiFetch(`/api/organizations/${orgId}/onboarding/your-ai?companyId=${encodeURIComponent(companyId)}`);
+}
+
+export function setUpYourAiStep(
+  orgId: string,
+  input: { companyId: string; name: string | null; tone: "friendly" | "professional" | "casual" | null; autonomy: TextAutonomy },
+): Promise<YourAiStepResult> {
+  return apiFetch(`/api/organizations/${orgId}/onboarding/your-ai`, { method: "POST", body: JSON.stringify(input) });
 }
 
 /** Multipart logo upload (raw fetch — apiFetch forces JSON). Returns the public URL. */

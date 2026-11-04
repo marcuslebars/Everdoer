@@ -58,3 +58,32 @@ page has two parts:
   either `{ switch, on, choice? }` or `{ persona: { name, tone } }`.
 - Client: `src/lib/your-ai-api.ts` and `src/screens/YourAiPage.tsx`.
 - Tests: `your-ai.test.ts` and `your-ai-page.test.tsx`.
+
+## Set up in onboarding
+
+A new self-serve business turns its AI on in the wizard, right after the Phone step, instead of
+finding these switches later. The **Your AI** step (`src/components/onboarding/YourAiStep.tsx`,
+`POST /api/organizations/:id/onboarding/your-ai`, `src/server/services/onboarding-ai.ts`) does
+what done-for-you does for its buyers, in one button:
+
+1. **The trade's defaults:** the default blueprint for the company's industry pack
+   (`applyDefaultBlueprintForPack`: tuning only, unattended), once per company. It runs first, so
+   the owner's own choices below win.
+2. **Name and tone** (`setYourAiPersona`, which re-syncs the phone receptionist).
+3. **Answer customer texts: on**, with the owner's choice. The default is **Ask me first**: it
+   gathers details and answers simple questions, and asks the owner before any price, quote or
+   booking time. The other choice is **On its own**.
+4. **Answer your phone: on**, unless the owner already chose voicemail.
+
+Under the button, the step lists what is still missing for the AI to work fully. Each item links
+to the step that fixes it (`src/lib/ai-readiness.ts`):
+
+- **Number:** get your number (Phone step).
+- **Cell:** confirm the owner's cell (Business step).
+- **Prices:** price the services that have none (Services step).
+
+**Owner's cell.** The Business step now confirms the cell straight away. After saving, it texts a
+6-digit code and asks for it (`OwnerCellVerify`, the same routes as Settings → AI front desk →
+Owner's cell). Until the cell is confirmed, approvals by text and owner commands don't work. The
+step is also pre-filled from what's saved, and it sends only the fields that changed, so going
+back and saving no longer wipes the website, hours or cell.
