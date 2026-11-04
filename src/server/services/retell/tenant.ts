@@ -105,7 +105,7 @@ export async function resolveRetellTenant(
 
   // (2) by the Retell agent id — on the company's Retell number, or pinned on its own Twilio
   // number (one number for everything: onboarding-provision.ts provisionCatcherReceptionist).
-  // Only we ever write provider_agent_id, so an agent id names exactly one company.
+  // (Step 1, the dialled Retell number, wins whenever it maps; this is the fallback.)
   if (input.agentId) {
     const { data } = await admin
       .from("voice_numbers")

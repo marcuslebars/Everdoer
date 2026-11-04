@@ -17,6 +17,9 @@ import { createSupabaseServerClient } from "@/server/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+/** Steps whose progress data only the server writes. */
+const SERVER_OWNED_STEP_DATA = new Set(["phone"]);
+
 interface RouteContext {
   params: { organizationId: string };
 }
@@ -70,6 +73,12 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
         step: body.step,
         event: body.event as OnboardingEventType,
       });
+    }
+
+    // The Phone step's data holds the Retell / Twilio ids the server re-syncs and updates
+    // (onboarding-number.ts, voice/resync.ts): only the server writes it, never this route.
+    if (body.data !== undefined && SERVER_OWNED_STEP_DATA.has(body.step)) {
+      return NextResponse.json({ error: `The ${body.step} step's data can't be set here.` }, { status: 400 });
     }
 
     const row = await upsertOnboardingStep(ctx, body.companyId, body.step, {

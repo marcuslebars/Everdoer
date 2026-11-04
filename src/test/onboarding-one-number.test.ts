@@ -269,7 +269,7 @@ describe("getBusinessNumberStatus + copy", () => {
     expect(await getBusinessNumberStatus(ctx(), COMPANY)).toMatchObject({ number: null, answering: "voicemail", receptionistIncluded: false });
     await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner });
     const status = await getBusinessNumberStatus(ctx(), COMPANY);
-    expect(status).toMatchObject({ configured: true, answering: "message", receptionistIncluded: false, dedicatedLine: false, textsOn: false, forwardingVerifiedAt: null });
+    expect(status).toMatchObject({ configured: true, answering: "message", receptionistIncluded: false, dedicatedLine: false, dedicatedLineAllowed: false, textsOn: false, forwardingVerifiedAt: null });
     expect(status.number?.phoneNumberPretty).toMatch(/^\(705\)/);
   });
 
@@ -277,5 +277,27 @@ describe("getBusinessNumberStatus + copy", () => {
     expect(answeringCopy("receptionist", true)).toMatch(/quotes .* books/);
     expect(answeringCopy("message", false)).toMatch(/takes a message.*Front Desk/);
     expect(answeringCopy("voicemail", false)).toMatch(/off/);
+  });
+});
+
+describe("re-sync picks the receptionist that actually answers", () => {
+  it("old dedicated-line ids left in the step data don't win over the pinned agent once that line is gone", async () => {
+    // The old catcher route wrote the catcher number into phoneNumber next to old AI ids.
+    db = seed({ plan: "front_desk", phoneStep: { llmId: "llm_old", agentId: "agent_old", phoneNumber: "+17055550100" } });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell([]) });
+    expect(phoneData()).not.toHaveProperty("agentId"); // stale ids dropped when the pinned agent was built
+    const calls: string[] = [];
+    await resyncReceptionistForContext(ctx(), COMPANY, mockRetell(calls));
+    expect(calls).toEqual(["updateLlm:llm_fd", "updateAgent:agent_fd"]);
+  });
+
+  it("an LLM made before a failed agent create is reused on retry (no orphan)", async () => {
+    db = seed({ plan: "front_desk" });
+    const failing: RetellClient = { ...mockRetell([]), createAgent: async () => { throw new Error("agent create failed"); } };
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: failing });
+    expect(phoneData()).toMatchObject({ catcherAgent: { llmId: "llm_fd" } });
+    const calls: string[] = [];
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
+    expect(calls).toEqual(["updateLlm:llm_fd", "createAgent"]);
   });
 });

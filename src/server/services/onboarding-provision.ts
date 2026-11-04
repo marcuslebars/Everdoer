@@ -222,12 +222,7 @@ export async function provisionCatcherReceptionist(
     .eq("id", catcher.id);
   if (pinError) throw pinError;
 
-  await upsertCompanyVoiceProfile(context, {
-    companyId: input.companyId,
-    systemPrompt: prompt,
-    brandLabel: company.name,
-    fromNumber: catcher.phone_e164,
-    active: true,
-  });
+  // The company voice profile (outbound caller ID + outbound prompt) is left alone: the catcher is
+  // a Twilio number Retell can't dial out from, and the inbound prompt lives on the Retell LLM.
   return { llmId, agentId, catcherNumber: catcher.phone_e164 };
 }

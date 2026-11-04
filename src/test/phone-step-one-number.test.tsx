@@ -38,7 +38,7 @@ beforeEach(() => {
 
 describe("PhoneModeStep (one number)", () => {
   it("no number yet: one button, no 'AI receptionist vs catcher' choice; it sends the typed area code", async () => {
-    api.status = { configured: true, number: null, answering: "voicemail", receptionistIncluded: false, dedicatedLine: false, textsOn: false, forwardingVerifiedAt: null };
+    api.status = { configured: true, number: null, answering: "voicemail", receptionistIncluded: false, dedicatedLine: false, dedicatedLineAllowed: false, textsOn: false, forwardingVerifiedAt: null };
     api.setUp.mockResolvedValue({ phoneNumber: "+17055550199", phoneNumberPretty: "(705) 555-0199", purchased: true, answering: "message", receptionist: "not_included", answeringTurnedOn: true });
     wrap(<PhoneModeStep orgId={ORG} companyId={CO} stepData={{}} onDone={() => {}} aiStep={<p>dedicated line setup</p>} />);
     const button = await screen.findByRole("button", { name: /get my number/i });
@@ -56,6 +56,7 @@ describe("PhoneModeStep (one number)", () => {
       answering: "receptionist",
       receptionistIncluded: true,
       dedicatedLine: false,
+      dedicatedLineAllowed: true,
       textsOn: true,
       forwardingVerifiedAt: null,
     };

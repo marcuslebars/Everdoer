@@ -59,17 +59,33 @@ export async function storedCatcherReceptionistIds(
   return llmId && agentId ? { llmId, agentId } : null;
 }
 
+async function hasActiveDedicatedLine(ctx: TenantServiceContext, companyId: string): Promise<boolean> {
+  const { data, error } = await ctx.supabase
+    .from("voice_numbers")
+    .select("id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("company_id", companyId)
+    .eq("provider", "retell")
+    .eq("active", true)
+    .not("provider_agent_id", "is", null)
+    .limit(1);
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).length > 0;
+}
+
 export async function resyncReceptionistForContext(
   ctx: TenantServiceContext,
   companyId: string,
   retell?: RetellClient,
 ): Promise<ResyncOutcome> {
   const ids = await storedReceptionistIds(ctx, companyId);
-  if (ids) {
+  const pinned = await storedCatcherReceptionistIds(ctx, companyId);
+  // The receptionist that actually answers decides: an active dedicated line (a Retell number with
+  // its agent) wins — decideCallAnswering prefers it too; otherwise the one pinned on the number.
+  if (ids && (!pinned || (await hasActiveDedicatedLine(ctx, companyId)))) {
     const result = await provisionPhoneForCompany(ctx, { companyId, existing: ids }, retell);
     return { status: "resynced", llmId: result.llmId, agentId: result.agentId, phoneNumber: result.phoneNumber };
   }
-  const pinned = await storedCatcherReceptionistIds(ctx, companyId);
   if (!pinned) return { status: "not_provisioned" };
   const result = await provisionCatcherReceptionist(ctx, { companyId, existing: pinned }, retell);
   return { status: "resynced", llmId: result.llmId, agentId: result.agentId, phoneNumber: result.catcherNumber };

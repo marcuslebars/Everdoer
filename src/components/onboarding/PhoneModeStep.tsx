@@ -58,7 +58,7 @@ export function PhoneModeStep({ orgId, companyId, stepData, onDone, aiStep }: Ph
 
   const view: BusinessNumberStatus | undefined = status.data;
   const number = view?.number ?? null;
-  const showDedicated = Boolean(view?.receptionistIncluded || view?.dedicatedLine || typeof stepData.agentId === "string");
+  const showDedicated = Boolean(view?.dedicatedLineAllowed || view?.dedicatedLine || typeof stepData.agentId === "string");
 
   const go = async () => {
     if (!companyId) return;
@@ -94,7 +94,7 @@ export function PhoneModeStep({ orgId, companyId, stepData, onDone, aiStep }: Ph
               <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" />{" "}
               {view?.textsOn
                 ? "Customers can text it — your AI replies, and asks you before anything it can't decide."
-                : "Customers can text it — the texts land in your Inbox. Turn on your AI (next step) and it replies for you."}
+                : "Customers can text it — the texts land in your Inbox. Turn on “Answer customer texts” in Your AI and it replies for you."}
             </li>
             <li className="flex items-start gap-2">
               <Bot className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" /> {answeringCopy(view?.answering ?? "message", Boolean(view?.receptionistIncluded))}

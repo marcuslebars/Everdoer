@@ -532,9 +532,14 @@ gets them **one** local Twilio number (`src/server/services/onboarding-number.ts
   LLM + agent only) and its agent id is pinned on the catcher row's `provider_agent_id`.
   `decideCallAnswering` hands forwarded calls to it; Retell tool calls find the company by that
   agent id (`resolveRetellTenant` accepts an agent pinned on a Twilio row). The ids live in the
-  phone step data as `catcherAgent`, so a re-run, the done-for-you switch-on and the concierge
-  re-sync (`resyncReceptionistForContext`) UPDATE the same agent. If Retell fails, the number
-  still works and the message-taking agent answers meanwhile.
+  phone step data as `catcherAgent` (only the server writes the Phone step's data — the progress
+  route refuses it), so a re-run and every re-sync (`resyncReceptionistForContext`: persona,
+  blueprints, concierge) UPDATE the same agent; an active dedicated line still wins when a company
+  has both. If Retell fails, the number still works and the message-taking agent answers meanwhile.
+  The company voice profile (outbound caller ID / prompt) is not touched — Retell can't dial out
+  from a Twilio number.
+- Not yet: the receptionist health check (`retell/health.ts`) and the rebrand re-point job only
+  look at Retell numbers, so they skip receptionists pinned on a Twilio number.
 - Other plans (trial / Operate): the shared message-taking agent answers.
 - The step then shows forwarding steps for the owner's kind of phone and carrier
   (`forwardingPlan`), the automatic forwarding test, and a test-it-yourself option.

@@ -157,14 +157,24 @@ export async function setUpBusinessNumber(
     ...(typeof pinned.llmId === "string" ? { llmId: pinned.llmId } : {}),
     ...(typeof pinned.agentId === "string" ? { agentId: pinned.agentId } : {}),
   };
+  // Set below: when this run builds the receptionist on the number, ids of an old dedicated line
+  // that's no longer active are dropped so re-syncs can't pick (and re-activate) that one.
+  let dropStaleLine = false;
   const writeStep = async (completed: boolean) => {
+    const kept: Record<string, Json> = { ...(prior as Record<string, Json>) };
+    if (dropStaleLine) {
+      delete kept.llmId;
+      delete kept.agentId;
+      delete kept.phoneNumber;
+    }
     const data: Json = {
-      ...(prior as Record<string, Json>),
+      ...kept,
       mode: CATCHER_MODE,
       setup: "one_number",
       catcherNumber: number.phoneNumber,
       catcherNumberSid: number.numberSid,
-      ...(catcherAgent.agentId ? { catcherAgent } : {}),
+      // Saved as soon as the LLM exists (even before the agent), so a retry never makes a second one.
+      ...(catcherAgent.llmId || catcherAgent.agentId ? { catcherAgent } : {}),
     };
     await upsertOnboardingStep(ctx, input.companyId, "phone", { completed, data });
   };
@@ -187,6 +197,7 @@ export async function setUpBusinessNumber(
   } else if (dedicatedLine) {
     receptionist = { status: "dedicated_line" };
   } else {
+    dropStaleLine = true;
     try {
       const built = await provisionCatcherReceptionist(
         ctx,
@@ -233,6 +244,8 @@ export interface BusinessNumberStatus {
   receptionistIncluded: boolean;
   /** The company has a dedicated AI line (a Retell number) from before. */
   dedicatedLine: boolean;
+  /** The plan can have a dedicated AI line (Front Desk, house accounts) — shown under Advanced. */
+  dedicatedLineAllowed: boolean;
   /** "Answer customer texts" is on (the texting agent replies on this number). */
   textsOn: boolean;
   forwardingVerifiedAt: string | null;
@@ -273,6 +286,7 @@ export async function getBusinessNumberStatus(
     answering: settings.mode === "voicemail" ? "voicemail" : ownReceptionist ? "receptionist" : "message",
     receptionistIncluded,
     dedicatedLine,
+    dedicatedLineAllowed: receptionistIncluded || org.plan === "internal",
     textsOn,
     forwardingVerifiedAt: catcher?.forwarding_verified_at ?? null,
   };

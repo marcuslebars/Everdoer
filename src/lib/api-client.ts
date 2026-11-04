@@ -2371,6 +2371,7 @@ export interface BusinessNumberStatus {
   answering: AnsweringLevel;
   receptionistIncluded: boolean;
   dedicatedLine: boolean;
+  dedicatedLineAllowed: boolean;
   textsOn: boolean;
   forwardingVerifiedAt: string | null;
 }
