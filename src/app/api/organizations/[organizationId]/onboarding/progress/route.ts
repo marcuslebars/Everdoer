@@ -18,30 +18,6 @@ import { createSupabaseServerClient } from "@/server/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-/** companies.hours as the one-line text the Business step edits ({ summary } from the wizard). */
-function hoursSummary(hours: unknown): string | null {
-  if (typeof hours === "string") return hours.trim() || null;
-  if (hours && typeof hours === "object" && !Array.isArray(hours)) {
-    const summary = (hours as Record<string, unknown>).summary;
-    return typeof summary === "string" && summary.trim() ? summary.trim() : null;
-  }
-  return null;
-}
-
-/**
- * The "Your AI" step was added after some businesses had finished onboarding. It counts as done
- * when the company's texting agent is already on, or every other step is done — so a finished
- * onboarding doesn't reopen at it. (Shown done, not stored.)
- */
-function withAiStep<T extends { step: string; status: string }>(steps: T[], aiSettings: unknown): T[] {
-  if (steps.some((s) => s.step === "ai")) return steps;
-  const sms = aiSettings && typeof aiSettings === "object" && !Array.isArray(aiSettings) ? (aiSettings as Record<string, unknown>).sms_agent : null;
-  const textsOn = Boolean(sms && typeof sms === "object" && (sms as Record<string, unknown>).enabled === true);
-  const othersDone = ONBOARDING_STEPS.filter((s) => s !== "ai").every((s) => steps.some((row) => row.step === s && row.status === "complete"));
-  if (!textsOn && !othersDone) return steps;
-  return [...steps, { step: "ai", status: "complete", data: {}, synthetic: true } as unknown as T];
-}
-
 interface RouteContext {
   params: { organizationId: string };
 }
@@ -122,4 +98,28 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
 
     return NextResponse.json({ data: row });
   });
+}
+
+/** companies.hours as the one-line text the Business step edits ({ summary } from the wizard). */
+function hoursSummary(hours: unknown): string | null {
+  if (typeof hours === "string") return hours.trim() || null;
+  if (hours && typeof hours === "object" && !Array.isArray(hours)) {
+    const summary = (hours as Record<string, unknown>).summary;
+    return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+  }
+  return null;
+}
+
+/**
+ * The "Your AI" step was added after some businesses had finished onboarding. It counts as done
+ * when the company's texting agent is already on, or every other step is done — so a finished
+ * onboarding doesn't reopen at it. (Shown done, not stored.)
+ */
+function withAiStep<T extends { step: string; status: string }>(steps: T[], aiSettings: unknown): T[] {
+  if (steps.some((s) => s.step === "ai")) return steps;
+  const sms = aiSettings && typeof aiSettings === "object" && !Array.isArray(aiSettings) ? (aiSettings as Record<string, unknown>).sms_agent : null;
+  const textsOn = Boolean(sms && typeof sms === "object" && (sms as Record<string, unknown>).enabled === true);
+  const othersDone = ONBOARDING_STEPS.filter((s) => s !== "ai").every((s) => steps.some((row) => row.step === s && row.status === "complete"));
+  if (!textsOn && !othersDone) return steps;
+  return [...steps, { step: "ai", status: "complete", data: {}, synthetic: true } as unknown as T];
 }
