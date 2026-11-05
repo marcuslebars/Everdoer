@@ -538,8 +538,27 @@ gets them **one** local Twilio number (`src/server/services/onboarding-number.ts
   has both. If Retell fails, the number still works and the message-taking agent answers meanwhile.
   The company voice profile (outbound caller ID / prompt) is not touched — Retell can't dial out
   from a Twilio number.
-- Not yet: the receptionist health check (`retell/health.ts`) and the rebrand re-point job only
-  look at Retell numbers, so they skip receptionists pinned on a Twilio number.
+- The receptionist health check (`retell/health.ts`, `GET /voice/health`, the owner digest)
+  includes a receptionist pinned on the number: it checks the agent, its webhook and tools, and
+  skips the Retell-number checks. Not yet: the rebrand re-point job only looks at Retell numbers.
+
+### Keeping the receptionist up to date
+
+The receptionist's prompt is built from the price list, hours, service area, industry pack,
+booking link and persona. It used to be a snapshot from setup day, re-synced only by a persona
+change, a blueprint or the concierge. Now the scheduler's **receptionist drift** sweep
+(`voice/receptionist-drift.ts`, at most every 15 minutes, 25 companies a pass) keeps it current:
+
+- For each company with a receptionist (a dedicated line, or one pinned on its number), it
+  fingerprints what the receptionist would be built from now (`receptionistFingerprint`: a hash
+  of the name, prompt and tools). It compares that with what was last pushed, stored as
+  `receptionistFingerprint` in the phone step data.
+- If they differ, it re-syncs (`resyncReceptionistForContext`), which records the new fingerprint
+  itself.
+- A failed re-sync is retried after an hour. Companies are checked least-recently-checked first.
+
+This catches every way those facts change (Settings, the pack card, an owner text, an import)
+without hooking each write. The first pass after deploy pushes each receptionist once.
 - Other plans (trial / Operate): the shared message-taking agent answers.
 - The step then shows forwarding steps for the owner's kind of phone and carrier
   (`forwardingPlan`), the automatic forwarding test, and a test-it-yourself option.

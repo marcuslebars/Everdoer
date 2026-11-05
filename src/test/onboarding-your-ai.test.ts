@@ -103,9 +103,9 @@ describe("setUpYourAi", () => {
 describe("readiness", () => {
   it("counts what the AI still needs", async () => {
     db = seed(
-      { owner_phone_verified_at: "2026-11-01T00:00:00Z" },
+      { owner_phone_verified_at: "2026-11-01T00:00:00Z", ai_settings: { sms_agent: { enabled: true } } },
       {
-        voice_numbers: [{ organization_id: "org-1", company_id: "co-1", provider: "twilio", mode: "missed_call_catcher", active: true, phone_e164: "+17055550199" }],
+        voice_numbers: [{ organization_id: "org-1", company_id: "co-1", provider: "twilio", mode: "missed_call_catcher", active: true, phone_e164: "+17055550199", forwarding_verified_at: null }],
         service_catalog_items: [
           { organization_id: "org-1", company_id: "co-1", active: true, rate_cents: 14900 },
           { organization_id: "org-1", company_id: "co-1", active: true, rate_cents: 0 },
@@ -114,19 +114,38 @@ describe("readiness", () => {
       },
     );
     const step = await getYourAiStep(admin(), scope);
-    expect(step?.readiness).toEqual({ ownerCellConfirmed: true, hasNumber: true, pricedServices: 1, unpricedServices: 1 });
+    expect(step?.readiness).toEqual({
+      ownerCellConfirmed: true,
+      hasNumber: true,
+      forwardingVerified: false,
+      textsOn: true,
+      callsOn: false,
+      pricedServices: 1,
+      unpricedServices: 1,
+    });
   });
 
-  it("readinessGaps: number, then cell, then prices — each pointing at the step that fixes it", () => {
-    expect(readinessGaps({ ownerCellConfirmed: false, hasNumber: false, pricedServices: 0, unpricedServices: 4 }).map((g) => [g.key, g.step])).toEqual([
-      ["number", "phone"],
-      ["cell", "business"],
-      ["prices", "services"],
+  const ready = { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, pricedServices: 3, unpricedServices: 0 };
+
+  it("readinessGaps: in the order to fix them, each with its wizard step and its page", () => {
+    expect(readinessGaps({ ownerCellConfirmed: false, hasNumber: false, forwardingVerified: false, textsOn: false, callsOn: false, pricedServices: 0, unpricedServices: 4 }).map((g) => [g.key, g.step, g.href])).toEqual([
+      ["number", "phone", "/onboarding?step=phone"],
+      ["cell", "business", "/settings?section=front-desk&focus=owner-phone"],
+      ["texts", "ai", "/ai"],
+      ["calls", "ai", "/ai"],
+      ["prices", "services", "/settings?section=packs"],
     ]);
-    expect(readinessGaps({ ownerCellConfirmed: true, hasNumber: true, pricedServices: 3, unpricedServices: 1 })).toEqual([
-      { key: "prices", step: "services", text: "1 service has no price yet — it won't quote that one." },
+    // A number whose forwarding isn't tested yet.
+    expect(readinessGaps({ ...ready, forwardingVerified: false }).map((g) => g.key)).toEqual(["forwarding"]);
+    expect(readinessGaps({ ...ready, unpricedServices: 1 })).toEqual([
+      { key: "prices", step: "services", href: "/settings?section=packs", text: "1 service has no price yet — it won't quote that one." },
     ]);
-    expect(readinessGaps({ ownerCellConfirmed: true, hasNumber: true, pricedServices: 3, unpricedServices: 0 })).toEqual([]);
+    expect(readinessGaps(ready)).toEqual([]);
+  });
+
+  it("the client's step list is the server's", async () => {
+    const { ONBOARDING_STEP_KEYS } = await import("@/lib/onboarding-steps");
+    expect([...ONBOARDING_STEP_KEYS]).toEqual([...ONBOARDING_STEPS]);
   });
 
   it("the wizard has the Your AI step right after Phone", () => {

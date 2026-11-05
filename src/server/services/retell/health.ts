@@ -94,7 +94,12 @@ export interface HealthCompany {
 
 export interface HealthInput {
   company: HealthCompany;
-  numbers: Array<{ phone_e164: string; provider_agent_id: string | null }>;
+  /**
+   * The company's receptionist lines: its Retell numbers, and its own Twilio number when the
+   * receptionist is pinned on it (one number for everything — `pinned`: no Retell number to
+   * inspect, the call reaches the agent over SIP).
+   */
+  numbers: Array<{ phone_e164: string; provider_agent_id: string | null; pinned?: boolean }>;
   hasCatalog: boolean;
   /** Our public origin, e.g. https://api.empirevu.com — what Retell must call. */
   baseUrl: string | null;
@@ -163,9 +168,14 @@ export async function receptionistHealth(input: HealthInput): Promise<HealthRepo
       continue;
     }
 
-    const [num, agent] = await Promise.all([input.retell.getPhoneNumber(n.phone_e164), input.retell.getAgent(n.provider_agent_id)]);
+    const [num, agent] = await Promise.all([
+      n.pinned ? Promise.resolve(null) : input.retell.getPhoneNumber(n.phone_e164),
+      input.retell.getAgent(n.provider_agent_id),
+    ]);
 
-    if (hasError(num)) {
+    if (num === null) {
+      add(`${label} answers with the agent`, true, "your own number hands missed calls to the agent");
+    } else if (hasError(num)) {
       add(`${label} number`, false, `couldn't load it from Retell: ${num.error}`);
     } else {
       const bound =
@@ -237,10 +247,9 @@ export async function companyReceptionistHealth(db: Db, organizationId: string, 
       .maybeSingle(),
     db
       .from("voice_numbers")
-      .select("phone_e164, provider_agent_id")
+      .select("phone_e164, provider, mode, provider_agent_id")
       .eq("organization_id", organizationId)
       .eq("company_id", companyId)
-      .eq("provider", "retell")
       .eq("active", true),
     db
       .from("service_catalog_items")
@@ -253,7 +262,7 @@ export async function companyReceptionistHealth(db: Db, organizationId: string, 
   const apiKey = process.env.RETELL_API_KEY?.trim();
   return receptionistHealth({
     company,
-    numbers: numbers ?? [],
+    numbers: receptionistLines(numbers ?? []),
     hasCatalog: (count ?? 0) > 0,
     baseUrl: getReceptionistBaseUrl(process.env),
     env: process.env,
@@ -262,14 +271,22 @@ export async function companyReceptionistHealth(db: Db, organizationId: string, 
   });
 }
 
+type VoiceNumberLine = { phone_e164: string; provider: string; mode: string | null; provider_agent_id: string | null };
+
+/** Retell numbers, plus a Twilio catcher number with a receptionist pinned on it. PURE. */
+export function receptionistLines(rows: VoiceNumberLine[]): HealthInput["numbers"] {
+  return rows
+    .filter((r) => r.provider === "retell" || (r.provider === "twilio" && r.mode === "missed_call_catcher" && Boolean(r.provider_agent_id)))
+    .map((r) => ({ phone_e164: r.phone_e164, provider_agent_id: r.provider_agent_id, ...(r.provider === "twilio" ? { pinned: true } : {}) }));
+}
+
 /** Does this company have a receptionist at all? (The digest only checks those that do.) */
 export async function hasReceptionist(db: Db, organizationId: string, companyId: string): Promise<boolean> {
-  const { count } = await db
+  const { data } = await db
     .from("voice_numbers")
-    .select("id", { count: "exact", head: true })
+    .select("phone_e164, provider, mode, provider_agent_id")
     .eq("organization_id", organizationId)
     .eq("company_id", companyId)
-    .eq("provider", "retell")
     .eq("active", true);
-  return (count ?? 0) > 0;
+  return receptionistLines((data ?? []) as VoiceNumberLine[]).length > 0;
 }

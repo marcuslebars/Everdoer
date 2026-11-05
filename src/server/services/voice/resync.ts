@@ -12,7 +12,8 @@
  * docs/front-desk-ai.md → "## Phone answering" → Front Desk tools.
  */
 import { getOnboardingProgress } from "@/server/services/onboarding";
-import { provisionCatcherReceptionist, provisionPhoneForCompany } from "@/server/services/onboarding-provision";
+import { provisionCatcherReceptionist, provisionPhoneForCompany, receptionistFingerprint } from "@/server/services/onboarding-provision";
+import type { Json } from "@/server/db/database.types";
 import type { RetellClient } from "@/server/services/retell/provision";
 import type { TenantServiceContext } from "@/server/services/shared";
 import type { createSupabaseAdminClient } from "@/server/supabase/admin";
@@ -78,6 +79,19 @@ export async function resyncReceptionistForContext(
   companyId: string,
   retell?: RetellClient,
 ): Promise<ResyncOutcome> {
+  const outcome = await pushReceptionist(ctx, companyId, retell);
+  if (outcome.status === "resynced") {
+    // Remember what was pushed, so the drift sweep doesn't push it again. Best-effort.
+    try {
+      await recordReceptionistSynced(ctx, companyId, await receptionistFingerprint(ctx, companyId));
+    } catch (err) {
+      console.error("[resync] couldn't record the synced fingerprint:", err instanceof Error ? err.message : err);
+    }
+  }
+  return outcome;
+}
+
+async function pushReceptionist(ctx: TenantServiceContext, companyId: string, retell?: RetellClient): Promise<ResyncOutcome> {
   const ids = await storedReceptionistIds(ctx, companyId);
   const pinned = await storedCatcherReceptionistIds(ctx, companyId);
   // The receptionist that actually answers decides: an active dedicated line (a Retell number with
@@ -89,6 +103,30 @@ export async function resyncReceptionistForContext(
   if (!pinned) return { status: "not_provisioned" };
   const result = await provisionCatcherReceptionist(ctx, { companyId, existing: pinned }, retell);
   return { status: "resynced", llmId: result.llmId, agentId: result.agentId, phoneNumber: result.catcherNumber };
+}
+
+/**
+ * Stamp the phone step data with what Retell now has (`receptionistFingerprint`,
+ * `receptionistSyncedAt`). Merges into the row as it is NOW (re-read), never replacing it.
+ */
+export async function recordReceptionistSynced(ctx: TenantServiceContext, companyId: string, fingerprint: string, nowIso = new Date().toISOString()): Promise<void> {
+  const { data, error } = await ctx.supabase
+    .from("onboarding_progress")
+    .select("id, data")
+    .eq("organization_id", ctx.organizationId)
+    .eq("company_id", companyId)
+    .eq("step", "phone")
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { id: string; data: unknown } | null;
+  if (!row) return;
+  const current = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? (row.data as Record<string, Json>) : {};
+  const { error: writeError } = await ctx.supabase
+    .from("onboarding_progress")
+    .update({ data: { ...current, receptionistFingerprint: fingerprint, receptionistSyncedAt: nowIso } as Json })
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", row.id);
+  if (writeError) throw writeError;
 }
 
 /** Re-sync by company id alone (the org is read from the company row). */

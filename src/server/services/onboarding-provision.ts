@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { UserFacingError } from "@/server/errors";
 import { parsePersona } from "@/server/agent/profile";
 import type { Tables } from "@/server/db/database.types";
@@ -114,6 +116,18 @@ async function receptionistSetup(context: TenantServiceContext, companyId: strin
     pack ? packReceptionistNotes(pack) : null,
   );
   return { company, prompt, tools, baseUrl };
+}
+
+/**
+ * A fingerprint of everything the receptionist is built from (prompt + tools + name): when it
+ * changes — a price, the hours, the service area, the pack, the booking link, the persona — the
+ * Retell copy is out of date (voice/receptionist-drift.ts re-syncs it). Never stored in clear.
+ */
+export async function receptionistFingerprint(context: TenantServiceContext, companyId: string): Promise<string> {
+  const { company, prompt, tools } = await receptionistSetup(context, companyId);
+  return createHash("sha256")
+    .update(JSON.stringify({ v: 1, name: company.name, prompt, tools: tools ?? null }))
+    .digest("hex");
 }
 
 function retellClientOrThrow(client?: RetellClient): RetellClient {

@@ -21,6 +21,8 @@ import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { parseAppliedIndustryPack } from "@/server/services/packs/types";
 import { getYourAiView, setSwitch, setYourAiPersona, type YourAiView } from "@/server/services/your-ai/switches";
 import { readCallAnsweringSettings } from "@/server/services/voice/answering-settings";
+import { readSmsAgentSettings, smsAgentActive } from "@/server/services/sms-agent/settings";
+import { isDoneForYou } from "@/lib/product-line";
 
 type Scope = { organizationId: string; companyId: string };
 
@@ -48,17 +50,23 @@ export interface SetUpYourAiDeps {
 }
 
 export async function loadAiReadiness(admin: AdminClient, scope: Scope): Promise<AiReadiness> {
-  const [company, numbers, items] = await Promise.all([
-    admin.from("companies").select("owner_phone_e164, owner_phone_verified_at").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle(),
-    admin.from("voice_numbers").select("id").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("provider", "twilio").eq("active", true).limit(1),
+  const [company, org, numbers, items] = await Promise.all([
+    admin.from("companies").select("owner_phone_e164, owner_phone_verified_at, ai_settings").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle(),
+    admin.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle(),
+    admin.from("voice_numbers").select("forwarding_verified_at").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("provider", "twilio").eq("active", true),
     admin.from("service_catalog_items").select("rate_cents").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("active", true),
   ]);
-  for (const r of [company, numbers, items]) if (r.error) throw r.error;
-  const row = company.data as { owner_phone_e164: string | null; owner_phone_verified_at: string | null } | null;
+  for (const r of [company, org, numbers, items]) if (r.error) throw r.error;
+  const row = company.data as { owner_phone_e164: string | null; owner_phone_verified_at: string | null; ai_settings: unknown } | null;
+  const doneForYou = isDoneForYou((org.data as { platform_brand: string | null } | null)?.platform_brand ?? null);
+  const twilio = (numbers.data ?? []) as Array<{ forwarding_verified_at: string | null }>;
   const rates = ((items.data ?? []) as Array<{ rate_cents: number | null }>).map((i) => i.rate_cents ?? 0);
   return {
     ownerCellConfirmed: Boolean(row?.owner_phone_e164 && row.owner_phone_verified_at),
-    hasNumber: ((numbers.data ?? []) as unknown[]).length > 0,
+    hasNumber: twilio.length > 0,
+    forwardingVerified: twilio.some((n) => Boolean(n.forwarding_verified_at)),
+    textsOn: smsAgentActive(readSmsAgentSettings(row?.ai_settings, { doneForYou })),
+    callsOn: readCallAnsweringSettings(row?.ai_settings, { doneForYou }).mode === "ai",
     pricedServices: rates.filter((c) => c > 0).length,
     unpricedServices: rates.filter((c) => c <= 0).length,
   };

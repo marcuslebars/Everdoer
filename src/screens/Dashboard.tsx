@@ -43,8 +43,9 @@ import { SetupProgressCard } from "@/components/onboarding/SetupProgress";
 import { ApprovalsCard } from "@/components/approvals/ApprovalsCard";
 import { WeeklyFrontDeskCard } from "@/components/reports/WeeklyFrontDeskCard";
 import { YourNumbersCard } from "@/components/front-desk/YourNumbersCard";
+import { ONBOARDING_STEP_COUNT } from "@/lib/onboarding-steps";
 
-const ONBOARDING_TOTAL_STEPS = 8;
+const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_COUNT;
 
 /**
  * Done-for-you orgs: the done-for-you "We're setting you up" card (what we've done + the one
@@ -63,15 +64,16 @@ export function OnboardingChecklistCard({ orgId }: { orgId: string }) {
   const { data: setup, isLoading: setupLoading } = useSetupChecklist(orgId);
   // Done-for-you orgs get the required-steps card above instead.
   if (setupLoading || setup) return null;
-  if (!data || !data.company) return null;
-  const done = data.steps.filter((s) => s.status === "complete").length;
+  // No company yet (they named the org but never saved the Business step): still nudge them back.
+  if (!data) return null;
+  const done = data.company ? data.steps.filter((s) => s.status === "complete").length : 0;
   if (done >= ONBOARDING_TOTAL_STEPS) return null;
 
   return (
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-4 opacity-0 animate-fade-in">
       <div className="min-w-0">
         <p className="text-sm font-semibold text-foreground">Finish setting up {brand.name}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{done} of {ONBOARDING_TOTAL_STEPS} steps done — {receptionistCopy("get your Marina number and website leads live.", brand)}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{done} of {ONBOARDING_TOTAL_STEPS} steps done — get your number, your AI and website leads live.</p>
         <div className="mt-2 h-1.5 w-48 max-w-full rounded-full bg-secondary overflow-hidden">
           <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(done / ONBOARDING_TOTAL_STEPS) * 100}%` }} />
         </div>

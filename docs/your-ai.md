@@ -87,3 +87,19 @@ to the step that fixes it (`src/lib/ai-readiness.ts`):
 Owner's cell). Until the cell is confirmed, approvals by text and owner commands don't work. The
 step is also pre-filled from what's saved, and it sends only the fields that changed, so going
 back and saving no longer wipes the website, hours or cell.
+
+## "Your AI isn't fully working yet"
+
+The same readiness check (`loadAiReadiness`, `src/lib/ai-readiness.ts`) also drives a card on
+**Today** and at the top of **Your AI** (`AiReadinessCard`). It lists what's missing, each item
+linking to where it's fixed:
+
+- **Number:** no number yet (Phone step).
+- **Forwarding:** forwarding isn't verified yet (Phone step).
+- **Cell:** the owner's cell isn't confirmed (Settings → AI front desk → Owner's cell).
+- **Texts / calls:** texts or calls are off (Your AI).
+- **Prices:** services have no price (Settings → Industry pack).
+
+The card hides when nothing is missing. On Today it also hides while a setup card already covers
+it: done-for-you until they're live, and the wizard's "Finish setting up" until onboarding is
+done. Your AI leaves out the texts/calls items, since those switches are on that page.

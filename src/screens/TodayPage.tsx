@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { ErrorBanner } from "@/components/ui/StateViews";
 import { SetupProgressCard } from "@/components/onboarding/SetupProgress";
 import { ApprovalsCard } from "@/components/approvals/ApprovalsCard";
+import { AiReadinessCard } from "@/components/front-desk/AiReadinessCard";
 import { WeeklyFrontDeskCard } from "@/components/reports/WeeklyFrontDeskCard";
 import { DashboardErrorState, NoOrgContextState, OnboardingChecklistCard } from "./Dashboard";
 import { greetingFor, needsYouItems, todaysJobs } from "@/lib/today";
@@ -96,6 +97,7 @@ export default function TodayPage() {
 
       <SetupProgressCard orgId={organizationId} />
       <OnboardingChecklistCard orgId={organizationId} />
+      <AiReadinessCard orgId={organizationId} companyId={companyId ?? null} />
 
       {summary.isError && <ErrorBanner message="Couldn't load today's numbers." onRetry={() => summary.refetch()} />}
 
