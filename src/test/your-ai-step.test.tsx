@@ -42,7 +42,7 @@ beforeEach(() => api.setUp.mockReset());
 
 describe("YourAiStep", () => {
   it("defaults to 'Ask me first' and turns it on with the name and tone chosen", async () => {
-    api.step = { view: view(), readiness: { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: false, callsOn: false, pricedServices: 4, unpricedServices: 0 } };
+    api.step = { view: view(), readiness: { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: false, callsOn: false, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 4, unpricedServices: 0 } };
     api.setUp.mockImplementation(async () => ({ ...(api.step as object), blueprint: { applied: true } }));
     const onDone = vi.fn();
     wrap(<YourAiStep orgId={ORG} companyId={CO} onDone={onDone} goTo={() => {}} />);
@@ -56,7 +56,7 @@ describe("YourAiStep", () => {
   });
 
   it("lists what's missing, each with a link to the step that fixes it", async () => {
-    api.step = { view: view(), readiness: { ownerCellConfirmed: false, hasNumber: false, forwardingVerified: false, textsOn: false, callsOn: false, pricedServices: 0, unpricedServices: 3 } };
+    api.step = { view: view(), readiness: { ownerCellConfirmed: false, hasNumber: false, forwardingVerified: false, textsOn: false, callsOn: false, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 0, unpricedServices: 3 } };
     const goTo = vi.fn();
     wrap(<YourAiStep orgId={ORG} companyId={CO} onDone={() => {}} goTo={goTo} />);
     expect(await screen.findByText(/get your number/i)).toBeInTheDocument();
@@ -78,7 +78,7 @@ describe("YourAiStep", () => {
   it("an owner who already chose 'On its own' sees it selected", async () => {
     api.step = {
       view: view({ persona: { name: "Sam", tone: "casual", defaultName: "Marina" }, switches: [{ key: "texts", group: "customers", label: "", description: "", customize: null, on: true, choice: "standard" }] }),
-      readiness: { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, pricedServices: 1, unpricedServices: 0 },
+      readiness: { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 1, unpricedServices: 0 },
     };
     wrap(<YourAiStep orgId={ORG} companyId={CO} onDone={() => {}} goTo={() => {}} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /on its own/i })).toHaveAttribute("aria-pressed", "true"));

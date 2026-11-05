@@ -545,27 +545,29 @@ gets them **one** local Twilio number (`src/server/services/onboarding-number.ts
 ### Keeping the receptionist up to date
 
 The receptionist's prompt is built from the price list, hours, service area, industry pack,
-booking link and persona. It used to be a snapshot from setup day, re-synced only by a persona
-change, a blueprint or the concierge. Now the scheduler's **receptionist drift** sweep
-(`voice/receptionist-drift.ts`, at most every 15 minutes, 25 companies a pass) keeps it current:
+booking link and persona. It used to be a snapshot from setup day. Now the scheduler's
+**receptionist drift** sweep (`voice/receptionist-drift.ts`) keeps it current. It runs at most
+every 15 minutes per worker, 10 companies a pass, least recently checked first. It does nothing
+unless `RETELL_API_KEY`, `APP_BASE_URL` and `RETELL_FUNCTION_SECRET` are all set.
 
-- For each company with a receptionist (a dedicated line, or one pinned on its number), it
-  fingerprints what the receptionist would be built from now (`receptionistFingerprint`: a hash
-  of the name, prompt and tools). It compares that with what was last pushed, stored as
-  `receptionistFingerprint` in the phone step data.
-- If they differ, it re-syncs (`resyncReceptionistForContext`), which records the new fingerprint
-  itself.
-- A failed re-sync is retried after an hour. Companies are checked least-recently-checked first.
+1. It fingerprints what the receptionist would be built from now (`receptionistFingerprint`: a
+   hash of the name, prompt and tools).
+2. It compares that with what was last pushed. That is kept in the company's own
+   `onboarding_progress` row, step `receptionist_sync`, status `in_progress` (not a wizard step,
+   never counted), so it never races the Phone step's data.
+3. If they differ, it re-syncs (`resyncReceptionistForContext`, which records the fingerprint
+   too).
+4. A failure backs off 1 h, then 4 h, then a day, and is logged.
 
-This catches every way those facts change (Settings, the pack card, an owner text, an import)
-without hooking each write. The first pass after deploy pushes each receptionist once.
-- Other plans (trial / Operate): the shared message-taking agent answers.
-- The step then shows forwarding steps for the owner's kind of phone and carrier
-  (`forwardingPlan`), the automatic forwarding test, and a test-it-yourself option.
+**Scope:** only receptionists we built on the company's own number. That means an agent pinned
+on its active Twilio catcher row that matches the phone step's `catcherAgent`, on a Front Desk
+plan, for a company with no active dedicated line. A re-sync there only updates that Retell LLM
+and agent. Dedicated Retell lines are not touched, because they may be hand-tuned (voice, number
+bindings, outbound profile). They are re-synced, as before, by the done-for-you switch-on, the
+concierge and a persona change.
 
-A dedicated AI line (a separate Retell number — the old "AI receptionist" choice,
-`/onboarding/phone`) is still there under "Advanced" for Front Desk / house accounts and anyone
-who already has one; a company with a dedicated line keeps it and nothing new is built.
+The catalog is read in a stable order (`sort_order`, then `id`), so the prompt doesn't change
+between reads.
 
 ### After the call (`voice/post-call.ts`, from `ingestRetellCall`)
 

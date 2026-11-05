@@ -9,7 +9,7 @@ import { createFakeDb, type FakeDb } from "./fake-supabase";
 
 vi.mock("@/server/services/company-voice-profiles", () => ({ upsertCompanyVoiceProfile: async () => ({}) }));
 
-import { hasReceptionist, RECEPTIONIST_DRIFT_INTERVAL_MS, RECEPTIONIST_DRIFT_RETRY_MS, resetReceptionistDriftThrottle, sweepReceptionistDrift } from "@/server/services/voice/receptionist-drift";
+import { driftConfigured, inBackoff, RECEPTIONIST_DRIFT_INTERVAL_MS, resetReceptionistDriftThrottle, sweepReceptionistDrift } from "@/server/services/voice/receptionist-drift";
 import { receptionistFingerprint } from "@/server/services/onboarding-provision";
 import { resyncReceptionistForContext } from "@/server/services/voice/resync";
 import type { RetellClient } from "@/server/services/retell/provision";
@@ -18,22 +18,28 @@ import type { TenantServiceContext } from "@/server/services/shared";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CO = "22222222-2222-4222-8222-222222222222";
 const T0 = Date.parse("2026-11-05T15:00:00Z");
+const HOUR = 3_600_000;
+const ENV = { RETELL_API_KEY: "key_test", APP_BASE_URL: "https://app.everdoer.test", RETELL_FUNCTION_SECRET: "fn-secret" };
 
 let db: FakeDb;
-function seed(phoneData: Record<string, unknown> | null, extraCompanies: Array<Record<string, unknown>> = []) {
+function seed(opts: { plan?: string; phoneData?: Record<string, unknown> | null; agentOnNumber?: string | null; dedicated?: boolean } = {}) {
   db = createFakeDb({
+    organizations: [{ id: ORG, plan: opts.plan ?? "front_desk", crankleads_tier: null }],
     companies: [
       { id: CO, organization_id: ORG, name: "Northshore Plumbing", slug: "northshore", hours: { summary: "Mon–Fri 8–5" }, service_area: "Barrie", quote_public_base_url: null, industry_pack: null, owner_phone_e164: "+17055550111", brand_reply_phone: null, agent_persona: {} },
-      ...extraCompanies,
     ],
     service_catalog_items: [
       { id: "sci-1", organization_id: ORG, company_id: CO, service_key: "drain_clear", label: "Drain clearing", pricing_type: "flat", rate_cents: 14900, minimum_cents: 0, sort_order: 0, active: true },
     ],
-    onboarding_progress: phoneData ? [{ id: "op-1", organization_id: ORG, company_id: CO, step: "phone", status: "complete", data: phoneData }] : [],
-    voice_numbers: [{ id: "vn-1", organization_id: ORG, company_id: CO, provider: "twilio", mode: "missed_call_catcher", active: true, phone_e164: "+17055550199", provider_agent_id: "agent_fd" }],
+    onboarding_progress:
+      opts.phoneData === null ? [] : [{ id: "op-1", organization_id: ORG, company_id: CO, step: "phone", status: "complete", data: opts.phoneData ?? { mode: "missed_call_catcher", catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } } }],
+    voice_numbers: [
+      { id: "vn-1", organization_id: ORG, company_id: CO, provider: "twilio", mode: "missed_call_catcher", active: true, phone_e164: "+17055550199", provider_agent_id: opts.agentOnNumber === undefined ? "agent_fd" : opts.agentOnNumber },
+      ...(opts.dedicated ? [{ id: "vn-2", organization_id: ORG, company_id: CO, provider: "retell", mode: "ai_receptionist", active: true, phone_e164: "+17055550100", provider_agent_id: "agent_old" }] : []),
+    ],
   });
 }
-const phoneData = () => (db.tables.onboarding_progress[0]?.data ?? {}) as Record<string, unknown>;
+const syncState = () => (db.tables.onboarding_progress.find((r) => r.step === "receptionist_sync")?.data ?? {}) as Record<string, unknown>;
 
 function mockRetell(calls: string[]): RetellClient {
   return {
@@ -49,76 +55,91 @@ function mockRetell(calls: string[]): RetellClient {
 
 beforeEach(() => {
   resetReceptionistDriftThrottle();
-  process.env.APP_BASE_URL = "https://app.everdoer.test";
-  process.env.RETELL_FUNCTION_SECRET = "fn-secret";
-  process.env.RETELL_API_KEY = "key_test";
-});
-
-describe("hasReceptionist", () => {
-  it("a dedicated line (all three ids) or an agent pinned on the number", () => {
-    expect(hasReceptionist({ llmId: "l", agentId: "a", phoneNumber: "+1" })).toBe(true);
-    expect(hasReceptionist({ catcherAgent: { llmId: "l", agentId: "a" } })).toBe(true);
-    expect(hasReceptionist({ catcherAgent: { llmId: "l" } })).toBe(false);
-    expect(hasReceptionist({ mode: "missed_call_catcher", catcherNumber: "+1" })).toBe(false);
-    expect(hasReceptionist(null)).toBe(false);
-  });
+  Object.assign(process.env, ENV);
 });
 
 describe("sweepReceptionistDrift", () => {
   it("a changed price (or hours, area, pack…) → one re-sync on the next pass, then quiet", async () => {
-    seed({ catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } });
+    seed();
     const calls: string[] = [];
     const resync = (ctx: TenantServiceContext, companyId: string) => resyncReceptionistForContext(ctx, companyId, mockRetell(calls));
 
-    // First look: nothing recorded yet → push once, and remember it.
-    expect(await sweepReceptionistDrift(db.client as never, T0, { resync })).toMatchObject({ checked: 1, resynced: 1 });
+    // First look: nothing recorded yet → push once, and remember it (in its own row, not the Phone step's).
+    expect(await sweepReceptionistDrift(db.client as never, T0, { resync, env: ENV })).toMatchObject({ checked: 1, resynced: 1 });
     expect(calls).toEqual(["updateLlm:llm_fd", "updateAgent:agent_fd"]);
-    const first = phoneData().receptionistFingerprint;
+    const first = syncState().fingerprint;
     expect(typeof first).toBe("string");
-    expect(phoneData()).toMatchObject({ catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" }, receptionistSyncedAt: new Date(T0).toISOString() });
+    expect(db.tables.onboarding_progress.find((r) => r.step === "receptionist_sync")).toMatchObject({ status: "in_progress" });
+    expect(db.tables.onboarding_progress.find((r) => r.step === "phone")?.data).toEqual({ mode: "missed_call_catcher", catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } });
 
     // Nothing changed → nothing pushed.
     calls.length = 0;
-    expect(await sweepReceptionistDrift(db.client as never, T0 + RECEPTIONIST_DRIFT_INTERVAL_MS, { resync })).toMatchObject({ checked: 1, resynced: 0 });
+    expect(await sweepReceptionistDrift(db.client as never, T0 + RECEPTIONIST_DRIFT_INTERVAL_MS, { resync, env: ENV })).toMatchObject({ checked: 1, resynced: 0 });
     expect(calls).toEqual([]);
 
     // The owner changes a price → the prompt changes → pushed on the next pass.
     db.tables.service_catalog_items[0].rate_cents = 17900;
-    expect(await sweepReceptionistDrift(db.client as never, T0 + 2 * RECEPTIONIST_DRIFT_INTERVAL_MS, { resync })).toMatchObject({ resynced: 1 });
+    expect(await sweepReceptionistDrift(db.client as never, T0 + 2 * RECEPTIONIST_DRIFT_INTERVAL_MS, { resync, env: ENV })).toMatchObject({ resynced: 1 });
     expect(calls).toEqual(["updateLlm:llm_fd", "updateAgent:agent_fd"]);
-    expect(phoneData().receptionistFingerprint).not.toBe(first);
+    expect(syncState().fingerprint).not.toBe(first);
   });
 
-  it("throttled to once per interval per process", async () => {
-    seed({ catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } });
+  it("only receptionists we built on the company's own number — never a dedicated line, another agent, or a non-Front-Desk org", async () => {
     const resync = vi.fn(async () => ({ status: "resynced" as const, llmId: "l", agentId: "a", phoneNumber: "+1" }));
-    await sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint: async () => "fp-1" });
-    expect(await sweepReceptionistDrift(db.client as never, T0 + 60_000, { resync, fingerprint: async () => "fp-2" })).toEqual({ checked: 0, resynced: 0, failed: 0 });
-    expect(resync).toHaveBeenCalledTimes(1);
-  });
-
-  it("a failed re-sync is retried after an hour, not every pass", async () => {
-    seed({ catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } });
-    const resync = vi.fn(async () => {
-      throw new Error("retell down");
-    });
-    const fingerprint = async () => "fp-new";
-    expect(await sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint })).toMatchObject({ failed: 1 });
-    expect(phoneData().receptionistSyncFailedAt).toBe(new Date(T0).toISOString());
-    expect(await sweepReceptionistDrift(db.client as never, T0 + RECEPTIONIST_DRIFT_INTERVAL_MS, { resync, fingerprint })).toMatchObject({ checked: 0 });
-    expect(await sweepReceptionistDrift(db.client as never, T0 + RECEPTIONIST_DRIFT_RETRY_MS, { resync, fingerprint })).toMatchObject({ checked: 1, failed: 1 });
-    expect(resync).toHaveBeenCalledTimes(2);
-  });
-
-  it("companies without a receptionist (number only, or nothing) are never touched", async () => {
-    seed({ mode: "missed_call_catcher", catcherNumber: "+17055550199" });
-    const resync = vi.fn();
-    expect(await sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint: async () => "fp" })).toMatchObject({ checked: 0 });
+    const run = async () => {
+      resetReceptionistDriftThrottle();
+      return sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint: async () => "fp", env: ENV });
+    };
+    seed({ dedicated: true }); // also has an active dedicated Retell line (may be hand-tuned)
+    expect(await run()).toMatchObject({ checked: 0 });
+    seed({ agentOnNumber: "agent_someone_else" }); // the number's agent isn't the one we built
+    expect(await run()).toMatchObject({ checked: 0 });
+    seed({ plan: "operate" }); // downgraded: the message agent answers, not this one
+    expect(await run()).toMatchObject({ checked: 0 });
+    seed({ phoneData: { llmId: "l", agentId: "a", phoneNumber: "+17055550100" }, agentOnNumber: null }); // dedicated-line ids only
+    expect(await run()).toMatchObject({ checked: 0 });
     expect(resync).not.toHaveBeenCalled();
   });
 
+  it("does nothing when Retell isn't configured on this deployment", async () => {
+    seed();
+    const resync = vi.fn();
+    expect(await sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint: async () => "fp", env: { ...ENV, RETELL_API_KEY: "" } })).toEqual({ checked: 0, resynced: 0, failed: 0 });
+    expect(driftConfigured(ENV)).toBe(true);
+    expect(driftConfigured({ ...ENV, RETELL_FUNCTION_SECRET: " " })).toBe(false);
+    expect(resync).not.toHaveBeenCalled();
+  });
+
+  it("throttled to once per interval per process", async () => {
+    seed();
+    const resync = vi.fn(async () => ({ status: "resynced" as const, llmId: "l", agentId: "a", phoneNumber: "+1" }));
+    await sweepReceptionistDrift(db.client as never, T0, { resync, fingerprint: async () => "fp-1", env: ENV });
+    expect(await sweepReceptionistDrift(db.client as never, T0 + 60_000, { resync, fingerprint: async () => "fp-2", env: ENV })).toEqual({ checked: 0, resynced: 0, failed: 0 });
+    expect(resync).toHaveBeenCalledTimes(1);
+  });
+
+  it("failures back off: 1 h, then 4 h, then a day", async () => {
+    seed();
+    const resync = vi.fn(async () => {
+      throw new Error("retell down");
+    });
+    const pass = async (at: number) => {
+      resetReceptionistDriftThrottle();
+      return sweepReceptionistDrift(db.client as never, at, { resync, fingerprint: async () => "fp-new", env: ENV });
+    };
+    expect(await pass(T0)).toMatchObject({ failed: 1 });
+    expect(syncState()).toMatchObject({ failures: 1, failedAt: new Date(T0).toISOString() });
+    expect(await pass(T0 + HOUR - 1)).toMatchObject({ checked: 0 });
+    expect(await pass(T0 + HOUR)).toMatchObject({ failed: 1 });
+    expect(await pass(T0 + HOUR + 4 * HOUR - 1)).toMatchObject({ checked: 0 });
+    expect(await pass(T0 + 5 * HOUR)).toMatchObject({ failed: 1 });
+    expect(syncState()).toMatchObject({ failures: 3 });
+    expect(inBackoff({ failures: 3, failedAt: new Date(T0 + 5 * HOUR).toISOString() }, T0 + 5 * HOUR + 23 * HOUR)).toBe(true);
+    expect(inBackoff({ failures: 3, failedAt: new Date(T0 + 5 * HOUR).toISOString() }, T0 + 5 * HOUR + 24 * HOUR)).toBe(false);
+  });
+
   it("the fingerprint follows what the receptionist is built from — and only that", async () => {
-    seed({ catcherAgent: { llmId: "llm_fd", agentId: "agent_fd" } });
+    seed();
     const ctx: TenantServiceContext = { organizationId: ORG, actorProfileId: null, supabase: db.client as never };
     const a = await receptionistFingerprint(ctx, CO);
     expect(await receptionistFingerprint(ctx, CO)).toBe(a);

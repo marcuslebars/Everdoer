@@ -120,27 +120,49 @@ describe("readiness", () => {
       forwardingVerified: false,
       textsOn: true,
       callsOn: false,
+      textsOffByChoice: false,
+      callsOffByChoice: false,
+      dedicatedLine: false,
       pricedServices: 1,
       unpricedServices: 1,
     });
   });
 
-  const ready = { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, pricedServices: 3, unpricedServices: 0 };
+  const ready = { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 3, unpricedServices: 0 };
 
   it("readinessGaps: in the order to fix them, each with its wizard step and its page", () => {
-    expect(readinessGaps({ ownerCellConfirmed: false, hasNumber: false, forwardingVerified: false, textsOn: false, callsOn: false, pricedServices: 0, unpricedServices: 4 }).map((g) => [g.key, g.step, g.href])).toEqual([
-      ["number", "phone", "/onboarding?step=phone"],
+    expect(readinessGaps({ ...ready, ownerCellConfirmed: false, textsOn: false, callsOn: false, pricedServices: 0, unpricedServices: 4, forwardingVerified: false }).map((g) => [g.key, g.step, g.href])).toEqual([
+      ["forwarding", "phone", "/onboarding?step=phone"],
       ["cell", "business", "/settings?section=front-desk&focus=owner-phone"],
       ["texts", "ai", "/ai"],
       ["calls", "ai", "/ai"],
       ["prices", "services", "/settings?section=packs"],
     ]);
-    // A number whose forwarding isn't tested yet.
-    expect(readinessGaps({ ...ready, forwardingVerified: false }).map((g) => g.key)).toEqual(["forwarding"]);
+    // No number yet: that's the one to fix first (texts / calls can't work without it).
+    expect(readinessGaps({ ...ready, hasNumber: false, forwardingVerified: false, textsOn: false, callsOn: false }).map((g) => g.key)).toEqual(["number"]);
     expect(readinessGaps({ ...ready, unpricedServices: 1 })).toEqual([
       { key: "prices", step: "services", href: "/settings?section=packs", text: "1 service has no price yet — it won't quote that one." },
     ]);
     expect(readinessGaps(ready)).toEqual([]);
+  });
+
+  it("the owner's own choices aren't nagged about", () => {
+    expect(readinessGaps({ ...ready, textsOn: false, textsOffByChoice: true, callsOn: false, callsOffByChoice: true })).toEqual([]);
+  });
+
+  it("a dedicated AI line answers calls itself: no forwarding / voicemail gaps; the number gap is about texting", () => {
+    const gaps = readinessGaps({ ...ready, dedicatedLine: true, hasNumber: false, forwardingVerified: false, callsOn: false });
+    expect(gaps.map((g) => g.key)).toEqual(["number"]);
+    expect(gaps[0].text).toMatch(/customers can text/);
+    expect(readinessGaps({ ...ready, dedicatedLine: true, forwardingVerified: false, callsOn: false })).toEqual([]);
+  });
+
+  it("readiness reads choices and a dedicated line", async () => {
+    db = seed(
+      { owner_phone_verified_at: "2026-11-01T00:00:00Z", ai_settings: { sms_agent: { enabled: false }, call_answering: { mode: "voicemail" } } },
+      { voice_numbers: [{ organization_id: "org-1", company_id: "co-1", provider: "retell", active: true, phone_e164: "+17055550100", provider_agent_id: "agent_x" }] },
+    );
+    expect((await getYourAiStep(admin(), scope))?.readiness).toMatchObject({ textsOffByChoice: true, callsOffByChoice: true, dedicatedLine: true, hasNumber: false });
   });
 
   it("the client's step list is the server's", async () => {

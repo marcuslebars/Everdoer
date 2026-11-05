@@ -100,6 +100,8 @@ linking to where it's fixed:
 - **Texts / calls:** texts or calls are off (Your AI).
 - **Prices:** services have no price (Settings → Industry pack).
 
-The card hides when nothing is missing. On Today it also hides while a setup card already covers
+The owner's own choices aren't flagged (texts switched off, voicemail chosen). A company with
+a dedicated AI line gets no forwarding or voicemail items, since that line answers calls itself.
+Only owners and admins see the card. The card hides when nothing is missing. On Today it also hides while a setup card already covers
 it: done-for-you until they're live, and the wizard's "Finish setting up" until onboarding is
 done. Your AI leaves out the texts/calls items, since those switches are on that page.

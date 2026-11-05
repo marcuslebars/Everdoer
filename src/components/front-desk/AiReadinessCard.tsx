@@ -6,6 +6,7 @@ import { getYourAiStep } from "@/lib/api-client";
 import { readinessGaps, type ReadinessKey } from "@/lib/ai-readiness";
 import { useOnboardingProgress, useSetupChecklist } from "@/lib/api-hooks";
 import { ONBOARDING_STEP_COUNT } from "@/lib/onboarding-steps";
+import { useAuth } from "@/lib/auth-context";
 
 /**
  * "Your AI isn't fully working yet" — what's missing (src/lib/ai-readiness.ts), each with a link
@@ -25,6 +26,8 @@ export function AiReadinessCard({
   /** Gaps the page itself already shows (Your AI has the texts / calls switches right there). */
   omit?: ReadinessKey[];
 }) {
+  const { session } = useAuth();
+  const role = session?.organizations?.find((o) => o.id === orgId)?.membershipRole ?? "member";
   const { data: setup, isLoading: setupLoading } = useSetupChecklist(orgId);
   const { data: progress } = useOnboardingProgress(orgId);
   const target = companyId ?? progress?.company?.id ?? null;
@@ -35,13 +38,19 @@ export function AiReadinessCard({
     staleTime: 60_000,
   });
 
-  if (!data) return null;
+  // Every fix is an owner/admin change.
+  if (!data || (role !== "owner" && role !== "admin")) return null;
   if (hideDuringSetup) {
     if (setupLoading || (setup && !setup.isLive)) return null;
     const unfinished = !setup && progress?.company && progress.steps.filter((s) => s.status === "complete").length < ONBOARDING_STEP_COUNT;
     if (unfinished) return null;
   }
-  const gaps = readinessGaps(data.readiness).filter((g) => !omit.includes(g.key));
+  // The wizard's Phone step works on the onboarding company only: for another company those links
+  // wouldn't fix this one.
+  const wizardCompany = progress?.company?.id ?? null;
+  const gaps = readinessGaps(data.readiness)
+    .filter((g) => !omit.includes(g.key))
+    .filter((g) => g.step !== "phone" || !wizardCompany || wizardCompany === target);
   if (gaps.length === 0) return null;
 
   return (

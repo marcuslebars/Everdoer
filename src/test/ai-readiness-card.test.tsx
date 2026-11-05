@@ -9,6 +9,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  role: "owner",
   readiness: null as unknown,
   setup: null as unknown,
   progress: null as unknown,
@@ -23,10 +24,15 @@ vi.mock("@/lib/api-hooks", async (importOriginal) => ({
   useOnboardingProgress: () => ({ data: state.progress }),
 }));
 
+vi.mock("@/lib/auth-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth-context")>()),
+  useAuth: () => ({ session: { organizations: [{ id: "org-1", membershipRole: state.role }] } }),
+}));
+
 import { AiReadinessCard } from "@/components/front-desk/AiReadinessCard";
 import { ONBOARDING_STEP_KEYS } from "@/lib/onboarding-steps";
 
-const READY = { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, pricedServices: 3, unpricedServices: 0 };
+const READY = { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 3, unpricedServices: 0 };
 const finished = { company: { id: "co-1", name: "Northshore" }, steps: ONBOARDING_STEP_KEYS.map((step) => ({ step, status: "complete", data: {} })), nextStep: "recipes" };
 
 function wrap(node: ReactNode) {
@@ -39,6 +45,7 @@ function wrap(node: ReactNode) {
 }
 
 beforeEach(() => {
+  state.role = "owner";
   state.readiness = READY;
   state.setup = null;
   state.progress = finished;
@@ -52,6 +59,21 @@ describe("AiReadinessCard", () => {
     expect(screen.getByRole("link", { name: /turn on call forwarding/i })).toHaveAttribute("href", "/onboarding?step=phone");
     expect(screen.getByRole("link", { name: /confirm your cell/i })).toHaveAttribute("href", "/settings?section=front-desk&focus=owner-phone");
     expect(screen.getByRole("link", { name: /isn't answering customer texts/i })).toHaveAttribute("href", "/ai");
+  });
+
+  it("members don't see it (every fix is an owner/admin change)", async () => {
+    state.role = "member";
+    state.readiness = { ...READY, ownerCellConfirmed: false };
+    const { container } = wrap(<AiReadinessCard orgId="org-1" companyId="co-1" />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("for a company the wizard isn't set up on, the Phone-step links are left out (they'd fix the other one)", async () => {
+    state.readiness = { ...READY, forwardingVerified: false, ownerCellConfirmed: false };
+    wrap(<AiReadinessCard orgId="org-1" companyId="co-2" />);
+    expect(await screen.findByText(/confirm your cell/i)).toBeInTheDocument();
+    expect(screen.queryByText(/turn on call forwarding/i)).toBeNull();
   });
 
   it("nothing missing → nothing shown", async () => {

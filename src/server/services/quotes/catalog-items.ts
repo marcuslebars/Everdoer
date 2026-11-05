@@ -42,7 +42,10 @@ export async function listCatalogItems(
     .select("*")
     .eq("organization_id", context.organizationId)
     .eq("company_id", companyId)
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    // Stable order for equal sort_order (most rows are 0): the receptionist's prompt lists them in
+    // this order, and voice/receptionist-drift.ts re-syncs whenever the prompt changes.
+    .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as Tables<"service_catalog_items">[];
 }

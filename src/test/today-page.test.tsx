@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The readiness card has its own tests (ai-readiness-card.test.tsx).
+vi.mock("@/components/front-desk/AiReadinessCard", () => ({ AiReadinessCard: () => null }));
+
 const state = {
   summary: { newLeadCount: 0, overdueTaskCount: 0, urgentTaskCount: 0, revenueSnapshot: { todayCents: 0, weekCents: 250_000 } } as Record<string, unknown>,
   bookings: [] as Array<Record<string, unknown>>,

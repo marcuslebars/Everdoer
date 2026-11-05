@@ -53,20 +53,27 @@ export async function loadAiReadiness(admin: AdminClient, scope: Scope): Promise
   const [company, org, numbers, items] = await Promise.all([
     admin.from("companies").select("owner_phone_e164, owner_phone_verified_at, ai_settings").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle(),
     admin.from("organizations").select("platform_brand").eq("id", scope.organizationId).maybeSingle(),
-    admin.from("voice_numbers").select("forwarding_verified_at").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("provider", "twilio").eq("active", true),
+    admin.from("voice_numbers").select("provider, provider_agent_id, forwarding_verified_at").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("active", true),
     admin.from("service_catalog_items").select("rate_cents").eq("organization_id", scope.organizationId).eq("company_id", scope.companyId).eq("active", true),
   ]);
   for (const r of [company, org, numbers, items]) if (r.error) throw r.error;
   const row = company.data as { owner_phone_e164: string | null; owner_phone_verified_at: string | null; ai_settings: unknown } | null;
   const doneForYou = isDoneForYou((org.data as { platform_brand: string | null } | null)?.platform_brand ?? null);
-  const twilio = (numbers.data ?? []) as Array<{ forwarding_verified_at: string | null }>;
+  const lines = (numbers.data ?? []) as Array<{ provider: string; provider_agent_id: string | null; forwarding_verified_at: string | null }>;
+  const twilio = lines.filter((n) => n.provider === "twilio");
+  const sms = readSmsAgentSettings(row?.ai_settings, { doneForYou });
+  const answering = readCallAnsweringSettings(row?.ai_settings, { doneForYou });
+  const smsSection = (row?.ai_settings && typeof row.ai_settings === "object" ? (row.ai_settings as Record<string, unknown>).sms_agent : null) as Record<string, unknown> | null;
   const rates = ((items.data ?? []) as Array<{ rate_cents: number | null }>).map((i) => i.rate_cents ?? 0);
   return {
     ownerCellConfirmed: Boolean(row?.owner_phone_e164 && row.owner_phone_verified_at),
     hasNumber: twilio.length > 0,
     forwardingVerified: twilio.some((n) => Boolean(n.forwarding_verified_at)),
-    textsOn: smsAgentActive(readSmsAgentSettings(row?.ai_settings, { doneForYou })),
-    callsOn: readCallAnsweringSettings(row?.ai_settings, { doneForYou }).mode === "ai",
+    textsOn: smsAgentActive(sms),
+    callsOn: answering.mode === "ai",
+    textsOffByChoice: Boolean(smsSection && (smsSection.enabled === false || smsSection.autonomy === "off")),
+    callsOffByChoice: answering.modeExplicit && answering.mode === "voicemail",
+    dedicatedLine: lines.some((n) => n.provider === "retell" && Boolean(n.provider_agent_id)),
     pricedServices: rates.filter((c) => c > 0).length,
     unpricedServices: rates.filter((c) => c <= 0).length,
   };
