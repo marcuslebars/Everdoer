@@ -71,7 +71,8 @@ export function YourAiStep({ orgId, companyId, onDone, goTo }: { orgId: string; 
   }, [current.data, seeded]);
 
   const defaultName = current.data?.view.persona.defaultName ?? "your assistant";
-  const gaps = current.data ? readinessGaps(current.data.readiness) : [];
+  // Texts / calls being off is what this step's button fixes — not a to-do here.
+  const gaps = current.data ? readinessGaps(current.data.readiness).filter((g) => g.step !== "ai") : [];
 
   const go = async () => {
     if (!companyId) return;

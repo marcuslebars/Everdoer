@@ -538,15 +538,36 @@ gets them **one** local Twilio number (`src/server/services/onboarding-number.ts
   has both. If Retell fails, the number still works and the message-taking agent answers meanwhile.
   The company voice profile (outbound caller ID / prompt) is not touched — Retell can't dial out
   from a Twilio number.
-- Not yet: the receptionist health check (`retell/health.ts`) and the rebrand re-point job only
-  look at Retell numbers, so they skip receptionists pinned on a Twilio number.
-- Other plans (trial / Operate): the shared message-taking agent answers.
-- The step then shows forwarding steps for the owner's kind of phone and carrier
-  (`forwardingPlan`), the automatic forwarding test, and a test-it-yourself option.
+- The receptionist health check (`retell/health.ts`, `GET /voice/health`, the owner digest)
+  includes a receptionist pinned on the number: it checks the agent, its webhook and tools, and
+  skips the Retell-number checks. Not yet: the rebrand re-point job only looks at Retell numbers.
 
-A dedicated AI line (a separate Retell number — the old "AI receptionist" choice,
-`/onboarding/phone`) is still there under "Advanced" for Front Desk / house accounts and anyone
-who already has one; a company with a dedicated line keeps it and nothing new is built.
+### Keeping the receptionist up to date
+
+The receptionist's prompt is built from the price list, hours, service area, industry pack,
+booking link and persona. It used to be a snapshot from setup day. Now the scheduler's
+**receptionist drift** sweep (`voice/receptionist-drift.ts`) keeps it current. It runs at most
+every 15 minutes per worker, 10 companies a pass, least recently checked first. It does nothing
+unless `RETELL_API_KEY`, `APP_BASE_URL` and `RETELL_FUNCTION_SECRET` are all set.
+
+1. It fingerprints what the receptionist would be built from now (`receptionistFingerprint`: a
+   hash of the name, prompt and tools).
+2. It compares that with what was last pushed. That is kept in the company's own
+   `onboarding_progress` row, step `receptionist_sync`, status `in_progress` (not a wizard step,
+   never counted), so it never races the Phone step's data.
+3. If they differ, it re-syncs (`resyncReceptionistForContext`, which records the fingerprint
+   too).
+4. A failure backs off 1 h, then 4 h, then a day, and is logged.
+
+**Scope:** only receptionists we built on the company's own number. That means an agent pinned
+on its active Twilio catcher row that matches the phone step's `catcherAgent`, on a Front Desk
+plan, for a company with no active dedicated line. A re-sync there only updates that Retell LLM
+and agent. Dedicated Retell lines are not touched, because they may be hand-tuned (voice, number
+bindings, outbound profile). They are re-synced, as before, by the done-for-you switch-on, the
+concierge and a persona change.
+
+The catalog is read in a stable order (`sort_order`, then `id`), so the prompt doesn't change
+between reads.
 
 ### After the call (`voice/post-call.ts`, from `ingestRetellCall`)
 

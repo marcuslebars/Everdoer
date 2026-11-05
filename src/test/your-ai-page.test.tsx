@@ -3,6 +3,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The readiness card has its own tests (ai-readiness-card.test.tsx).
+vi.mock("@/components/front-desk/AiReadinessCard", () => ({ AiReadinessCard: () => null }));
+
 import type { YourAiView } from "@/lib/your-ai-api";
 
 // Settles straight away, like a finished save.

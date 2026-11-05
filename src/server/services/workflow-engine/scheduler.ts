@@ -11,6 +11,7 @@ import { processDueOwnerCalls } from "@/server/services/owner-channel/calls";
 import { processDueSalesCalls } from "@/server/services/sales-calls/queue";
 import { sweepOwnerApprovals } from "@/server/services/owner-channel/notify";
 import { sweepUnansweredTexts } from "@/server/services/sms-agent/entry";
+import { sweepReceptionistDrift } from "@/server/services/voice/receptionist-drift";
 import { processWeeklyReports } from "@/server/services/weekly-report/send";
 import { purgeAgentRuns } from "@/server/agent/run-log";
 import { purgeTurns } from "@/server/agent/memory";
@@ -405,6 +406,7 @@ export async function runScheduler(
   await guarded("owner calls", null, () => processDueOwnerCalls(admin, nowMs)); // scheduled "call Dave at 9" (docs/owner-call-requests.md)
   await guarded("sales calls", null, () => processDueSalesCalls(admin)); // speed-to-lead + owner-requested sales calls (docs/sales-calls.md)
   await guarded("unanswered texts", null, () => sweepUnansweredTexts(admin, nowMs)); // re-run lost SMS-agent turns, else tell the owner once
+  await guarded("receptionist drift", null, () => sweepReceptionistDrift(admin, nowMs)); // ≤ every 15 min: re-sync receptionists whose prices / hours / area changed
   // Daily operator health email (docs/operator-health.md) — at/after 07:30 BUSINESS_TIMEZONE,
   // once per day (claimed in operator_health_reports before sending), throttled like the
   // follow-ups and self-guarded.

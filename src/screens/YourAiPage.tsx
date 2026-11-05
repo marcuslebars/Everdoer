@@ -9,6 +9,7 @@ import { Bot, ChevronRight, Loader2 } from "lucide-react";
 import { useOrg } from "@/lib/org-context";
 import { useAuth } from "@/lib/auth-context";
 import { useCompanies } from "@/lib/api-hooks";
+import { AiReadinessCard } from "@/components/front-desk/AiReadinessCard";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/sonner";
@@ -196,6 +197,8 @@ export default function YourAiPage() {
         </p>
         {!canManage && <p className="text-xs text-muted-foreground mt-1">Only owners and admins can change these.</p>}
       </header>
+
+      <AiReadinessCard orgId={organizationId} companyId={effectiveCompanyId} hideDuringSetup={false} omit={["texts", "calls"]} />
 
       {isError ? (
         <ErrorBanner message="Couldn't load your AI's settings." onRetry={() => refetch()} />

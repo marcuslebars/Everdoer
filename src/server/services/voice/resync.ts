@@ -12,9 +12,10 @@
  * docs/front-desk-ai.md → "## Phone answering" → Front Desk tools.
  */
 import { getOnboardingProgress } from "@/server/services/onboarding";
-import { provisionCatcherReceptionist, provisionPhoneForCompany } from "@/server/services/onboarding-provision";
+import { provisionCatcherReceptionist, provisionPhoneForCompany, receptionistFingerprint } from "@/server/services/onboarding-provision";
 import type { RetellClient } from "@/server/services/retell/provision";
 import type { TenantServiceContext } from "@/server/services/shared";
+import { writeSyncState } from "@/server/services/voice/receptionist-sync-state";
 import type { createSupabaseAdminClient } from "@/server/supabase/admin";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -78,6 +79,19 @@ export async function resyncReceptionistForContext(
   companyId: string,
   retell?: RetellClient,
 ): Promise<ResyncOutcome> {
+  const outcome = await pushReceptionist(ctx, companyId, retell);
+  if (outcome.status === "resynced") {
+    // Remember what was pushed, so the drift sweep doesn't push it again. Best-effort.
+    try {
+      await writeSyncState(ctx, companyId, { fingerprint: await receptionistFingerprint(ctx, companyId), syncedAt: new Date().toISOString(), failedAt: null, failures: 0 });
+    } catch (err) {
+      console.error("[resync] couldn't record the synced fingerprint:", err instanceof Error ? err.message : err);
+    }
+  }
+  return outcome;
+}
+
+async function pushReceptionist(ctx: TenantServiceContext, companyId: string, retell?: RetellClient): Promise<ResyncOutcome> {
   const ids = await storedReceptionistIds(ctx, companyId);
   const pinned = await storedCatcherReceptionistIds(ctx, companyId);
   // The receptionist that actually answers decides: an active dedicated line (a Retell number with
