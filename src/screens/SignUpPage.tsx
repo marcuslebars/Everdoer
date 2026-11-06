@@ -23,6 +23,11 @@ export default function SignUpPage() {
   const [isOAuthLoading, setIsOAuthLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Supabase answers a sign-up for an email that already has an account exactly like a new one
+  // (so nobody can probe which emails are registered) — but sends NO email. The tell is a user
+  // with no identities. Say so, instead of "check your email" for a message that never comes.
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [configStatus, setConfigStatus] = useState<{ isConfigured: boolean } | null>(null);
 
   useEffect(() => {
@@ -72,6 +77,8 @@ export default function SignUpPage() {
       if (data.user) {
         if (data.session) {
           navigate("/onboarding");
+        } else if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          setAlreadyRegistered(true);
         } else {
           setSuccess(true);
         }
@@ -96,6 +103,53 @@ export default function SignUpPage() {
     }
   };
 
+  const resend = async () => {
+    setResendState("sending");
+    const { error: resendError } = await supabase.auth.resend({ type: "signup", email });
+    setResendState(resendError ? "error" : "sent");
+  };
+
+  if (alreadyRegistered) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-[420px]">
+          <div className="flex items-center justify-center mb-8">
+            <Logo className="h-8" />
+          </div>
+          <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-xl shadow-black/10">
+            <CardContent className="pt-8 pb-8">
+              <div className="flex flex-col items-center text-center gap-3">
+                <h2 className="text-xl font-semibold tracking-tight">You already have an account</h2>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{email}</span> is already signed up. Sign in, or reset your password if you don&apos;t remember it.
+                </p>
+              </div>
+              <div className="mt-6 flex flex-col gap-2">
+                <Button asChild className="w-full h-11">
+                  <Link to="/signin">Sign in</Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full h-11">
+                  <Link to="/forgot-password">Reset password</Link>
+                </Button>
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setAlreadyRegistered(false);
+                    setPassword("");
+                    setConfirmPassword("");
+                  }}
+                >
+                  Use a different email
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -118,8 +172,22 @@ export default function SignUpPage() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Click the link to activate your account, then sign in.
+                  Click the link to activate your account, then sign in. Not there after a minute? Check your spam folder.
                 </p>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-primary hover:text-primary/90 disabled:opacity-50"
+                  disabled={resendState === "sending" || resendState === "sent"}
+                  onClick={() => void resend()}
+                >
+                  {resendState === "sending"
+                    ? "Sending…"
+                    : resendState === "sent"
+                      ? "Sent again — check your inbox"
+                      : resendState === "error"
+                        ? "Couldn't resend — try again in a minute"
+                        : "Resend the email"}
+                </button>
               </div>
 
               <div className="mt-8 pt-6 border-t border-border/50 text-center text-sm text-muted-foreground">
