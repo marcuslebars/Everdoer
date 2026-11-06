@@ -13,6 +13,14 @@ import { POST_AUTH_PATH_KEY, takeKey, writeKey } from "@/lib/storage-keys";
  * file instead of a silent redirect in another.
  */
 const PUBLIC_PATHS: RegExp[] = [
+  // The sign-in pages themselves. Left off this list (Oct 15), every signed-out visitor who
+  // tapped "Create account", "Forgot password?" or "Sign in with phone" was bounced back to
+  // /signin — nobody could create an account on the web.
+  /^\/signin\/?$/,
+  /^\/signup\/?$/,
+  /^\/forgot-password\/?$/,
+  /^\/phone-auth\/?$/,
+  /^\/oauth\/callback\/?$/, // OAuth return: the session isn't there yet when the page loads
   /^\/q\//, // customer quote — the deposit link
   /^\/i\//, // customer invoice — the pay page
   /^\/p\//, // customer portal — their visits, quotes and invoices

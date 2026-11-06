@@ -39,6 +39,32 @@ describe("routes a signed-out visitor must be able to reach", () => {
   });
 });
 
+describe("the sign-in pages themselves", () => {
+  it("are reachable signed out: create an account, reset a password, phone sign-in, the OAuth return", () => {
+    // Shipped without these: "Create account" and "Forgot password?" bounced every visitor back
+    // to /signin, so nobody could sign up on the web.
+    for (const p of ["/signin", "/signup", "/signup/", "/forgot-password", "/phone-auth", "/oauth/callback", "/update-password"]) {
+      expect(isPublicPath(p), p).toBe(true);
+    }
+  });
+
+  it("every signed-out route the router declares is on the list", async () => {
+    // Routes declared in App.tsx for people who aren't signed in yet. Adding one there without
+    // adding it to public-routes.ts is exactly the bug above.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const app = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
+    const authRoutes = [...app.matchAll(/<Route path="(\/(?:signin|signup|oauth\/callback|phone-auth|forgot-password|update-password))"/g)].map((m) => m[1]);
+    expect(authRoutes.length).toBeGreaterThanOrEqual(6);
+    for (const p of authRoutes) expect(isPublicPath(p), p).toBe(true);
+  });
+
+  it("does not open up look-alikes", () => {
+    expect(isPublicPath("/signup/admin")).toBe(false);
+    expect(isPublicPath("/oauth/callback/x")).toBe(false);
+  });
+});
+
 describe("everything else still redirects", () => {
   it("does not exempt the app itself", () => {
     for (const p of ["/", "/quotes", "/settings", "/settings/payments", "/crm", "/calendar"]) {
