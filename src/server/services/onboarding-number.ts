@@ -59,7 +59,16 @@ export interface BusinessNumberInput {
   attachNumber?: string | null;
 }
 
+/**
+ * Writes companies.ai_settings. Members can't (no UPDATE grant on companies for the
+ * authenticated role — ai_settings is server-owned), so the route passes a service-role writer
+ * AFTER its owner/admin + company-in-org checks. Required, so a caller can't fall back to the
+ * RLS client by accident (that shipped once and failed every "Get my number").
+ */
+export type AiSettingsWriter = (companyId: string, aiSettings: Json) => Promise<void>;
+
 export interface BusinessNumberDeps extends ProvisionDeps {
+  writeAiSettings: AiSettingsWriter;
   retell?: RetellClient;
   /** Injectable for tests (orgCan-free): the org's plan facts. */
   loadOrg?: (ctx: TenantServiceContext) => Promise<OrgFacts>;
@@ -109,7 +118,7 @@ function errorMessage(err: unknown): string {
 export async function setUpBusinessNumber(
   ctx: TenantServiceContext,
   input: BusinessNumberInput,
-  deps: BusinessNumberDeps = {},
+  deps: BusinessNumberDeps,
 ): Promise<BusinessNumberResult> {
   await assertCompanyInOrganization(ctx, input.companyId);
 
@@ -140,12 +149,7 @@ export async function setUpBusinessNumber(
   const answering = readCallAnsweringSettings(facts?.ai_settings, { doneForYou: isDoneForYou(org.platform_brand) });
   let answeringTurnedOn = false;
   if (!answering.modeExplicit) {
-    const { error } = await ctx.supabase
-      .from("companies")
-      .update({ ai_settings: mergeCallAnsweringSettings(facts?.ai_settings, { mode: "ai" }) as Json })
-      .eq("organization_id", ctx.organizationId)
-      .eq("id", input.companyId);
-    if (error) throw error;
+    await deps.writeAiSettings(input.companyId, mergeCallAnsweringSettings(facts?.ai_settings, { mode: "ai" }) as Json);
     answeringTurnedOn = true;
   }
 

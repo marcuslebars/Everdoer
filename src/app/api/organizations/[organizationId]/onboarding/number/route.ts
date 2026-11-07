@@ -1,3 +1,9 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SANCTIONED EXCEPTION (service role): ONE write — companies.ai_settings (switching AI call
+// answering on), which the authenticated role can't update. Membership (owner/admin) and
+// company-in-org are checked on the caller's RLS client first; everything else here (the
+// number, voice_numbers, onboarding progress) runs under RLS.
+// ─────────────────────────────────────────────────────────────────────────────
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -5,6 +11,9 @@ import { handleRoute, parseJsonBody } from "@/server/api/route";
 import { AuthorizationError, requireOrganizationContext, ValidationError } from "@/server/organizations/context";
 import { recordOnboardingEvent } from "@/server/services/onboarding";
 import { getBusinessNumberStatus, setUpBusinessNumber } from "@/server/services/onboarding-number";
+import type { Json } from "@/server/db/database.types";
+import { assertCompanyInOrganization } from "@/server/services/shared";
+import { createSupabaseAdminClient } from "@/server/supabase/admin";
 import { createSupabaseServerClient } from "@/server/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -48,11 +57,22 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
 
     await recordOnboardingEvent(ctx, { companyId: body.companyId, step: "phone", event: "start", metadata: { setup: "one_number" } });
     try {
-      const result = await setUpBusinessNumber(ctx, {
-        companyId: body.companyId,
-        areaCode: body.areaCode ?? null,
-        attachNumber: body.attachNumber ?? null,
-      });
+      await assertCompanyInOrganization(ctx, body.companyId);
+      const admin = createSupabaseAdminClient();
+      const result = await setUpBusinessNumber(
+        ctx,
+        { companyId: body.companyId, areaCode: body.areaCode ?? null, attachNumber: body.attachNumber ?? null },
+        {
+          writeAiSettings: async (companyId: string, aiSettings: Json) => {
+            const { error } = await admin
+              .from("companies")
+              .update({ ai_settings: aiSettings })
+              .eq("organization_id", ctx.organizationId)
+              .eq("id", companyId);
+            if (error) throw error;
+          },
+        },
+      );
       await recordOnboardingEvent(ctx, {
         companyId: body.companyId,
         step: "phone",

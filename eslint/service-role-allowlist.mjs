@@ -60,6 +60,8 @@ export const SERVICE_ROLE_ALLOWLIST = [
   "src/app/api/organizations/[organizationId]/companies/[companyId]/your-ai/route.ts",
   // Onboarding "Your AI" step: the same your-ai writes, behind the same membership + company checks.
   "src/app/api/organizations/[organizationId]/onboarding/your-ai/route.ts",
+  // One-number Phone step: only the companies.ai_settings write (call answering on), after the checks.
+  "src/app/api/organizations/[organizationId]/onboarding/number/route.ts",
   "src/app/api/organizations/[organizationId]/companies/[companyId]/imports/[batchId]/route.ts",
   "src/app/api/organizations/[organizationId]/companies/[companyId]/imports/guard.ts",
   "src/app/api/organizations/[organizationId]/companies/[companyId]/imports/route.ts",
