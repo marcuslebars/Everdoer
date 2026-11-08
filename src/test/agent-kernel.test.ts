@@ -110,6 +110,24 @@ describe("runAgentLoop", () => {
     expect(cached.calls[0].max_tokens).toBe(300);
   });
 
+  it("'thinking off' is the setting each model accepts (Sonnet 5.5 rejects \"disabled\" with a 400)", async () => {
+    // Shipped sending "disabled" to the SMS agent's Sonnet 5.5 default: every customer text failed.
+    const shapes: Record<string, unknown> = {};
+    for (const model of ["claude-sonnet-5-5", "claude-sonnet-5", "claude-opus-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1"]) {
+      const c = scripted([msg([text("a")], "end_turn")]);
+      await runAgentLoop(base(c, { model, disableThinking: true }));
+      shapes[model] = c.calls[0].thinking ?? "none";
+    }
+    expect(shapes).toEqual({
+      "claude-sonnet-5-5": { type: "between_tools" },
+      "claude-sonnet-5": { type: "disabled" },
+      "claude-opus-5": { type: "disabled" },
+      "claude-haiku-5-5": { type: "disabled" },
+      "claude-opus-5-5": "none", // no off setting: adaptive
+      "claude-fable-5-1": "none",
+    });
+  });
+
   it("stopAfterTools ends the run after that round, keeping the latest text", async () => {
     let stop = false;
     const client = scripted([msg([text("Proposing"), toolUse("tu_1", "lookup", {})], "tool_use")]);

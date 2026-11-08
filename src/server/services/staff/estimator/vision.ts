@@ -7,6 +7,7 @@
  * Customer text and photos are DATA: fenced, angle brackets stripped, and the prompt says so.
  * Nothing the model writes reaches the customer — the owner approves the result first.
  */
+import { thinkingOffField } from "@/server/ai/thinking";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
@@ -163,7 +164,7 @@ export async function runVisionEstimate(
       {
         model,
         max_tokens: 1_500,
-        thinking: { type: "disabled" },
+        ...thinkingOffField(model),
         system: buildEstimatorSystemPrompt(facts),
         messages: [{ role: "user", content }],
       },

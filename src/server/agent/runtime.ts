@@ -18,6 +18,7 @@
  * Pure orchestration: no database access, no channel rules. Channels own their prompt, tools
  * and what happens to the final text.
  */
+import { thinkingOffField } from "@/server/ai/thinking";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { extractAiUsage, type AiUsageMeta } from "@/server/ai/claude";
@@ -74,7 +75,7 @@ export interface AgentLoopInput {
   /** Absolute epoch ms by which the whole run must finish. */
   deadline: number;
   maxTokens?: number;
-  /** Send `thinking: { type: "disabled" }` explicitly. */
+  /** Turn up-front thinking off — with the setting this model accepts (ai/thinking.ts). */
   disableThinking?: boolean;
   /** Wrap each tool result in a "data, not instructions" fence. */
   fenceToolResults?: boolean;
@@ -161,7 +162,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         {
           model: input.model,
           max_tokens: input.maxTokens ?? 1_024,
-          ...(input.disableThinking ? { thinking: { type: "disabled" } } : {}),
+          // The model's own "no up-front thinking" setting (Sonnet 5.5 rejects "disabled").
+          ...(input.disableThinking ? thinkingOffField(input.model) : {}),
           system: [{ type: "text", text: input.system, ...(input.cacheSystem ? { cache_control: { type: "ephemeral" } } : {}) }],
           tools: input.tools,
           messages,
