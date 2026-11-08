@@ -121,7 +121,32 @@ function seed(opts: { plan?: string; aiSettings?: Record<string, unknown>; owner
   h.db = fake; // the onboarding mock reads the current test's table
   return fake;
 }
-const ctx = () => fakeTenantContext(db, ORG, "user-1");
+/**
+ * The caller's RLS context, as production grants it: the authenticated role has NO update on
+ * companies (ai_settings is server-owned). Shipped once writing ai_settings through this client:
+ * every "Get my number" failed with "permission denied for table companies".
+ */
+const ctx = () => {
+  const base = fakeTenantContext(db, ORG, "user-1");
+  const client = base.supabase as unknown as { from: (t: string) => Record<string, unknown> };
+  const from = client.from.bind(client);
+  return {
+    ...base,
+    supabase: {
+      ...client,
+      from: (table: string) => {
+        const q = from(table);
+        if (table !== "companies") return q;
+        return { ...q, update: () => { throw new Error("permission denied for table companies"); } };
+      },
+    } as unknown as typeof base.supabase,
+  };
+};
+/** The route's service-role writer (after its checks). */
+const writeAiSettings = async (companyId: string, aiSettings: unknown) => {
+  const row = db.tables.companies.find((c) => c.id === companyId);
+  if (row) row.ai_settings = aiSettings;
+};
 const lookupOwner = (phone: string) => Promise.resolve((db.tables.voice_numbers.find((r) => r.phone_e164 === phone) as never) ?? null);
 const phoneData = () => (db.tables.onboarding_progress.find((r) => r.step === "phone")?.data ?? {}) as Record<string, unknown>;
 const catcherRow = () => db.tables.voice_numbers.find((r) => r.provider === "twilio" && r.mode === "missed_call_catcher" && r.active);
@@ -151,7 +176,7 @@ describe("setUpBusinessNumber — any plan", () => {
   it("buys ONE number in the owner's own area code, turns AI answering on, and records the Phone step", async () => {
     const twilio = mockTwilio();
     const calls: string[] = [];
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner, retell: mockRetell(calls) });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner, retell: mockRetell(calls) });
 
     expect(twilio.searchAvailableLocal).toHaveBeenCalledWith("CA", 705);
     expect(twilio.purchase).toHaveBeenCalledTimes(1);
@@ -168,8 +193,8 @@ describe("setUpBusinessNumber — any plan", () => {
 
   it("idempotent: a second run re-checks the same number instead of buying another", async () => {
     const twilio = mockTwilio();
-    const first = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner });
-    const second = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner });
+    const first = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner });
+    const second = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner });
     expect(second.number.phoneNumber).toBe(first.number.phoneNumber);
     expect(twilio.purchase).toHaveBeenCalledTimes(1);
     expect(second.answeringTurnedOn).toBe(false); // already on — now an explicit setting
@@ -177,19 +202,19 @@ describe("setUpBusinessNumber — any plan", () => {
 
   it("an owner who chose voicemail keeps it", async () => {
     db = seed({ aiSettings: { call_answering: { mode: "voicemail" }, sms_agent: { enabled: true } } });
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner });
     expect(result).toMatchObject({ answering: "voicemail", answeringTurnedOn: false });
     expect(db.tables.companies[0].ai_settings).toEqual({ call_answering: { mode: "voicemail" }, sms_agent: { enabled: true } });
   });
 
   it("the owner's area code is sold out → any local number; an area code the owner typed is not second-guessed", async () => {
     const twilio = mockTwilio({ emptyAreaCodes: [705] });
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner });
     expect(twilio.searchAvailableLocal).toHaveBeenLastCalledWith("CA", null);
     expect(result.number.purchased).toBe(true);
 
     db = seed();
-    await expect(setUpBusinessNumber(ctx(), { companyId: COMPANY, areaCode: 705 }, { client: mockTwilio({ emptyAreaCodes: [705] }), lookupOwner })).rejects.toBeInstanceOf(
+    await expect(setUpBusinessNumber(ctx(), { companyId: COMPANY, areaCode: 705 }, { writeAiSettings, client: mockTwilio({ emptyAreaCodes: [705] }), lookupOwner })).rejects.toBeInstanceOf(
       ValidationError,
     );
   });
@@ -197,7 +222,7 @@ describe("setUpBusinessNumber — any plan", () => {
   it("no owner phone → Twilio picks (no area code)", async () => {
     db = seed({ ownerPhone: null });
     const twilio = mockTwilio();
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner });
     expect(twilio.searchAvailableLocal).toHaveBeenCalledWith("CA", null);
   });
 });
@@ -211,7 +236,7 @@ describe("setUpBusinessNumber — Front Desk: the receptionist lives on the same
   it("builds the LLM + agent WITHOUT buying a Retell number and pins the agent on the Twilio number", async () => {
     db = seed({ plan: "front_desk" });
     const calls: string[] = [];
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
 
     expect(calls).toEqual(["createLlm", "createAgent"]);
     expect(result).toMatchObject({ answering: "receptionist", receptionist: { status: "ready", agentId: "agent_fd" } });
@@ -230,9 +255,9 @@ describe("setUpBusinessNumber — Front Desk: the receptionist lives on the same
   it("a re-run (or a re-sync) UPDATES the same receptionist and keeps it pinned", async () => {
     db = seed({ plan: "front_desk" });
     const twilio = mockTwilio();
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner, retell: mockRetell([]) });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner, retell: mockRetell([]) });
     const calls: string[] = [];
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: twilio, lookupOwner, retell: mockRetell(calls) });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: twilio, lookupOwner, retell: mockRetell(calls) });
     expect(calls).toEqual(["updateLlm:llm_fd", "updateAgent:agent_fd"]);
     expect(catcherRow()?.provider_agent_id).toBe("agent_fd");
 
@@ -244,7 +269,7 @@ describe("setUpBusinessNumber — Front Desk: the receptionist lives on the same
 
   it("Retell fails → the number still works (message AI answers) and the step is still done", async () => {
     db = seed({ plan: "front_desk" });
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell([], { fail: true }) });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: mockRetell([], { fail: true }) });
     expect(result).toMatchObject({ answering: "message", receptionist: { status: "failed" } });
     expect(catcherRow()).toBeTruthy();
     expect(db.tables.onboarding_progress.find((r) => r.step === "phone")?.status).toBe("complete");
@@ -256,7 +281,7 @@ describe("setUpBusinessNumber — Front Desk: the receptionist lives on the same
     db = seed({ plan: "front_desk", phoneStep: { llmId: "llm_old", agentId: "agent_old", phoneNumber: "+17055559999" } });
     db.tables.voice_numbers.push({ id: "vn-ret", organization_id: ORG, company_id: COMPANY, phone_e164: "+17055559999", provider: "retell", mode: "ai_receptionist", provider_agent_id: "agent_old", active: true });
     const calls: string[] = [];
-    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
+    const result = await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
     expect(calls).toEqual([]);
     expect(result).toMatchObject({ answering: "receptionist", receptionist: { status: "dedicated_line" } });
     // The dedicated line's ids are untouched (re-sync still updates THAT receptionist).
@@ -267,7 +292,7 @@ describe("setUpBusinessNumber — Front Desk: the receptionist lives on the same
 describe("getBusinessNumberStatus + copy", () => {
   it("reports the number, who answers, and whether the receptionist is included", async () => {
     expect(await getBusinessNumberStatus(ctx(), COMPANY)).toMatchObject({ number: null, answering: "voicemail", receptionistIncluded: false });
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner });
     const status = await getBusinessNumberStatus(ctx(), COMPANY);
     expect(status).toMatchObject({ configured: true, answering: "message", receptionistIncluded: false, dedicatedLine: false, dedicatedLineAllowed: false, textsOn: false, forwardingVerifiedAt: null });
     expect(status.number?.phoneNumberPretty).toMatch(/^\(705\)/);
@@ -284,7 +309,7 @@ describe("re-sync picks the receptionist that actually answers", () => {
   it("old dedicated-line ids left in the step data don't win over the pinned agent once that line is gone", async () => {
     // The old catcher route wrote the catcher number into phoneNumber next to old AI ids.
     db = seed({ plan: "front_desk", phoneStep: { llmId: "llm_old", agentId: "agent_old", phoneNumber: "+17055550100" } });
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell([]) });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: mockRetell([]) });
     expect(phoneData()).not.toHaveProperty("agentId"); // stale ids dropped when the pinned agent was built
     const calls: string[] = [];
     await resyncReceptionistForContext(ctx(), COMPANY, mockRetell(calls));
@@ -294,10 +319,10 @@ describe("re-sync picks the receptionist that actually answers", () => {
   it("an LLM made before a failed agent create is reused on retry (no orphan)", async () => {
     db = seed({ plan: "front_desk" });
     const failing: RetellClient = { ...mockRetell([]), createAgent: async () => { throw new Error("agent create failed"); } };
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: failing });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: failing });
     expect(phoneData()).toMatchObject({ catcherAgent: { llmId: "llm_fd" } });
     const calls: string[] = [];
-    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
+    await setUpBusinessNumber(ctx(), { companyId: COMPANY }, { writeAiSettings, client: mockTwilio(), lookupOwner, retell: mockRetell(calls) });
     expect(calls).toEqual(["updateLlm:llm_fd", "createAgent"]);
   });
 });
