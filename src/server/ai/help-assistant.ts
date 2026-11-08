@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { thinkingOffField } from "@/server/ai/thinking";
 import { z } from "zod";
 
 import { getHelpModel } from "@/server/ai/config";
@@ -82,7 +83,7 @@ export async function callHelpModel(
     max_tokens: 1_500,
     // Lookup over a handful of provided sections — no extended reasoning needed, and it keeps
     // the panel responsive and the cost per question low.
-    thinking: { type: "disabled" },
+    ...thinkingOffField(model),
     // The rules are identical on every question: cache them.
     system: [{ type: "text", text: helpSystemPrompt(productName), cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userMessage }],
