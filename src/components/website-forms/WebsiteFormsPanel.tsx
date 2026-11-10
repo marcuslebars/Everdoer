@@ -285,17 +285,20 @@ export function WebsiteFormStep({
   orgId,
   companyId,
   onDone,
+  onSkip,
   advanced,
 }: {
   orgId: string;
   companyId: string | null;
   onDone: () => void;
+  /** "Skip for now" (defaults to onDone for callers that don't tell the two apart). */
+  onSkip?: () => void;
   advanced?: ReactNode;
 }) {
   return (
     <div className="space-y-3">
       <WebsiteFormsPanel orgId={orgId} companyId={companyId} onTestLanded={onDone} advanced={advanced} />
-      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onDone}>Skip for now →</button>
+      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onSkip ?? onDone}>Skip for now →</button>
     </div>
   );
 }
