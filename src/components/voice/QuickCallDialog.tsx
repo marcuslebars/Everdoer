@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Phone, X, Loader2, AlertTriangle } from "lucide-react";
-import { receptionistCopy } from "@/lib/platform-brand";
+import { assistantCopy } from "@/lib/platform-brand";
+import { useAssistantName } from "@/lib/use-assistant-name";
 import { useBrand } from "@/lib/brand-context";
 import { useCallContact, useQuickCall } from "@/lib/api-hooks";
 import { Modal } from "@/components/ui/Modal";
@@ -26,6 +27,7 @@ export function QuickCallDialog({
   onClose: () => void;
 }) {
   const brand = useBrand();
+  const assistantName = useAssistantName();
   const quickCall = useQuickCall(orgId);
   const contactCall = useCallContact(orgId, contactId ?? "");
   const isContact = Boolean(contactId);
@@ -45,7 +47,7 @@ export function QuickCallDialog({
         await quickCall.mutateAsync({ phone: phone.trim(), name: name.trim() || undefined });
       }
       const who = name.trim() || (isContact ? initialName : "") || phone.trim() || initialPhone || "the lead";
-      toast.success(receptionistCopy(`Marina is calling ${who}…`, brand));
+      toast.success(`${assistantCopy("Marina is calling", brand, assistantName)} ${who}…`);
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't place the call.");
@@ -63,7 +65,7 @@ export function QuickCallDialog({
           <div className="w-8 h-8 rounded-lg bg-[hsl(var(--accent-violet))]/15 flex items-center justify-center shrink-0">
             <Phone className="w-4 h-4 text-[hsl(var(--accent-violet))]" />
           </div>
-          <h2 className="text-sm font-semibold text-foreground truncate">{receptionistCopy("Call with Marina", brand)}</h2>
+          <h2 className="text-sm font-semibold text-foreground truncate">{assistantCopy("Call with Marina", brand, assistantName)}</h2>
         </div>
         <button
           onClick={onClose}
@@ -104,7 +106,7 @@ export function QuickCallDialog({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={receptionistCopy("So Marina can greet them", brand)}
+                placeholder={assistantCopy("So Marina can greet them", brand, assistantName)}
                 className={inputCls}
               />
             </div>

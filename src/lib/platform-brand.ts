@@ -139,6 +139,18 @@ export function receptionistCopy(text: string, brand: Pick<PlatformBrand, "produ
     .replace(/\bthe the AI\b/g, "the AI");
 }
 
+/**
+ * receptionistCopy, but when the owner has named their assistant ("Sam") the copy uses that name:
+ * a button that says "Call with Marina" beside texts signed "Sam" reads as two different things.
+ * No name set → exactly receptionistCopy (Marina for house tenants, "the AI receptionist" for
+ * done-for-you). PURE.
+ */
+export function assistantCopy(text: string, brand: Pick<PlatformBrand, "productLine">, name: string | null | undefined): string {
+  const chosen = name?.trim();
+  if (!chosen) return receptionistCopy(text, brand);
+  return text.replace(/\bMarina\b/g, chosen);
+}
+
 export function isPlatformBrandKey(value: unknown): value is PlatformBrandKey {
   return typeof value === "string" && (PLATFORM_BRAND_KEYS as readonly string[]).includes(value);
 }
