@@ -87,7 +87,8 @@ const statusDotColor: Record<string, string> = {
 
 const timeSlots = Array.from({ length: 13 }, (_, i) => {
   const h = i + 7;
-  return { label: `${h.toString().padStart(2, "0")}:00`, hour: h };
+  // 12-hour, like every other time in the app ("1 PM", not "13:00").
+  return { label: `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? "AM" : "PM"}`, hour: h };
 });
 
 const views = ["Day", "Week", "Month"] as const;
@@ -679,7 +680,7 @@ export default function CalendarPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-foreground">Calendar</h1>
+          <h1 className="text-xl font-bold text-foreground">Schedule</h1>
           <div className="flex items-center bg-secondary/50 rounded-lg p-1 border border-border">
             {views.map((v) => (
               <button
