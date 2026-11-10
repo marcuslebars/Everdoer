@@ -16,9 +16,10 @@
  * Strictly fail-open: every value is a string, unknown is "", and any failure answers as
  * a new caller. A slow lookup must degrade the greeting, never delay the call.
  */
+import { DEFAULT_VOICE_NAME } from "@/server/agent/profile";
 import type { RetellAdminClient } from "./tenant";
 
-export const DEFAULT_AGENT_NAME = "Marina";
+export const DEFAULT_AGENT_NAME = DEFAULT_VOICE_NAME;
 /** Quotes older than this aren't "on file" for the greeting — the season has moved on. */
 const QUOTE_LOOKBACK_DAYS = 120;
 

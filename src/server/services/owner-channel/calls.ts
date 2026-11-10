@@ -73,7 +73,7 @@ function tidy(text: unknown): string {
 }
 
 export const briefInputSchema = z.object({
-  purpose: z.string().transform(tidy).pipe(z.string().min(1, "What should Marina tell them?").max(BRIEF_PURPOSE_MAX, `Keep the message under ${BRIEF_PURPOSE_MAX} characters - you confirm it word for word.`)),
+  purpose: z.string().transform(tidy).pipe(z.string().min(1, "What should your AI tell them?").max(BRIEF_PURPOSE_MAX, `Keep the message under ${BRIEF_PURPOSE_MAX} characters - you confirm it word for word.`)),
   ask_for: z
     .string()
     .optional()

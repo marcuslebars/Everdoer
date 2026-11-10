@@ -28,7 +28,7 @@ const ORG = "org-1";
 const CO = "22222222-2222-4222-8222-222222222222";
 const view = (over: Record<string, unknown> = {}) => ({
   companyId: CO,
-  persona: { name: null, tone: null, defaultName: "Marina" },
+  persona: { name: null, tone: null, defaultName: "Everly" },
   switches: [{ key: "texts", group: "customers", label: "Answer customer texts", description: "", customize: null, on: false, choice: "standard" }],
   ...over,
 });
@@ -48,7 +48,7 @@ describe("YourAiStep", () => {
     wrap(<YourAiStep orgId={ORG} companyId={CO} onDone={onDone} goTo={() => {}} />);
     expect(await screen.findByText(/everything it needs is in place/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ask me first \(recommended\)/i })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.change(screen.getByPlaceholderText("Marina"), { target: { value: "Sam" } });
+    fireEvent.change(screen.getByPlaceholderText("Everly"), { target: { value: "Sam" } });
     fireEvent.click(screen.getByRole("button", { name: "Professional" }));
     fireEvent.click(screen.getByRole("button", { name: /turn on my ai/i }));
     await waitFor(() => expect(api.setUp).toHaveBeenCalledWith(ORG, { companyId: CO, name: "Sam", tone: "professional", autonomy: "ask_first" }));
@@ -77,7 +77,7 @@ describe("YourAiStep", () => {
 
   it("an owner who already chose 'On its own' sees it selected", async () => {
     api.step = {
-      view: view({ persona: { name: "Sam", tone: "casual", defaultName: "Marina" }, switches: [{ key: "texts", group: "customers", label: "", description: "", customize: null, on: true, choice: "standard" }] }),
+      view: view({ persona: { name: "Sam", tone: "casual", defaultName: "Everly" }, switches: [{ key: "texts", group: "customers", label: "", description: "", customize: null, on: true, choice: "standard" }] }),
       readiness: { ownerCellConfirmed: true, hasNumber: true, forwardingVerified: true, textsOn: true, callsOn: true, textsOffByChoice: false, callsOffByChoice: false, dedicatedLine: false, pricedServices: 1, unpricedServices: 0 },
     };
     wrap(<YourAiStep orgId={ORG} companyId={CO} onDone={() => {}} goTo={() => {}} />);

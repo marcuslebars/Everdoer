@@ -1,6 +1,7 @@
 /**
- * The app's navigation, simple by default: five everyday places for a small-business owner, and
- * everything else one tap away under "More". Every screen is still reachable (and in the ⌘K
+ * The app's navigation, simple by default: the five everyday places for a small-business owner
+ * plus Your AI (the thing they are paying for should never be a menu away), and everything else
+ * one tap away under "More". Every screen is still reachable (and in the ⌘K
  * palette); only the sidebar's first glance is shorter.
  */
 import {
@@ -45,10 +46,10 @@ export const PRIMARY_NAV: NavItem[] = [
   { title: "Schedule", icon: Calendar, path: "/calendar" },
   { title: "Customers", icon: Users, path: "/crm" },
   { title: "Money", icon: Wallet, path: "/invoices", alsoActiveOn: ["/quotes", "/expenses"] },
+  { title: "Your AI", icon: Sparkles, path: "/ai" },
 ];
 
 export const MORE_NAV: NavItem[] = [
-  { title: "Your AI", icon: Sparkles, path: "/ai" },
   { title: "My Jobs", icon: ClipboardCheck, path: "/jobs" },
   { title: "Tasks", icon: CheckSquare, path: "/tasks" },
   { title: "Recurring", icon: Repeat, path: "/recurring" },

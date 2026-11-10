@@ -161,7 +161,7 @@ function asLines(value: unknown): { serviceId: string; label: string; amountCent
 function quoteNotes(args: PhoneQuoteArgs, callId: string | null): string {
   const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   return [
-    "Quoted by Marina on the phone.",
+    "Quoted on the phone by the AI receptionist.",
     s(args.boat_location) ? `Boat is: ${s(args.boat_location)}` : null,
     s(args.town) ? `Area: ${s(args.town)}` : null,
     s(args.phone) ? `Best number to text: ${s(args.phone)}` : null,

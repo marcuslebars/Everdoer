@@ -3,7 +3,7 @@
  * assistant is called and how it sounds, on every channel — the phone receptionist, sales and
  * owner-requested calls, and the customer texting agent.
  *
- * {} (the default) keeps today's behaviour exactly: the phone assistant is "Marina", the texting
+ * {} (the default): the phone assistant is "Everly" (DEFAULT_VOICE_NAME), the texting
  * agent has no name, and each prompt keeps its built-in tone line.
  */
 import type { Json } from "@/server/db/database.types";
@@ -20,7 +20,11 @@ export interface AgentPersona {
   tone: PersonaTone | null;
 }
 
-export const DEFAULT_VOICE_NAME = "Marina";
+/**
+ * What the assistant is called until the owner names it. The app's copy uses the same word
+ * (DEFAULT_ASSISTANT_NAME, src/lib/platform-brand.ts; a test keeps the two the same).
+ */
+export const DEFAULT_VOICE_NAME = "Everly";
 export const EMPTY_PERSONA: AgentPersona = { name: null, tone: null };
 
 /** A first name: letters (accents ok), apostrophe or hyphen, 2–20 characters. */
@@ -43,7 +47,7 @@ export function parsePersona(raw: unknown): AgentPersona {
   };
 }
 
-/** The phone assistant's name (always set; "Marina" by default). PURE. */
+/** The phone assistant's name (always set; DEFAULT_VOICE_NAME until the owner chooses one). PURE. */
 export function voiceName(persona: AgentPersona | null | undefined): string {
   return persona?.name ?? DEFAULT_VOICE_NAME;
 }

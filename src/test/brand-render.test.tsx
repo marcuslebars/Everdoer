@@ -42,7 +42,7 @@ function Probe() {
     <>
       <span data-testid="brand-name">{brand.name}</span>
       <span data-testid="product-line">{brand.productLine}</span>
-      <span data-testid="receptionist">{receptionistCopy("Call with Marina", brand)}</span>
+      <span data-testid="receptionist">{receptionistCopy("Call with Everly", brand)}</span>
     </>
   );
 }
@@ -118,7 +118,7 @@ describe("signed in: Everdoer for every org; the product line follows the active
     expect(document.body.textContent ?? "").not.toMatch(OLD_NAMES);
   });
 
-  it("a house org (A1 etc.): Everdoer sidebar, still Marina — even on the done-for-you host", () => {
+  it("a house org (A1 etc.): Everdoer sidebar, still Everly — even on the done-for-you host", () => {
     withHost("app.crankleads.com");
     auth.status = "authenticated";
     auth.session = {
@@ -128,7 +128,7 @@ describe("signed in: Everdoer for every org; the product line follows the active
     renderApp(<AppSidebar />);
     expect(screen.getByTestId("brand-name")).toHaveTextContent("Everdoer");
     expect(screen.getByTestId("product-line")).toHaveTextContent("standard");
-    expect(screen.getByTestId("receptionist")).toHaveTextContent("Call with Marina");
+    expect(screen.getByTestId("receptionist")).toHaveTextContent("Call with Everly");
     expect(document.documentElement.hasAttribute("data-brand")).toBe(false);
     expect(document.body.textContent ?? "").not.toMatch(OLD_NAMES);
   });

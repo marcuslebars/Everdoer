@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PhoneIncoming, PhoneOutgoing, Voicemail, ChevronDown, ChevronRight } from "lucide-react";
 import { useBrand } from "@/lib/brand-context";
-import { receptionistCopy } from "@/lib/platform-brand";
+import { useAssistantCopy } from "@/lib/assistant-name";
 
 import { useContactCalls } from "@/lib/api-hooks";
 import type { ContactCall } from "@/lib/api-client";
@@ -81,6 +81,7 @@ function CallCard({ call }: { call: ContactCall }) {
 
 export function CallRecordings({ orgId, contactId }: { orgId: string; contactId: string }) {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const { data, isLoading, isError, refetch } = useContactCalls(orgId, contactId);
 
   if (isLoading) return <SkeletonCard rows={3} />;
@@ -91,7 +92,7 @@ export function CallRecordings({ orgId, contactId }: { orgId: string; contactId:
     return (
       <EmptyState
         title="No calls yet"
-        description={receptionistCopy("Recordings and transcripts of Marina's calls with this lead will appear here.", brand)}
+        description={copy("Recordings and transcripts of Everly's calls with this lead will appear here.")}
       />
     );
   }

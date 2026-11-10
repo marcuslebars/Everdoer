@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useBrand } from "@/lib/brand-context";
-import { receptionistCopy } from "@/lib/platform-brand";
+import { useAssistantCopy } from "@/lib/assistant-name";
 import { Sparkles, ChevronDown, Building2, Users, Bell, Puzzle, Link2, Loader2, Phone, Send, Copy, Trash2, Mail, CreditCard, Landmark, Package, Receipt, ListChecks, Star, CalendarCheck, Globe, BookOpenCheck, AppWindow, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sections, sectionFromUrl, type SectionId } from "@/lib/settings-sections";
@@ -377,6 +377,7 @@ function MembersSettings() {
 
 function SectionButton({ section, active, onSelect }: { section: (typeof sections)[number]; active: boolean; onSelect: (id: SectionId) => void }) {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   return (
     <button
       onClick={() => onSelect(section.id)}
@@ -387,7 +388,7 @@ function SectionButton({ section, active, onSelect }: { section: (typeof section
       )}
     >
       <section.icon className="w-4 h-4 shrink-0" />
-      {receptionistCopy(section.label, brand)}
+      {copy(section.label)}
     </button>
   );
 }
@@ -396,6 +397,7 @@ export default function SettingsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const brand = useBrand();
+  const copy = useAssistantCopy();
   // The URL is the source of truth, so links like "Customize" (?section=front-desk) work even
   // when Settings is already open, and Back goes to the previous section.
   const active = sectionFromUrl(location.pathname, location.search);
@@ -481,7 +483,7 @@ export default function SettingsPage() {
               <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center mb-4">
                 {activeSection ? <activeSection.icon className="w-5 h-5 text-muted-foreground" /> : null}
               </div>
-              <h3 className="text-sm font-semibold text-foreground mb-1">{activeSection ? receptionistCopy(activeSection.label, brand) : null}</h3>
+              <h3 className="text-sm font-semibold text-foreground mb-1">{activeSection ? copy(activeSection.label) : null}</h3>
               <p className="text-sm text-muted-foreground max-w-sm">{activeSection?.description}</p>
               <span className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                 Coming soon

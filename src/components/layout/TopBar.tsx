@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useBrand } from "@/lib/brand-context";
-import { receptionistCopy } from "@/lib/platform-brand";
+import { useAssistantCopy } from "@/lib/assistant-name";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -150,7 +150,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   "contact.created": "New contact",
   "contact.stage_changed": "Stage changed",
   "contact.updated": "Contact updated",
-  "contact.call_placed": "Marina call",
+  "contact.call_placed": "Everly call",
   "contact.call_completed": "Call outcome",
   "booking.created": "New booking",
   "booking.completed": "Booking completed",
@@ -184,13 +184,14 @@ function relativeTime(iso: string): string {
 function QuickCallButton() {
   const { organizationId } = useOrg();
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const [open, setOpen] = useState(false);
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title={receptionistCopy("Call a lead with Marina", brand)}
+        title={copy("Call a lead with Everly")}
         className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-lg text-sm font-semibold bg-[hsl(var(--accent-violet))]/10 text-[hsl(var(--accent-violet))] hover:bg-[hsl(var(--accent-violet))]/20 transition-all duration-150 active:scale-[0.97]"
       >
         <Phone className="w-4 h-4" />
@@ -247,6 +248,7 @@ function QuickAddMenu() {
 
 function NotificationsMenu() {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { organizationId, companyId } = useOrg();
@@ -311,7 +313,7 @@ function NotificationsMenu() {
                       <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-foreground truncate">
-                          <span className="font-medium">{receptionistCopy(activityLabel(item.eventType), brand)}</span>
+                          <span className="font-medium">{copy(activityLabel(item.eventType))}</span>
                           {item.entity?.label ? ` · ${item.entity.label}` : ""}
                         </p>
                         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, X, Sparkles, Variable } from "lucide-react";
-import { isDoneForYouBrand, receptionistCopy } from "@/lib/platform-brand";
+import { DEFAULT_ASSISTANT_NAME, isDoneForYouBrand } from "@/lib/platform-brand";
 
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
@@ -8,10 +8,11 @@ import { useOrg } from "@/lib/org-context";
 import { useCompanies, useUpsertVoiceProfile, useVoiceProfiles } from "@/lib/api-hooks";
 import { UpgradeNudge, useCanUseFeature } from "@/components/billing/UpgradeNudge";
 import { useBrand } from "@/lib/brand-context";
+import { useAssistantCopy, useAssistantName } from "@/lib/assistant-name";
 
-/** A ready-to-use outbound prompt. The owner can edit it, or start from scratch. */
+/** A ready-to-use outbound prompt ("Everly" becomes the owner's name for their AI). The owner can edit it, or start from scratch. */
 const STARTER_PROMPT = `# Identity
-You are Marina, a warm and professional voice assistant calling on behalf of {{company_name}}.
+You are Everly, a warm and professional voice assistant calling on behalf of {{company_name}}.
 You are calling {{customer_name}}, a boater who recently reached out to us.
 
 # Goal
@@ -25,7 +26,7 @@ interested — book them in for service or a written quote. Keep it natural and 
 - Confirm the key facts back to them (boat length, service, timing) before wrapping up.
 
 # Flow
-1. Greet: "Hi, is this {{customer_name}}? It's Marina calling from {{company_name}}."
+1. Greet: "Hi, is this {{customer_name}}? It's Everly calling from {{company_name}}."
 2. Reason for the call: mention {{services}} and check that it's a good time to talk.
 3. Understand: ask about their boat (length, type) and what they need this season.
 4. Help: explain how {{company_name}} can help; give ballpark guidance only where you're sure.
@@ -67,6 +68,8 @@ function renderPreview(template: string, vars: Record<string, string>): string {
 
 export function VoiceSettings() {
   const brand = useBrand();
+  const copy = useAssistantCopy();
+  const assistantName = useAssistantName();
   const { organizationId } = useOrg();
   const { data: companies, isLoading: companiesLoading } = useCompanies(organizationId);
   const { data: profiles } = useVoiceProfiles(organizationId);
@@ -160,12 +163,12 @@ export function VoiceSettings() {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">{receptionistCopy("Voice (Marina)", brand)}</h2>
-          <p className="text-sm text-muted-foreground mt-1">{isDoneForYouBrand(brand) ? "AI voice reception isn't in your current plan." : "Marina's AI voice reception isn't in your current plan."}</p>
+          <h2 className="text-lg font-semibold text-foreground">{copy("Voice (Everly)")}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{isDoneForYouBrand(brand) ? "AI voice reception isn't in your current plan." : "AI voice reception isn't in your current plan."}</p>
         </div>
         <UpgradeNudge
-          title={receptionistCopy("Marina voice reception isn't in your plan", brand)}
-          description={receptionistCopy("Upgrade to the Front Desk plan to have Marina answer and place calls for your team.", brand)}
+          title={copy("Everly voice reception isn't in your plan")}
+          description={copy("Upgrade to the Front Desk plan to have Everly answer and place calls for your team.")}
         />
       </div>
     );
@@ -174,9 +177,9 @@ export function VoiceSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{receptionistCopy("Voice (Marina)", brand)}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{copy("Voice (Everly)")}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          {receptionistCopy("Each company can call leads with its own agent, caller ID, and prompt. Marina uses this brand's setup whenever it calls a lead that came in from this company.", brand)}
+          {copy("Each company can call leads with its own agent, caller ID, and prompt. Everly uses this brand's setup whenever it calls a lead that came in from this company.")}
         </p>
       </div>
 
@@ -307,7 +310,7 @@ export function VoiceSettings() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSystemPrompt(STARTER_PROMPT)}
+                  onClick={() => setSystemPrompt(STARTER_PROMPT.replace(/\bEverly\b/g, assistantName ?? DEFAULT_ASSISTANT_NAME))}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                 >
                   <Sparkles className="w-3.5 h-3.5" /> Insert starter prompt
@@ -337,7 +340,7 @@ export function VoiceSettings() {
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={16}
-              placeholder="Write Marina's instructions here. Click a variable above to insert it, or type {{variable}} directly…"
+              placeholder="Write your AI's instructions here. Click a variable above to insert it, or type {{variable}} directly…"
               className={cn(inputClass, "font-mono leading-relaxed resize-y min-h-[240px]")}
             />
             <p className="text-xs text-muted-foreground mt-1">

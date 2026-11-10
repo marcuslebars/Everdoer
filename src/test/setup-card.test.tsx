@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ role: "owner", readiness: null as unknown, setup: null as unknown, progress: null as unknown }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  getYourAiStep: async () => ({ view: { companyId: "co-1", persona: { name: null, tone: null, defaultName: "Marina" }, switches: [] }, readiness: state.readiness }),
+  getYourAiStep: async () => ({ view: { companyId: "co-1", persona: { name: null, tone: null, defaultName: "Everly" }, switches: [] }, readiness: state.readiness }),
 }));
 vi.mock("@/lib/api-hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-hooks")>()),

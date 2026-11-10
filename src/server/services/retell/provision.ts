@@ -307,7 +307,7 @@ export async function provisionRetellLlmAndAgent(
   const agentBody: Record<string, unknown> = {
     response_engine: { type: "retell-llm", llm_id: llmId, version: 0 },
     voice_id: input.voiceId ?? DEFAULT_VOICE_ID,
-    agent_name: `${input.companyName} — Marina`,
+    agent_name: `${input.companyName} — AI receptionist`,
     ...(input.webhookUrl ? { webhook_url: input.webhookUrl } : {}),
     ...(input.postCallAnalysisData ? { post_call_analysis_data: input.postCallAnalysisData } : {}),
   };
@@ -337,7 +337,7 @@ export async function provisionRetellAgent(client: RetellClient, input: Provisio
       : input.webhookUrl
         ? { inbound_webhook_url: input.webhookUrl }
         : {}),
-    nickname: `${input.companyName} — Marina`,
+    nickname: `${input.companyName} — AI receptionist`,
   };
 
   const reuse = existing.phoneNumber ?? input.attachNumber ?? null;

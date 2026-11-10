@@ -32,7 +32,7 @@ import YourAiPage from "@/screens/YourAiPage";
 function view(): YourAiView {
   return {
     companyId: "co-1",
-    persona: { name: null, tone: null, defaultName: "Marina" },
+    persona: { name: null, tone: null, defaultName: "Everly" },
     switches: [
       {
         key: "texts",
@@ -100,7 +100,7 @@ describe("YourAiPage", () => {
   it("name and tone: placeholder is the default name; saving sends the persona", () => {
     renderPage();
     const input = screen.getByLabelText("Name");
-    expect(input).toHaveAttribute("placeholder", "Marina");
+    expect(input).toHaveAttribute("placeholder", "Everly");
     fireEvent.change(input, { target: { value: "Sam" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(mutate).toHaveBeenCalledWith({ persona: { name: "Sam", tone: null } }, expect.anything());

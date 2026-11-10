@@ -235,7 +235,7 @@ describe("getYourAiView / setSwitch / setYourAiPersona", () => {
   it("the view: persona, every switch with its definition and state", async () => {
     const db = seed({ agent_persona: { name: "Sam", tone: "professional" } }, { platformBrand: "crankleads", aiNumber: true });
     const view = await getYourAiView(db.client, scope);
-    expect(view?.persona).toEqual({ name: "Sam", tone: "professional", defaultName: "Marina" });
+    expect(view?.persona).toEqual({ name: "Sam", tone: "professional", defaultName: "Everly" });
     expect(view?.switches).toHaveLength(SWITCH_KEYS.length);
     const calls = view?.switches.find((s) => s.key === "calls");
     expect(calls).toMatchObject({ label: "Answer your phone", on: true });

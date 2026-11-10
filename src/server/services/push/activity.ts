@@ -36,7 +36,7 @@ export function pushMessageForEvent(event: ActivityEvent, contactName: string | 
     case "call.urgent":
       return {
         title: name ? `Urgent call — ${name}` : "Urgent call",
-        body: metadataString(event, "summary") ?? "Marina flagged this call as urgent.",
+        body: metadataString(event, "summary") ?? "Your AI flagged this call as urgent.",
         category: "leads",
         urgent: true,
         data: { ...base, screen: "lead", recordId: event.entity_id },
@@ -75,7 +75,7 @@ export function pushMessageForEvent(event: ActivityEvent, contactName: string | 
     case "contact.call_completed":
       return {
         title: name ? `Call finished — ${name}` : "Call finished",
-        body: metadataString(event, "summary") ?? metadataString(event, "outcome") ?? "Marina took the call. Tap to review.",
+        body: metadataString(event, "summary") ?? metadataString(event, "outcome") ?? "Your AI took the call. Tap to review.",
         category: "leads",
         data: { ...base, screen: "lead", recordId: event.entity_id },
       };
