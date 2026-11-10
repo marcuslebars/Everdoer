@@ -50,6 +50,7 @@ import { IndustryPackPicker } from "@/components/onboarding/IndustryPackPicker";
 import { useIndustryPacks, usePackRecipes } from "@/lib/industry-pack-hooks";
 import { useBrand } from "@/lib/brand-context";
 import { ProductName } from "@/components/brand/Logo";
+import { isStepDone, isStepSkipped, phoneModeOf, resolveWizardStep, setupSummary, wizardGroups } from "@/lib/onboarding-steps";
 
 const STEPS = [
   { key: "business", title: "Business", icon: Building2 },
@@ -77,6 +78,8 @@ interface StepProps {
   profile: OnboardingCompanyProfile | null;
   stepData: Record<string, unknown>;
   onDone: () => void;
+  /** "Skip for now": move on, and remember it wasn't done (the rail and Home don't tick it). */
+  onSkip: () => void;
 }
 
 // ── Step 1: Business ──────────────────────────────────────────────────────────
@@ -327,7 +330,7 @@ function PhoneStep({ orgId, companyId, stepData, onDone }: StepProps) {
 }
 
 // ── Step 4: Payments ──────────────────────────────────────────────────────────
-function PaymentsStep({ orgId, companyId, onDone }: StepProps) {
+function PaymentsStep({ orgId, companyId, onDone, onSkip }: StepProps) {
   const { data: accounts, refetch } = useConnectAccounts(orgId, { enabled: Boolean(orgId) });
   const start = useCreateConnectOnboarding(orgId);
   const refresh = useRefreshConnectAccount(orgId);
@@ -364,7 +367,7 @@ function PaymentsStep({ orgId, companyId, onDone }: StepProps) {
           Refresh status
         </button>
       </div>
-      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onDone}>Skip for now →</button>
+      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onSkip}>Skip for now →</button>
     </div>
   );
 }
@@ -430,7 +433,7 @@ function WebsiteStep({ orgId, companyId, onDone }: StepProps) {
 }
 
 // ── Step 6: Test call ─────────────────────────────────────────────────────────
-function TestCallStep({ orgId, onDone, phoneNumber }: StepProps & { phoneNumber?: string | null }) {
+function TestCallStep({ orgId, onDone, onSkip, phoneNumber }: StepProps & { phoneNumber?: string | null }) {
   const brand = useBrand();
   const { data: activity } = useDashboardActivity(orgId, { limit: 15 }, { refetchInterval: 6000 });
   const number = phoneNumber ?? null;
@@ -460,13 +463,13 @@ function TestCallStep({ orgId, onDone, phoneNumber }: StepProps & { phoneNumber?
       ) : number ? (
         <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Waiting for your call…</p>
       ) : null}
-      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onDone}>Mark done / skip →</button>
+      <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={onSkip}>Skip for now →</button>
     </div>
   );
 }
 
 // ── Step 7: Team ────────────────────────────────────────────────────────────
-function TeamStep({ orgId, onDone }: StepProps) {
+function TeamStep({ orgId, onDone, onSkip }: StepProps) {
   const { data: invitations } = useInvitations(orgId);
   const invite = useCreateInvitation(orgId);
   const [email, setEmail] = useState("");
@@ -501,7 +504,10 @@ function TeamStep({ orgId, onDone }: StepProps) {
           {(invitations ?? []).map((i) => <li key={i.id}>{i.email} · {i.role} · pending</li>)}
         </ul>
       )}
-      <button className="text-xs font-medium text-primary hover:opacity-80" onClick={onDone}>Continue →</button>
+      {/* Nobody invited = "later", not done. */}
+      <button className="text-xs font-medium text-primary hover:opacity-80" onClick={(invitations ?? []).length > 0 ? onDone : onSkip}>
+        {(invitations ?? []).length > 0 ? "Continue →" : "Skip for now →"}
+      </button>
     </div>
   );
 }
@@ -519,6 +525,9 @@ function RecipesStep({ orgId, companyId, onDone }: StepProps) {
   }, [recipes, pack]);
 
   const toggle = (slug: string) => setSelected((s) => { const n = new Set(s); if (n.has(slug)) n.delete(slug); else n.add(slug); return n; });
+  // Their trade's pack usually turned everything on already: say so, and keep the long list folded away.
+  const allInstalled = Boolean(recipes && recipes.length > 0 && recipes.every((r) => r.installed));
+  const [showAll, setShowAll] = useState(false);
 
   const go = async () => {
     if (!companyId) return;
@@ -537,9 +546,23 @@ function RecipesStep({ orgId, companyId, onDone }: StepProps) {
 
   return (
     <div className="space-y-4 max-w-xl">
-      <p className="text-sm text-muted-foreground">Turn on proven automations. These run in the background — reply to missed calls, follow up on quotes, remind about bookings.</p>
-      {pack && <p className="text-xs text-primary">Messages are written for your {pack.name} pack.</p>}
-      <div className="space-y-2">
+      {allInstalled ? (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4" data-testid="recipes-all-on">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-400" /> Your automations are already on</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {recipes?.length} run in the background{pack ? `, written for your ${pack.name} pack` : ""} — texting back missed calls, following up on quotes, reminding customers about bookings. Nothing to do here; you can change any of them later under Automations.
+          </p>
+          <button type="button" className="mt-2 text-xs font-medium text-primary hover:opacity-80" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Hide the list" : "See what's on"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">Turn on proven automations. These run in the background — reply to missed calls, follow up on quotes, remind about bookings.</p>
+          {pack && <p className="text-xs text-primary">Messages are written for your {pack.name} pack.</p>}
+        </>
+      )}
+      <div className={cn("space-y-2", allInstalled && !showAll && "hidden")}>
         {(recipes ?? []).map((r) => (
           <label key={r.slug} className="flex items-start gap-3 bg-card border border-border rounded-lg p-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={r.installed || selected.has(r.slug)} disabled={r.installed} onChange={() => toggle(r.slug)} />
@@ -551,7 +574,7 @@ function RecipesStep({ orgId, companyId, onDone }: StepProps) {
         ))}
       </div>
       <button className={primaryBtn} disabled={!companyId || install.isPending || packPending} onClick={() => void go()}>
-        {install.isPending || packPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Finish setup
+        {install.isPending || packPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} {allInstalled ? "Done" : "Turn these on"}
       </button>
     </div>
   );
@@ -568,7 +591,7 @@ function OrgGate({ onCreated }: { onCreated: (id: string) => void }) {
       const org = await createOrganization({ name: name.trim() });
       onCreated(org.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't create your organization.");
+      toast.error(e instanceof Error ? e.message : "Couldn't create your account.");
     } finally {
       setPending(false);
     }
@@ -578,9 +601,9 @@ function OrgGate({ onCreated }: { onCreated: (id: string) => void }) {
       <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-4">
         <div>
           <h1 className="text-xl font-bold text-foreground">Welcome to <ProductName /></h1>
-          <p className="text-sm text-muted-foreground mt-1">First, name your organization — the account your team shares.</p>
+          <p className="text-sm text-muted-foreground mt-1">First, what's your business called? You can change it later.</p>
         </div>
-        <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., A1 Group" autoFocus onKeyDown={(e) => { if (e.key === "Enter") void create(); }} />
+        <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Northshore Roofing" autoFocus onKeyDown={(e) => { if (e.key === "Enter") void create(); }} />
         <button className={cn(primaryBtn, "w-full")} disabled={!name.trim() || pending} onClick={() => void create()}>
           {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />} Continue
         </button>
@@ -609,39 +632,48 @@ function SelfServeWizard() {
   const [active, setActive] = useState<StepKey | null>(null);
 
   const company = progress?.company ?? null;
-  const statusByStep = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const s of progress?.steps ?? []) m.set(s.step, s.status);
-    return m;
-  }, [progress]);
   const dataByStep = useMemo(() => {
     const m = new Map<string, Record<string, unknown>>();
     for (const s of progress?.steps ?? []) m.set(s.step, (s.data ?? {}) as Record<string, unknown>);
     return m;
   }, [progress]);
 
-  // Resume at the server-computed next step (first incomplete), else first incomplete locally.
+  // The owner sees two groups: the essentials the AI can't work without, and extras for later.
+  const steps = useMemo(() => progress?.steps ?? [], [progress]);
+  const phoneMode = phoneModeOf(steps);
+  const groups = useMemo(() => wizardGroups(phoneMode), [phoneMode]);
+  const summary = useMemo(() => setupSummary(steps), [steps]);
+  const stateOf = (key: string) => steps.find((s) => s.step === key);
+
+  // Resume where they left off: a linked step, else the first essential still to do, else the
+  // server's next step, else the first extra never done. ("Test call" lives in Phone on one number.)
   useEffect(() => {
     if (active !== null || !progress) return;
     if (requestedOrg && requestedOrg !== organizationId && (session?.organizations ?? []).some((o) => o.id === requestedOrg)) return;
-    const linked = STEPS.find((s) => s.key === requestedStep);
+    const linked = resolveWizardStep(requestedStep, phoneMode);
     if (linked) {
-      setActive(linked.key);
+      setActive(linked);
       return;
     }
-    const hint = STEPS.find((s) => s.key === progress.nextStep);
-    const firstIncomplete = STEPS.find((s) => statusByStep.get(s.key) !== "complete");
-    setActive((hint ?? firstIncomplete ?? STEPS[STEPS.length - 1]).key);
-  }, [progress, active, statusByStep, requestedStep, requestedOrg, organizationId, session]);
+    const hint = resolveWizardStep(progress.nextStep, phoneMode);
+    setActive(summary.nextEssential ?? hint ?? summary.extrasLeft[0] ?? groups.essentials[0]);
+  }, [progress, active, requestedStep, requestedOrg, organizationId, session, phoneMode, summary, groups]);
 
-  const allComplete = STEPS.every((s) => statusByStep.get(s.key) === "complete");
-
-  const markComplete = (step: StepKey) => {
-    const next = STEPS[STEPS.findIndex((s) => s.key === step) + 1];
+  const finish = (step: StepKey, skipped: boolean) => {
     if (company) {
-      upsertStep.mutate({ companyId: company.id, step, completed: true });
+      // Only steps whose data the client owns carry the flag (the Phone step's is server-owned).
+      const flag = step === "phone" ? {} : skipped ? { data: { ...(dataByStep.get(step) ?? {}), skipped: true } } : isStepSkipped(stateOf(step)) ? { data: { ...(dataByStep.get(step) ?? {}), skipped: false } } : {};
+      upsertStep.mutate({ companyId: company.id, step, completed: true, ...flag });
     }
-    if (next) setActive(next.key);
+    // On to the next step of the same group; the end of a group is the end of the sitting.
+    const group: StepKey[] = (groups.essentials as StepKey[]).includes(step) ? groups.essentials : groups.extras;
+    const next = group[group.indexOf(step) + 1];
+    if (next) {
+      setActive(next);
+      return;
+    }
+    if (group === groups.essentials) toast.success("That's the essentials. Payments, website leads and your team can wait until you want them.");
+    navigate("/");
   };
 
   if (!organizationId) {
@@ -658,7 +690,8 @@ function SelfServeWizard() {
     companyName: company?.name ?? null,
     profile: company?.profile ?? null,
     stepData: dataByStep.get(active) ?? {},
-    onDone: () => markComplete(active),
+    onDone: () => finish(active, false),
+    onSkip: () => finish(active, true),
   };
   const needsCompany = active !== "business" && !company;
 
@@ -670,42 +703,55 @@ function SelfServeWizard() {
             <h1 className="text-2xl font-bold tracking-tight text-foreground">Set up {brand.name}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isDoneForYouBrand(brand)
-                ? "Your phone and website leads working in about 20 minutes."
-                : "Your number, your AI and website leads — working in about 20 minutes."}
+                ? "Four things and your phone is covered. Everything else can wait."
+                : "Four things and your AI is working. Everything else can wait."}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <HelpButton />
-            {allComplete && (
-              <button className={primaryBtn} onClick={() => navigate("/")}>Go to dashboard <ArrowRight className="w-4 h-4" /></button>
+            {summary.essentialsDone && (
+              <button className={primaryBtn} onClick={() => navigate("/")}>Go to Home <ArrowRight className="w-4 h-4" /></button>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-6">
-          {/* Step rail */}
-          <nav className="space-y-1">
-            {STEPS.map((s, i) => {
-              const status = statusByStep.get(s.key);
-              const done = status === "complete";
-              const isActive = s.key === active;
-              return (
-                <button
-                  key={s.key}
-                  onClick={() => setActive(s.key)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors",
-                    isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50",
-                  )}
-                >
-                  <span className={cn("w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-semibold",
-                    done ? "bg-emerald-500/20 text-emerald-400" : isActive ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground")}>
-                    {done ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                  </span>
-                  <span className="flex items-center gap-1.5"><s.icon className="w-3.5 h-3.5" /> {s.title}</span>
-                </button>
-              );
-            })}
+          {/* Step rail: the essentials, numbered; then the extras, never counted as unfinished. */}
+          <nav className="space-y-1" aria-label="Setup steps">
+            {([
+              { title: "Essentials", keys: groups.essentials as StepKey[], numbered: true },
+              { title: "When you're ready", keys: groups.extras as StepKey[], numbered: false },
+            ]).map((group) => (
+              <div key={group.title} className="space-y-1">
+                <p className="px-3 pt-3 first:pt-0 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{group.title}</p>
+                {group.keys.map((key, i) => {
+                  const s = STEPS.find((step) => step.key === key)!;
+                  const done = isStepDone(stateOf(key));
+                  const skipped = isStepSkipped(stateOf(key));
+                  const isActive = key === active;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setActive(key)}
+                      aria-current={isActive ? "step" : undefined}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors",
+                        isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50",
+                      )}
+                    >
+                      <span className={cn("w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-semibold",
+                        done ? "bg-emerald-500/20 text-emerald-400" : isActive ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground")}>
+                        {done ? <Check className="w-3.5 h-3.5" aria-label="Done" /> : group.numbered ? i + 1 : <s.icon className="w-3 h-3" />}
+                      </span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {group.numbered && <s.icon className="w-3.5 h-3.5" />} {s.title}
+                        {skipped && <span className="text-[10px] text-muted-foreground/70">· skipped</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           {/* Active step */}
@@ -726,13 +772,13 @@ function SelfServeWizard() {
             ) : active === "payments" ? (
               <PaymentsStep {...stepProps} />
             ) : active === "website" ? (
-              <WebsiteFormStep orgId={stepProps.orgId} companyId={stepProps.companyId} onDone={stepProps.onDone} advanced={<WebsiteStep {...stepProps} />} />
+              <WebsiteFormStep orgId={stepProps.orgId} companyId={stepProps.companyId} onDone={stepProps.onDone} onSkip={stepProps.onSkip} advanced={<WebsiteStep {...stepProps} />} />
             ) : active === "test_call" && dataByStep.get("phone")?.mode === "missed_call_catcher" ? (
               // Missed-call catcher: the test call IS the forwarding test (it completes this
               // step server-side when it passes — docs/missed-call-catcher.md).
               <div className="space-y-4 max-w-2xl">
                 <ForwardingTestPanel orgId={stepProps.orgId} companyId={stepProps.companyId} onVerified={stepProps.onDone} />
-                <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={stepProps.onDone}>Mark done / skip →</button>
+                <button className="text-xs font-medium text-muted-foreground hover:text-foreground" onClick={stepProps.onSkip}>Skip for now →</button>
               </div>
             ) : active === "test_call" ? (
               <TestCallStep {...stepProps} phoneNumber={(dataByStep.get("phone")?.phoneNumber as string) ?? null} />

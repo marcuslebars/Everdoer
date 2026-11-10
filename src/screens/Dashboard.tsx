@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { receptionistCopy } from "@/lib/platform-brand";
 import {
   Calendar,
@@ -37,15 +38,13 @@ import {
 } from "@/lib/api-hooks";
 import { SkeletonStatCard, SkeletonCard, ErrorBanner, EmptyState, LoadingCards } from "@/components/ui/StateViews";
 import { relativeTime, formatCentsCompact, formatSeconds, formatPercent } from "@/lib/format";
-import type { DashboardActivityItem } from "@/lib/api-client";
+import { getYourAiStep, type DashboardActivityItem } from "@/lib/api-client";
+import { hideExtras, readExtrasHidden, setupCardView } from "@/lib/setup-card";
 import { useBrand } from "@/lib/brand-context";
 import { SetupProgressCard } from "@/components/onboarding/SetupProgress";
 import { ApprovalsCard } from "@/components/approvals/ApprovalsCard";
 import { WeeklyFrontDeskCard } from "@/components/reports/WeeklyFrontDeskCard";
 import { YourNumbersCard } from "@/components/front-desk/YourNumbersCard";
-import { ONBOARDING_STEP_COUNT } from "@/lib/onboarding-steps";
-
-const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_COUNT;
 
 /**
  * Done-for-you orgs: the done-for-you "We're setting you up" card (what we've done + the one
@@ -56,34 +55,115 @@ function SetupChecklistCard({ orgId }: { orgId: string }) {
   return <SetupProgressCard orgId={orgId} />;
 }
 
-/** Shown until onboarding is complete — nudges the owner back into the wizard (Task 13). */
+/**
+ * Self-serve setup on Home (src/lib/setup-card.ts): the essentials still to do, then whatever
+ * stops the AI working, then a quiet list of extras. Never a count of wizard steps.
+ */
 export function OnboardingChecklistCard({ orgId }: { orgId: string }) {
   const brand = useBrand();
   const navigate = useNavigate();
+  const { session } = useAuth();
   const { data } = useOnboardingProgress(orgId);
   const { data: setup, isLoading: setupLoading } = useSetupChecklist(orgId);
+  const companyId = data?.company?.id ?? null;
+  // Same query as AiReadinessCard, so the two share one request.
+  const { data: ai } = useQuery({
+    queryKey: ["your-ai-step", orgId, companyId],
+    queryFn: () => getYourAiStep(orgId, companyId as string),
+    enabled: Boolean(orgId && companyId),
+    staleTime: 60_000,
+  });
+  const [extrasHidden, setExtrasHidden] = useState(() => readExtrasHidden(orgId));
   // Done-for-you orgs get the required-steps card above instead.
   if (setupLoading || setup) return null;
   // No company yet (they named the org but never saved the Business step): still nudge them back.
   if (!data) return null;
-  const done = data.company ? data.steps.filter((s) => s.status === "complete").length : 0;
-  if (done >= ONBOARDING_TOTAL_STEPS) return null;
+  const role = session?.organizations?.find((o) => o.id === orgId)?.membershipRole ?? "member";
+  const view = setupCardView({
+    steps: data.company ? data.steps : null,
+    readiness: ai?.readiness ?? null,
+    canFix: role === "owner" || role === "admin",
+    extrasHidden,
+  });
+  if (!view) return null;
+
+  if (view.kind === "essentials") {
+    return (
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-4 opacity-0 animate-fade-in" data-testid="setup-card">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">Finish setting up {brand.name}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {view.done} of {view.total} essentials done. Next: {view.nextAction}.
+          </p>
+          <div className="mt-2 h-1.5 w-48 max-w-full rounded-full bg-secondary overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(view.done / view.total) * 100}%` }} />
+          </div>
+        </div>
+        <button
+          onClick={() => navigate(`/onboarding?step=${view.nextStep}`)}
+          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-[0.97]"
+        >
+          Continue setup
+        </button>
+      </div>
+    );
+  }
+
+  if (view.kind === "gaps") {
+    return (
+      <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 opacity-0 animate-fade-in" aria-label="Your AI isn't fully working yet" data-testid="setup-card">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <AlertTriangle className="w-4 h-4 text-amber-400" /> Your AI isn't fully working yet
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {view.gaps.map((g) => (
+                <li key={g.key}>
+                  <Link to={g.href} className="text-sm text-muted-foreground hover:text-foreground">
+                    {g.text}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button
+            onClick={() => navigate(view.gaps[0].href)}
+            className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-[0.97]"
+          >
+            Fix this <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-4 opacity-0 animate-fade-in">
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground">Finish setting up {brand.name}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{done} of {ONBOARDING_TOTAL_STEPS} steps done — get your number, your AI and website leads live.</p>
-        <div className="mt-2 h-1.5 w-48 max-w-full rounded-full bg-secondary overflow-hidden">
-          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(done / ONBOARDING_TOTAL_STEPS) * 100}%` }} />
-        </div>
+    <div className="rounded-xl border border-border bg-card p-4 opacity-0 animate-fade-in" data-testid="setup-card">
+      <div className="flex items-start justify-between gap-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Check className="w-4 h-4 text-success" /> You're set up. When you're ready:
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            hideExtras(orgId);
+            setExtrasHidden(true);
+          }}
+          className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          Hide
+        </button>
       </div>
-      <button
-        onClick={() => navigate("/onboarding?step=resume")}
-        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-[0.97]"
-      >
-        Continue setup
-      </button>
+      <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+        {view.extras.map((extra) => (
+          <li key={extra.step}>
+            <Link to={`/onboarding?step=${extra.step}`} className="flex items-center gap-0.5 text-sm text-primary hover:underline">
+              {extra.label} <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
