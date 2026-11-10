@@ -19,9 +19,54 @@ export interface ApprovalItem {
   resultMessage: string | null;
 }
 
+/** A customer still waiting for an answer after the AI's request to the owner expired or failed. */
+export interface WaitingCustomer {
+  approvalId: string;
+  companyId: string;
+  companyName: string | null;
+  contactId: string;
+  contactName: string;
+  kind: string;
+  summary: string;
+  /** The reply the AI had ready (send_reply), so the owner can send it as is. */
+  draftReply: string | null;
+  waitingSince: string;
+}
+
 export interface ApprovalList {
   pending: ApprovalItem[];
   recent: ApprovalItem[];
+  /** Absent from an older API build: treat as none. */
+  waiting?: WaitingCustomer[];
+}
+
+/** Where "Reply" on a waiting customer goes: their conversation, with the AI's draft ready to send. */
+export function waitingReplyTarget(item: Pick<WaitingCustomer, "contactId" | "draftReply">): { to: string; state: { draft: string } | undefined } {
+  return { to: `/inbox?contact=${encodeURIComponent(item.contactId)}`, state: item.draftReply ? { draft: item.draftReply } : undefined };
+}
+
+const HANDLED_KEY = "everdoer_waiting_handled";
+
+/** Approvals the owner marked "Handled" on this device (they phoned, say). Never throws. */
+export function readHandledWaiting(): string[] {
+  try {
+    const raw = window.localStorage.getItem(HANDLED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markWaitingHandled(approvalId: string): string[] {
+  // Capped: these ids only matter for the week an approval stays listed.
+  const next = [...new Set([...readHandledWaiting(), approvalId])].slice(-100);
+  try {
+    window.localStorage.setItem(HANDLED_KEY, JSON.stringify(next));
+  } catch {
+    // Private window / blocked storage: it stays hidden for this visit only.
+  }
+  return next;
 }
 
 export interface DecideResponse {
