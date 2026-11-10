@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Phone, Loader2 } from "lucide-react";
-import { receptionistCopy } from "@/lib/platform-brand";
+import { assistantCopy } from "@/lib/platform-brand";
+import { useAssistantName } from "@/lib/use-assistant-name";
 import { useBrand } from "@/lib/brand-context";
 
 import { useCallContact } from "@/lib/api-hooks";
@@ -20,6 +21,7 @@ export interface VoicePanelContact {
  */
 export function VoicePanel({ orgId, contact }: { orgId: string; contact: VoicePanelContact }) {
   const brand = useBrand();
+  const assistantName = useAssistantName();
   const call = useCallContact(orgId, contact.id);
   const [armed, setArmed] = useState(false);
   const hasPhone = Boolean(contact.phone?.trim());
@@ -29,7 +31,7 @@ export function VoicePanel({ orgId, contact }: { orgId: string; contact: VoicePa
     setArmed(false);
     try {
       await call.mutateAsync();
-      toast.success(receptionistCopy(`Marina is calling ${firstName}…`, brand));
+      toast.success(`${assistantCopy("Marina is calling", brand, assistantName)} ${firstName}…`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't place the call.");
     }
@@ -76,7 +78,7 @@ export function VoicePanel({ orgId, contact }: { orgId: string; contact: VoicePa
       onClick={() => setArmed(true)}
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap bg-[hsl(var(--accent-violet))]/10 text-[hsl(var(--accent-violet))] hover:bg-[hsl(var(--accent-violet))]/20 transition-colors active:scale-[0.97]"
     >
-      <Phone className="w-3 h-3" /> {receptionistCopy("Call with Marina", brand)}
+      <Phone className="w-3 h-3" /> {assistantCopy("Call with Marina", brand, assistantName)}
     </button>
   );
 }

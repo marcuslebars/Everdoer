@@ -86,18 +86,18 @@ function OrganizationSettings() {
   }
 
   if (!org) {
-    return <div className="text-sm text-muted-foreground py-8">No organization selected.</div>;
+    return <div className="text-sm text-muted-foreground py-8">No account selected.</div>;
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Organization</h2>
-        <p className="text-sm text-muted-foreground mt-1">Manage your organization details</p>
+        <h2 className="text-lg font-semibold text-foreground">Your account</h2>
+        <p className="text-sm text-muted-foreground mt-1">The name on your account and the businesses you run from it.</p>
       </div>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">Organization Name</label>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Account name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -105,19 +105,19 @@ function OrganizationSettings() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">Slug</label>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Short name for links</label>
           <input
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
             className="w-full bg-secondary border-0 rounded-lg px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Used in URLs. Lowercased and hyphenated automatically on save.
+            Appears in your web links. Lowercase letters and hyphens only; we tidy it when you save.
           </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-foreground mb-1.5">
-            Companies{companies ? ` (${companies.length})` : ""}
+            {companies && companies.length === 1 ? "Your business" : `Your businesses${companies ? ` (${companies.length})` : ""}`}
           </label>
           <div className="space-y-2">
             {companiesLoading ? (

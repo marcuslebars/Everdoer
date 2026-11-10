@@ -20,6 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useOrg } from "@/lib/org-context";
+import { useBrand } from "@/lib/brand-context";
+import { assistantCopy } from "@/lib/platform-brand";
+import { useAssistantName } from "@/lib/use-assistant-name";
 import { QuickCallDialog } from "@/components/voice/QuickCallDialog";
 import { Modal } from "@/components/ui/Modal";
 import { 
@@ -141,7 +144,7 @@ function CreateContactDialog({
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h2 className="text-base font-semibold text-foreground">Add Contact</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Create a new contact in your CRM</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Add a customer or a lead</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
             <X className="w-4 h-4" />
@@ -404,6 +407,11 @@ export default function CRMPage() {
 
   const { data: contacts, isLoading, isError, refetch } = useCRMContacts(organizationId, params);
   const updateStage = useUpdateContactStage(organizationId);
+  // One business: its own name on every customer's card is noise. Several: it says whose customer this is.
+  const { data: orgCompanies } = useCompanies(organizationId);
+  const showCompany = (orgCompanies?.length ?? 0) > 1;
+  const brand = useBrand();
+  const callTitle = assistantCopy("Call with Marina", brand, useAssistantName());
 
   const contactList = contacts?.rows?.items ?? [];
 
@@ -442,8 +450,8 @@ export default function CRMPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">CRM</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage your leads and customer relationships</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Customers</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Everyone who's asked about a job, from first message to finished work</p>
         </div>
         <div className="flex items-center flex-wrap gap-2 sm:gap-2.5">
           <div className="flex items-center bg-secondary/50 rounded-lg p-1 border border-border">
@@ -552,6 +560,8 @@ export default function CRMPage() {
                     onStageChange={(s) => handleStageChange(contact.id, s)}
                     onClick={() => navigate(`/crm/${contact.id}`)}
                     onCall={contact.phone ? () => setCallContact(contact) : undefined}
+                    showCompany={showCompany}
+                    callTitle={callTitle}
                   />
                 ))}
               </div>
@@ -634,7 +644,7 @@ export default function CRMPage() {
                             e.stopPropagation();
                             setCallContact(contact);
                           }}
-                          title="Call with Marina"
+                          title={callTitle}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-[hsl(var(--accent-violet))] hover:bg-[hsl(var(--accent-violet))]/10 opacity-0 group-hover:opacity-100 transition-all"
                         >
                           <Phone className="w-3.5 h-3.5" /> Call
@@ -695,12 +705,19 @@ function ContactCard({
   onStageChange,
   onClick,
   onCall,
+  showCompany,
+  callTitle,
 }: {
   contact: CRMContactRow;
   onStageChange: (s: string) => void;
   onClick: () => void;
   onCall?: () => void;
+  /** Show which of the account's businesses this customer belongs to (only useful with more than one). */
+  showCompany: boolean;
+  callTitle: string;
 }) {
+  // Under the name: whose customer it is (several businesses), else their number (unless the number is the name).
+  const subtitle = showCompany ? contact.company?.name : contact.phone && contact.phone !== contact.name ? contact.phone : null;
   return (
     <div
       draggable
@@ -718,9 +735,7 @@ function ContactCard({
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-foreground truncate">{contact.name}</h4>
-            {contact.company && (
-              <p className="text-[10px] text-muted-foreground truncate">{contact.company.name}</p>
-            )}
+            {subtitle && <p className="text-[10px] text-muted-foreground truncate">{subtitle}</p>}
           </div>
         </div>
         <select
@@ -763,7 +778,7 @@ function ContactCard({
               e.stopPropagation();
               onCall();
             }}
-            title="Call with Marina"
+            title={callTitle}
             className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium text-[hsl(var(--accent-violet))] hover:bg-[hsl(var(--accent-violet))]/10 opacity-0 group-hover:opacity-100 transition-all"
           >
             <Phone className="w-3 h-3" /> Call

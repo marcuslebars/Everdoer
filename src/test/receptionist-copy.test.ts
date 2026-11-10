@@ -32,3 +32,21 @@ describe("the AI receptionist's name by brand", () => {
     }
   });
 });
+
+describe("assistantCopy: the owner's own name for their AI wins", () => {
+  it("uses the chosen name everywhere the copy names the assistant", async () => {
+    const { assistantCopy } = await import("@/lib/platform-brand");
+    expect(assistantCopy("Call with Marina", PLATFORM_BRANDS.empirevu, "Sam")).toBe("Call with Sam");
+    expect(assistantCopy("Call a lead with Marina", PLATFORM_BRANDS.crankleads, " Sam ")).toBe("Call a lead with Sam");
+    expect(assistantCopy("So Marina can greet them", PLATFORM_BRANDS.empirevu, "Sam")).toBe("So Sam can greet them");
+  });
+
+  it("no name chosen: exactly the product-line copy", async () => {
+    const { assistantCopy } = await import("@/lib/platform-brand");
+    for (const name of [null, undefined, "", "  "]) {
+      expect(assistantCopy("Call with Marina", PLATFORM_BRANDS.empirevu, name)).toBe("Call with Marina");
+      expect(assistantCopy("Call with Marina", PLATFORM_BRANDS.crankleads, name)).toBe("Call with the AI receptionist");
+      expect(assistantCopy("Marina is calling", PLATFORM_BRANDS.crankleads, name)).toBe("The AI receptionist is calling");
+    }
+  });
+});

@@ -698,7 +698,7 @@ function getNextActionForContact(input: ContactNextActionInput): NextActionSumma
   return {
     detail: "No linked work yet.",
     dueAt: null,
-    label: input.contact.stage === "lead" ? "Qualify lead" : "Schedule follow-up",
+    label: input.contact.stage === "lead" ? "Follow up with this lead" : "Schedule follow-up",
     type: "action",
   };
 }
