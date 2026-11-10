@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import {
   Inbox, Search, MessageSquare, Mail, Phone, Loader2, ChevronDown, ChevronRight, Sparkles, FileText, Activity, Send, Bot,
 } from "lucide-react";
@@ -175,12 +176,12 @@ function ThreadItem({ item, orgId, contact }: { item: ConversationThreadItem; or
 
 // ─── Composer ─────────────────────────────────────────────────────────────────
 
-function Composer({ orgId, contact }: { orgId: string; contact: InboxRow }) {
+function Composer({ orgId, contact, initialBody = "" }: { orgId: string; contact: InboxRow; initialBody?: string }) {
   const send = useSendContactMessage(orgId, contact.contact_id as string);
   const qc = useQueryClient();
   const [channel, setChannel] = useState<"sms" | "email">(contact.contact_phone ? "sms" : "email");
   const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(initialBody);
 
   const destination = channel === "sms" ? contact.contact_phone : contact.contact_email;
 
@@ -192,6 +193,8 @@ function Composer({ orgId, contact }: { orgId: string; contact: InboxRow }) {
         toast.success(channel === "sms" ? "SMS sent" : "Email sent");
         // A manual text = you've taken over from the assistant (server marks it).
         if (channel === "sms") void qc.invalidateQueries({ queryKey: ["front-desk", "assistant", orgId, contact.contact_id] });
+        // They've been answered: Home stops listing them as still waiting.
+        void qc.invalidateQueries({ queryKey: ["approvals", orgId] });
         setBody("");
         setSubject("");
       } else if (result.status === "blocked") {
@@ -264,7 +267,7 @@ function Composer({ orgId, contact }: { orgId: string; contact: InboxRow }) {
 
 // ─── Conversation pane ────────────────────────────────────────────────────────
 
-function ConversationPane({ orgId, row }: { orgId: string; row: InboxRow }) {
+function ConversationPane({ orgId, row, draft }: { orgId: string; row: InboxRow; draft?: string }) {
   const contactId = row.contact_id as string;
   const { data: thread, isLoading, isError, refetch } = useConversationThread(orgId, contactId);
   const contact = { id: contactId, name: row.contact_name ?? "Unknown", phone: row.contact_phone };
@@ -301,7 +304,8 @@ function ConversationPane({ orgId, row }: { orgId: string; row: InboxRow }) {
         )}
       </div>
 
-      <Composer orgId={orgId} contact={row} />
+      {/* Keyed by contact so a half-typed reply (or a carried-in draft) never follows you to another customer. */}
+      <Composer key={contactId} orgId={orgId} contact={row} initialBody={draft} />
     </div>
   );
 }
@@ -312,7 +316,13 @@ export default function InboxPage() {
   const { organizationId, companyId } = useOrg();
   const [search, setSearch] = useState("");
   const [needsReplyOnly, setNeedsReplyOnly] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Home's "still waiting" rows link here as /inbox?contact=<id>, carrying the AI's draft in router state.
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const linkedContactId = searchParams.get("contact");
+  const linkedDraft = (location.state as { draft?: unknown } | null)?.draft;
+  const [selectedId, setSelectedId] = useState<string | null>(linkedContactId);
+  const openedLinked = useRef(false);
 
   const params = useMemo(
     () => ({ companyId: companyId || undefined, search: search || undefined, needsReply: needsReplyOnly }),
@@ -327,6 +337,13 @@ export default function InboxPage() {
     setSelectedId(row.contact_id);
     if (row.contact_id) markRead.mutate(row.contact_id);
   };
+
+  // Arriving from a link: once their row has loaded, mark it read like a tap would.
+  useEffect(() => {
+    if (openedLinked.current || !linkedContactId || selectedRow?.contact_id !== linkedContactId) return;
+    openedLinked.current = true;
+    markRead.mutate(linkedContactId);
+  }, [linkedContactId, selectedRow, markRead]);
 
   return (
     <div className="max-w-[1200px] mx-auto">
@@ -369,7 +386,11 @@ export default function InboxPage() {
         {/* Right: conversation */}
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           {selectedRow ? (
-            <ConversationPane orgId={organizationId} row={selectedRow} />
+            <ConversationPane
+              orgId={organizationId}
+              row={selectedRow}
+              draft={selectedRow.contact_id === linkedContactId && typeof linkedDraft === "string" ? linkedDraft : undefined}
+            />
           ) : (
             <div className="h-full flex items-center justify-center">
               <EmptyState title="Select a conversation" description="Pick a contact on the left to see and answer everything." />

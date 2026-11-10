@@ -1,8 +1,17 @@
 import { useState } from "react";
-import { Check, ClipboardCheck, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, ClipboardCheck, Clock, MessageSquare, X } from "lucide-react";
 
 import { DashboardCard } from "@/components/ui/DashboardCard";
-import { useApprovals, useDecideApproval, type ApprovalItem } from "@/lib/approvals-api";
+import {
+  markWaitingHandled,
+  readHandledWaiting,
+  useApprovals,
+  useDecideApproval,
+  waitingReplyTarget,
+  type ApprovalItem,
+  type WaitingCustomer,
+} from "@/lib/approvals-api";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -91,33 +100,84 @@ function RecentRow({ item, showCompany }: { item: ApprovalItem; showCompany: boo
 }
 
 /**
+ * A customer the AI told "I'm checking with the owner" whose request then expired unanswered.
+ * Nobody else will reply to them, so they stay here until the owner does (or says they have).
+ */
+function WaitingRow({ item, showCompany, onHandled }: { item: WaitingCustomer; showCompany: boolean; onHandled: () => void }) {
+  const target = waitingReplyTarget(item);
+  return (
+    <li className="py-3 first:pt-0 last:pb-0" data-testid="waiting-customer">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground leading-snug">
+            <Clock className="h-3.5 w-3.5 shrink-0 text-warning" />
+            {item.contactName} is still waiting for an answer
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {showCompany && item.companyName ? `${item.companyName} · ` : ""}
+            Asked {relativeTime(item.waitingSince)} · your AI told them you'd get back to them
+          </p>
+          <p className="text-xs text-foreground/70 leading-snug mt-1 line-clamp-2">{item.summary}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            to={target.to}
+            state={target.state}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 active:scale-[0.97]"
+          >
+            <MessageSquare className="h-3.5 w-3.5" /> {item.draftReply ? "Review & send" : "Reply"}
+          </Link>
+          <button
+            type="button"
+            onClick={onHandled}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-3 active:scale-[0.97]"
+          >
+            <Check className="h-3.5 w-3.5" /> Handled
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/**
  * What the AI front desk is waiting on the owner for ("Quote for Dana: $650 — Approve / Skip"),
  * plus the last week's decisions. Same decide path as replying Y/N by text. Hidden when empty.
  */
 export function ApprovalsCard({ orgId, companyId }: { orgId: string; companyId?: string | null }) {
   const { data, isLoading, isError } = useApprovals(orgId, companyId);
+  const [handled, setHandled] = useState<string[]>(() => readHandledWaiting());
   if (isLoading || isError || !data) return null;
-  if (data.pending.length === 0 && data.recent.length === 0) return null;
-  const companies = new Set([...data.pending, ...data.recent].map((a) => a.companyId));
+  const waiting = (data.waiting ?? []).filter((w) => !handled.includes(w.approvalId));
+  if (data.pending.length === 0 && data.recent.length === 0 && waiting.length === 0) return null;
+  const companies = new Set([...data.pending, ...data.recent, ...waiting].map((a) => a.companyId));
   const showCompany = !companyId && companies.size > 1;
+  const needsOwner = data.pending.length + waiting.length;
 
   return (
     <DashboardCard
       title="Approvals"
       icon={<ClipboardCheck className="w-3.5 h-3.5" />}
-      badge={data.pending.length > 0 ? data.pending.length : undefined}
-      variant={data.pending.length > 0 ? "elevated" : "default"}
+      badge={needsOwner > 0 ? needsOwner : undefined}
+      variant={needsOwner > 0 ? "elevated" : "default"}
       className="opacity-0 animate-fade-in"
     >
+      {waiting.length > 0 && (
+        <ul className={cn("divide-y divide-border", data.pending.length > 0 && "mb-3 border-b border-border pb-3")}>
+          {waiting.map((item) => (
+            <WaitingRow key={item.approvalId} item={item} showCompany={showCompany} onHandled={() => setHandled(markWaitingHandled(item.approvalId))} />
+          ))}
+        </ul>
+      )}
       {data.pending.length > 0 ? (
         <ul className="divide-y divide-border">
           {data.pending.map((item) => (
             <PendingRow key={item.id} item={item} orgId={orgId} showCompany={showCompany} />
           ))}
         </ul>
-      ) : (
+      ) : waiting.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing waiting on you.</p>
-      )}
+      ) : null}
       {data.recent.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Recent</p>
