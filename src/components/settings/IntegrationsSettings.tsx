@@ -208,7 +208,7 @@ x-everdoer-signature: sha256=<hmac-sha256(body, key)>
           <h3 className="text-sm font-semibold text-foreground">Voice numbers</h3>
         </div>
         <p className="text-sm text-muted-foreground mb-3">
-          Map a phone number to a company and its Marina agent. An inbound call is routed to the tenant by the number it came in on.
+          Map a phone number to a company and its AI phone agent. An inbound call is routed to the tenant by the number it came in on.
         </p>
 
         <div className="flex flex-wrap items-end gap-2 mb-4">

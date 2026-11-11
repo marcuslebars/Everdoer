@@ -32,7 +32,7 @@ afterEach(() => {
 describe("buildOutboundCallPrompt", () => {
   it("briefed call with a question — golden", () => {
     expect(buildOutboundCallPrompt(CTX, BRIEF)).toMatchInlineSnapshot(`
-      "You are Marina, the automated phone assistant calling on behalf of Northshore Lawn. This is a call YOU placed to Dave Henderson.
+      "You are Everly, the automated phone assistant calling on behalf of Northshore Lawn. This is a call YOU placed to Dave Henderson.
       Open with exactly: "Hi, is this Dave Henderson? This is Northshore Lawn's automated assistant calling." If they ask whether you're a real person, say plainly that you're an automated assistant and that the call may be recorded.
 
       The owner asked you to tell them: «the lift is fixed and we can launch any day this week».

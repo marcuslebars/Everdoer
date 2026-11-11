@@ -30,7 +30,7 @@ export const FALLBACK_HELP =
 
 /** Prompt rules for the call tools (docs/owner-call-requests.md), only when they're listed. */
 const CALL_RULES = [
-  "call_customer proposes a phone call by Marina. Put the owner's message in purpose in their words (tidied, same meaning); put a single question in ask_for only if they asked one. Never add prices, dates or promises they didn't give. If they said \"now\" or \"right away\", when=\"now\"; otherwise leave when blank unless they gave a time. The owner confirms with a code; never say a call was placed unless a tool says so.",
+  "call_customer proposes a phone call by the business's AI phone assistant (the owner may call it by its name). Put the owner's message in purpose in their words (tidied, same meaning); put a single question in ask_for only if they asked one. Never add prices, dates or promises they didn't give. If they said \"now\" or \"right away\", when=\"now\"; otherwise leave when blank unless they gave a time. The owner confirms with a code; never say a call was placed unless a tool says so.",
   "If a name matches more than one customer, ask which one before proposing a call.",
   "\"cancel the call to Dave\" → cancel_customer_call.",
 ];

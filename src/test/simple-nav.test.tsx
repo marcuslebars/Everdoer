@@ -1,6 +1,6 @@
 /**
- * Simple by default: five everyday places in the sidebar (Home, Inbox, Schedule, Customers, Money),
- * everything else under "More", Money's three pages as tabs, and the Home page's day summary.
+ * Simple by default: the everyday places in the sidebar (Home, Inbox, Schedule, Customers, Money)
+ * plus Your AI, everything else under "More", Money's three pages as tabs, and the Home page's day summary.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -51,8 +51,11 @@ describe("nav items (pure)", () => {
   const money = PRIMARY_NAV.find((i) => i.title === "Money")!;
   const home = PRIMARY_NAV.find((i) => i.title === "Home")!;
 
-  it("five primary places, in order", () => {
-    expect(PRIMARY_NAV.map((i) => i.title)).toEqual(["Home", "Inbox", "Schedule", "Customers", "Money"]);
+  it("the five everyday places then Your AI, in order", () => {
+    expect(PRIMARY_NAV.map((i) => i.title)).toEqual(["Home", "Inbox", "Schedule", "Customers", "Money", "Your AI"]);
+    // Your AI is one place only: it left More when it moved up.
+    expect(MORE_NAV.map((i) => i.path)).not.toContain("/ai");
+    expect(isUnderMore("/ai")).toBe(false);
   });
 
   it("every old screen is still in the sidebar (primary or More)", () => {
@@ -88,10 +91,10 @@ describe("nav items (pure)", () => {
 });
 
 describe("sidebar", () => {
-  it("shows the five places; More is closed on an everyday page", () => {
+  it("shows the everyday places and Your AI; More is closed on an everyday page", () => {
     renderAt(<AppSidebar />, "/");
     const nav = desktopNav();
-    for (const title of ["Home", "Inbox", "Schedule", "Customers", "Money"]) expect(nav.getByRole("link", { name: title })).toBeInTheDocument();
+    for (const title of ["Home", "Inbox", "Schedule", "Customers", "Money", "Your AI"]) expect(nav.getByRole("link", { name: title })).toBeInTheDocument();
     expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
     expect(nav.queryByRole("link", { name: "Reports" })).toBeNull();
     expect(nav.getByRole("button", { name: /More/ })).toHaveAttribute("aria-expanded", "false");
@@ -138,11 +141,11 @@ describe("sidebar", () => {
 });
 
 describe("phone tab bar", () => {
-  it("the five places plus More; the current one marked; More opens the menu", () => {
+  it("the everyday places, Your AI and More; the current one marked; More opens the menu", () => {
     const onMore = vi.fn();
     renderAt(<MobileTabBar onMore={onMore} />, "/quotes");
     const bar = within(screen.getByRole("navigation", { name: "Quick" }));
-    expect(bar.getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Inbox", "Schedule", "Customers", "Money"]);
+    expect(bar.getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Inbox", "Schedule", "Customers", "Money", "Your AI"]);
     expect(bar.getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page");
     fireEvent.click(bar.getByRole("button", { name: "More" }));
     expect(onMore).toHaveBeenCalledTimes(1);

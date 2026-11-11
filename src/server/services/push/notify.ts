@@ -42,7 +42,7 @@ export function draftReadyMessage(draft: Pick<Tables<"ai_drafts">, "organization
   const preview = (draft.sms_body ?? draft.email_subject ?? "").trim();
   return {
     title: name ? `Reply ready for ${name}` : "AI reply ready to approve",
-    body: preview ? (preview.length > 120 ? `${preview.slice(0, 117)}…` : preview) : "Marina drafted a reply. Tap to review and send.",
+    body: preview ? (preview.length > 120 ? `${preview.slice(0, 117)}…` : preview) : "Your AI drafted a reply. Tap to review and send.",
     category: "drafts",
     data: { screen: "lead", recordId: draft.contact_id, organizationId: draft.organization_id, companyId: draft.company_id },
   };

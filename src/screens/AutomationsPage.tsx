@@ -119,7 +119,7 @@ function describeTestAction(p: TestProjectionAction): string {
     case "ai_analyze":
       return "Analyze the lead with AI and draft a reply";
     case "call_lead":
-      return "Call the lead with Marina (voice agent)";
+      return "Have your AI call the lead";
     case "send_sms":
       return `Send SMS → ${payload.to ? String(payload.to) : "contact"}: ${payload.body ? String(payload.body) : ""}`;
     case "send_email":
@@ -563,7 +563,7 @@ function describeAction(action: { type: string; title?: string; priority?: strin
     case "ai_analyze":
       return "Analyze the lead with AI and draft a reply";
     case "call_lead":
-      return "Call the lead with Marina (voice agent)";
+      return "Have your AI call the lead";
     case "send_sms":
       return "Send an SMS to the contact";
     case "send_email":
@@ -712,7 +712,7 @@ const STARTER_TEMPLATES: StarterTemplate[] = [
     key: "call-customers-on-booking",
     name: "Call customers when they book",
     description:
-      "When someone self-books online, Marina rings them to confirm the appointment by voice.",
+      "When someone self-books online, your AI rings them to confirm the appointment by voice.",
     triggerEvent: "booking.created",
     actions: [{ type: "call_lead" }],
     definition: { version: 1, conditions: [], actions: [{ type: "call_lead" }] },
@@ -721,8 +721,8 @@ const STARTER_TEMPLATES: StarterTemplate[] = [
   },
   {
     key: "call-new-leads",
-    name: "Call new leads with Marina",
-    description: "The moment a lead lands, Marina phones them — while their interest is hot.",
+    name: "Call new leads with your AI",
+    description: "The moment a lead lands, your AI phones them — while their interest is hot.",
     triggerEvent: "contact.created",
     actions: [{ type: "call_lead" }],
     definition: { version: 1, conditions: [], actions: [{ type: "call_lead" }] },
@@ -1461,7 +1461,7 @@ function CreateWorkflowDialog({ orgId, workflow, onClose }: { orgId: string; wor
                       <option value="create_task">Create a task</option>
                       <option value="update_status">Update the {triggerEntity}&rsquo;s {ENTITY_STATUS_NOUN[triggerEntity]}</option>
                       <option value="ai_analyze">Analyze the lead with AI</option>
-                      <option value="call_lead">Call the lead with Marina (voice)</option>
+                      <option value="call_lead">Have your AI call the lead</option>
                       <option value="send_sms">Send an SMS</option>
                       <option value="send_email">Send an email</option>
                       <option value="notify_owner">Notify the owner</option>
@@ -1506,7 +1506,7 @@ function CreateWorkflowDialog({ orgId, workflow, onClose }: { orgId: string; wor
                     </p>
                   ) : a.type === "call_lead" ? (
                     <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                      Your Cartesia voice agent (Marina) places a real phone call to this lead. Requires CARTESIA_API_KEY, CARTESIA_AGENT_ID and CARTESIA_FROM_NUMBER_ID on the worker, and a phone number on the contact.
+                      Your Cartesia voice agent places a real phone call to this lead. Requires CARTESIA_API_KEY, CARTESIA_AGENT_ID and CARTESIA_FROM_NUMBER_ID on the worker, and a phone number on the contact.
                     </p>
                   ) : a.type === "send_sms" ? (
                     <>

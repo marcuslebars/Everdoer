@@ -111,44 +111,53 @@ export function isDoneForYouBrand(brand: Pick<PlatformBrand, "productLine">): bo
 }
 
 /**
- * The AI receptionist's name in the app. A PRODUCT-LINE difference, not a brand one: standard
- * tenants (A1 etc.) know her as "Marina"; done-for-you owners never see that name — it's "the AI
- * receptionist" for them.
+ * What the app calls a business's AI when the owner hasn't named it. The owner's own name for it
+ * (Your AI → Name, companies.agent_persona) always wins; this is only the fallback, and the same
+ * word the server falls back to on the phone (DEFAULT_VOICE_NAME, src/server/agent/profile.ts —
+ * a test keeps the two the same).
+ */
+export const DEFAULT_ASSISTANT_NAME = "Everly";
+
+/**
+ * The AI's name in the app when the owner hasn't chosen one. A PRODUCT-LINE difference, not a
+ * brand one: standard tenants see the default name; done-for-you owners see "AI receptionist".
  */
 export function receptionistName(brand: Pick<PlatformBrand, "productLine">): string {
-  return isDoneForYouBrand(brand) ? "AI receptionist" : "Marina";
+  return isDoneForYouBrand(brand) ? "AI receptionist" : DEFAULT_ASSISTANT_NAME;
 }
 
 /**
- * Rewrite a "Marina" UI string for the product line: unchanged for standard tenants; for
- * done-for-you, "Call with Marina" → "Call with the AI receptionist", "Voice (Marina)" → "Voice (AI
- * receptionist)", "Marina call" → "AI receptionist call", a sentence-initial "Marina" → "The AI
- * receptionist". Only pass strings that name the agent (not business names like "Bayview
- * Marina"). PURE.
+ * Rewrite UI copy that names the assistant, for an owner who hasn't named theirs. Copy is written
+ * with the default name ("Call with Everly"): unchanged for standard tenants; for done-for-you,
+ * "Call with Everly" → "Call with the AI receptionist", "Voice (Everly)" → "Voice (AI
+ * receptionist)", "Everly call" → "AI receptionist call", a sentence-initial "Everly" → "The AI
+ * receptionist". Only pass strings that name the agent. PURE.
+ *
+ * Components should use useAssistantCopy() (src/lib/assistant-name.tsx), which also applies the
+ * owner's chosen name.
  */
 export function receptionistCopy(text: string, brand: Pick<PlatformBrand, "productLine">): string {
   if (!isDoneForYouBrand(brand)) return text;
   return text
-    .replace(/\(Marina\)/g, "(AI receptionist)")
-    .replace(/\bMarina reception\b/g, "AI receptionist")
-    .replace(/\bMarina (call|calls|minutes|number|voice reception)\b/g, "AI receptionist $1")
-    .replace(/(^|[.!?]\s+)Marina's\b/g, "$1The AI receptionist's")
-    .replace(/(^|[.!?]\s+)Marina\b/g, "$1The AI receptionist")
-    .replace(/\bMarina's\b/g, "the AI receptionist's")
-    .replace(/\bMarina\b/g, "the AI receptionist")
+    .replace(/\(Everly\)/g, "(AI receptionist)")
+    .replace(/\bEverly reception\b/g, "AI receptionist")
+    .replace(/\bEverly (call|calls|minutes|number|voice reception)\b/g, "AI receptionist $1")
+    .replace(/(^|[.!?]\s+)Everly's\b/g, "$1The AI receptionist's")
+    .replace(/(^|[.!?]\s+)Everly\b/g, "$1The AI receptionist")
+    .replace(/\bEverly's\b/g, "the AI receptionist's")
+    .replace(/\bEverly\b/g, "the AI receptionist")
     .replace(/\bthe the AI\b/g, "the AI");
 }
 
 /**
- * receptionistCopy, but when the owner has named their assistant ("Sam") the copy uses that name:
- * a button that says "Call with Marina" beside texts signed "Sam" reads as two different things.
- * No name set → exactly receptionistCopy (Marina for house tenants, "the AI receptionist" for
- * done-for-you). PURE.
+ * Copy that names the assistant, for this business: the owner's chosen name ("Sam") wherever the
+ * copy says "Everly"; with no name chosen, exactly receptionistCopy (Everly for standard tenants,
+ * "the AI receptionist" for done-for-you). PURE.
  */
 export function assistantCopy(text: string, brand: Pick<PlatformBrand, "productLine">, name: string | null | undefined): string {
   const chosen = name?.trim();
   if (!chosen) return receptionistCopy(text, brand);
-  return text.replace(/\bMarina\b/g, chosen);
+  return text.replace(/\bEverly\b/g, chosen);
 }
 
 export function isPlatformBrandKey(value: unknown): value is PlatformBrandKey {

@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useBrand } from "@/lib/brand-context";
-import { receptionistCopy } from "@/lib/platform-brand";
 import { Loader2, Check, Minus, CreditCard, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -29,7 +28,7 @@ const featureLabel: Record<string, string> = {
   tasks: "Tasks",
   workflows: "Automations",
   sms_sequences: "SMS sequences",
-  marina_reception: "Marina reception",
+  marina_reception: "AI receptionist",
 };
 
 const FEATURE_ORDER = ["lead_intake", "bookings", "tasks", "workflows", "sms_sequences", "marina_reception"];
@@ -83,7 +82,7 @@ function ThisMonthPanel({ organizationId }: { organizationId: string }) {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <UsageStat
-            label={receptionistCopy("Marina minutes", brand)}
+            label={"AI call minutes"}
             value={
               data.voiceMinutesCap != null
                 ? `${data.voiceMinutes} / ${data.voiceMinutesCap}`

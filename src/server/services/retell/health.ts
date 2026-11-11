@@ -144,14 +144,14 @@ export async function receptionistHealth(input: HealthInput): Promise<HealthRepo
   add("tool secret", env("RETELL_FUNCTION_SECRET"), env("RETELL_FUNCTION_SECRET") ? "set" : "RETELL_FUNCTION_SECRET missing — every tool call is refused");
   add("texting", input.smsConfigured, input.smsConfigured ? "Twilio configured" : "TWILIO_* not set — no deposit links, follow-ups or owner texts");
   add("owner phone", Boolean(input.company.owner_phone_e164), input.company.owner_phone_e164 ? "set" : "no owner phone on the company — your call and deposit texts have nowhere to go");
-  add("price list", input.hasCatalog, input.hasCatalog ? "catalog loaded" : "no service catalog — Marina can't quote");
+  add("price list", input.hasCatalog, input.hasCatalog ? "catalog loaded" : "no service catalog — the AI can't quote");
   add(
     "deposits",
     input.company.stripe_charges_enabled === true,
     input.company.stripe_charges_enabled === true ? "Stripe can take payments" : "Stripe isn't able to take payments yet — deposit links will fail at checkout",
   );
   const policy = parseBookingPolicy(input.company.booking_policy ?? null);
-  add("booking windows", Boolean(policy), policy ? `${policy.windows.map((w) => w.key).join(" / ")}, ${policy.capacityPerWindow} per window` : "no booking policy — Marina can't book, she'll promise a callback");
+  add("booking windows", Boolean(policy), policy ? `${policy.windows.map((w) => w.key).join(" / ")}, ${policy.capacityPerWindow} per window` : "no booking policy — the AI can't book, it'll promise a callback");
 
   if (input.numbers.length === 0) {
     add("phone number", false, "no Retell number in Voice numbers — calls can't be routed to this company");

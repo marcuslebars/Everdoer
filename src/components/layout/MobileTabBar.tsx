@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 import { PRIMARY_NAV, isNavActive, isUnderMore } from "./nav-items";
 
 /**
- * Phones and tablets: the five everyday places as a bottom tab bar (thumb reach), plus "More",
- * which opens the full menu. Hidden from lg up, where the sidebar shows instead.
+ * Phones and tablets: the everyday places and Your AI as a bottom tab bar (thumb reach), plus
+ * "More", which opens the full menu. Seven columns: labels are one short word each and truncate
+ * rather than wrap on a narrow phone. Hidden from lg up, where the sidebar shows instead.
  */
 export function MobileTabBar({ onMore }: { onMore: () => void }) {
   const { pathname } = useLocation();
@@ -15,7 +16,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
       aria-label="Quick"
       className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-6">
+      <ul className="grid grid-cols-7">
         {PRIMARY_NAV.map((item) => {
           const active = isNavActive(item, pathname);
           return (
@@ -24,12 +25,12 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
                 to={item.path}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-0.5 h-14 text-[10px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-0.5 h-14 px-0.5 text-[10px] font-medium transition-colors",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <item.icon className="w-5 h-5" />
-                <span>{item.title}</span>
+                <span className="max-w-full truncate">{item.title}</span>
               </Link>
             </li>
           );

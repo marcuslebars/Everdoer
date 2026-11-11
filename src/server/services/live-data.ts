@@ -1131,8 +1131,8 @@ function buildActivityEventTraceSummary(activityEvent: Tables<"activity_events">
       const atRequest = typeof metadata.ownerCallRequestId === "string";
       return {
         detail: atRequest
-          ? `Marina called${toNumber ? ` ${toNumber}` : ""} at your request.`
-          : toNumber ? `Marina placed a call to ${toNumber}.` : "Marina placed a call to this lead.",
+          ? `Your AI called${toNumber ? ` ${toNumber}` : ""} at your request.`
+          : toNumber ? `Your AI placed a call to ${toNumber}.` : "Your AI placed a call to this lead.",
         metadata,
         title: atRequest ? "Call placed at your request" : "Call placed",
       };

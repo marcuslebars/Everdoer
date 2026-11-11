@@ -389,12 +389,12 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         heading: "What it does",
         body:
-          "The AI receptionist (shown as Marina in the app) answers every call to its number, talks to the caller, and can book and quote for you using your business details and services. It's included with the Front Desk plan. On other plans, Settings → Voice says it isn't in your plan; upgrade in Settings → Billing & Plans.",
+          "The AI receptionist (it goes by the name you give it on the Your AI page, and Everly until you do) answers every call to its number, talks to the caller, and can book and quote for you using your business details and services. It's included with the Front Desk plan. On other plans, Settings → Voice says it isn't in your plan; upgrade in Settings → Billing & Plans.",
       },
       {
         heading: "Getting your number",
         body:
-          "In setup, open Phone → \"AI receptionist answers\", optionally type an area code, and click \"Get my Marina number\". Then open the Test call step and call it — the step completes by itself when your call lands. If you change your services or industry pack later, run the Phone step again so the receptionist picks up the changes.",
+          "In setup, open Phone → \"AI receptionist answers\", optionally type an area code, and click \"Get my AI number\". Then open the Test call step and call it — the step completes by itself when your call lands. If you change your services or industry pack later, run the Phone step again so the receptionist picks up the changes.",
       },
       {
         heading: "Keeping you in the loop",

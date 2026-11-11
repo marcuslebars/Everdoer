@@ -6,6 +6,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { OrgProvider } from "@/lib/org-context";
 import { BrandProvider } from "@/lib/brand-context";
+import { AssistantNameProvider } from "@/lib/assistant-name";
 import { rememberPostAuthPath } from "@/lib/public-routes";
 import { ErrorBoundary, GlobalErrorHandler } from "@/components/system/ErrorBoundary";
 import { ProtectedRoute, AuthRedirect } from "@/components/system/ProtectedRoute";
@@ -280,7 +281,11 @@ function AppBootstrapInner({ children }: { children?: React.ReactNode }) {
     console.log("[AppBootstrap] No valid org context -> rendering routes; ProtectedRoute handles onboarding");
   }
 
-  return <OrgProvider>{children}</OrgProvider>;
+  return (
+    <OrgProvider>
+      <AssistantNameProvider>{children}</AssistantNameProvider>
+    </OrgProvider>
+  );
 }
 
 function AppBootstrapWithDiagnostics() {

@@ -286,7 +286,7 @@ export async function callNumberWithMarina(
 ): Promise<PlaceCallResult> {
   const toNumber = toE164(input.toNumber);
   if (!toNumber) {
-    throw new ValidationError("That doesn't look like a phone number Marina can call.");
+    throw new ValidationError("That doesn't look like a phone number your AI can call.");
   }
 
   const name = input.name?.trim() || undefined;

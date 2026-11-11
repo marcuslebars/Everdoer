@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { isDoneForYouBrand, receptionistCopy } from "@/lib/platform-brand";
+import { isDoneForYouBrand } from "@/lib/platform-brand";
 import {
   Building2, ClipboardList, Phone, CreditCard, Globe, PhoneCall, Users, Zap,
   Check, Loader2, ArrowRight, Upload, Sparkles, ExternalLink, X, Bot,
@@ -49,6 +49,7 @@ import { WebsiteFormStep } from "@/components/website-forms/WebsiteFormsPanel";
 import { IndustryPackPicker } from "@/components/onboarding/IndustryPackPicker";
 import { useIndustryPacks, usePackRecipes } from "@/lib/industry-pack-hooks";
 import { useBrand } from "@/lib/brand-context";
+import { useAssistantCopy } from "@/lib/assistant-name";
 import { ProductName } from "@/components/brand/Logo";
 import { isStepDone, isStepSkipped, phoneModeOf, resolveWizardStep, setupSummary, wizardGroups } from "@/lib/onboarding-steps";
 
@@ -85,6 +86,7 @@ interface StepProps {
 // ── Step 1: Business ──────────────────────────────────────────────────────────
 function BusinessStep({ orgId, companyId, companyName, profile, onDone }: StepProps) {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const save = useSaveOnboardingBusiness(orgId);
   // Pre-filled from what's saved, and only CHANGED fields are sent — so coming back to this step
   // and saving never wipes the website, hours or cell (it used to send blanks as null).
@@ -163,7 +165,7 @@ function BusinessStep({ orgId, companyId, companyName, profile, onDone }: StepPr
 
   return (
     <div className="space-y-4 max-w-xl">
-      <p className="text-sm text-muted-foreground">Tell us about your business. {receptionistCopy("This shapes Marina's script, your quotes, and your branding.", brand)}</p>
+      <p className="text-sm text-muted-foreground">Tell us about your business. {copy("This shapes Everly's script, your quotes, and your branding.")}</p>
       <div>
         <label className={label}>Business name <span className="text-destructive">*</span></label>
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., A1 Marine Care" />
@@ -290,6 +292,7 @@ function ServicesStep({ orgId, companyId, onDone }: StepProps) {
 // ── Step 3: Phone ─────────────────────────────────────────────────────────────
 function PhoneStep({ orgId, companyId, stepData, onDone }: StepProps) {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const provision = useProvisionOnboardingPhone(orgId);
   const [areaCode, setAreaCode] = useState("");
   const existingNumber = typeof stepData.phoneNumber === "string" ? stepData.phoneNumber : null;
@@ -300,7 +303,7 @@ function PhoneStep({ orgId, companyId, stepData, onDone }: StepProps) {
     try {
       const r = await provision.mutateAsync({ companyId, areaCode: areaCode ? Number(areaCode) : undefined });
       setResult(r.phoneNumberPretty ?? r.phoneNumber);
-      toast.success(receptionistCopy(r.purchased ? "Number purchased & Marina is live" : "Marina is live on your number", brand));
+      toast.success(copy(r.purchased ? "Number purchased & Everly is live" : "Everly is live on your number"));
       onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Provisioning failed.");
@@ -309,10 +312,10 @@ function PhoneStep({ orgId, companyId, stepData, onDone }: StepProps) {
 
   return (
     <div className="space-y-4 max-w-xl">
-      <p className="text-sm text-muted-foreground">{isDoneForYouBrand(brand) ? "Get a phone number answered by your AI receptionist — built from the business + services you just entered." : "Get a phone number answered by Marina, your AI receptionist — built from the business + services you just entered."}</p>
+      <p className="text-sm text-muted-foreground">{isDoneForYouBrand(brand) ? "Get a phone number answered by your AI receptionist — built from the business + services you just entered." : copy("Get a phone number answered by Everly, your AI receptionist — built from the business + services you just entered.")}</p>
       {result ? (
         <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
-          <p className="text-sm font-semibold text-emerald-400">{receptionistCopy("Marina is answering", brand)}</p>
+          <p className="text-sm font-semibold text-emerald-400">{copy("Everly is answering")}</p>
           <p className="text-2xl font-bold text-foreground tabular-nums mt-1">{result}</p>
         </div>
       ) : null}
@@ -322,9 +325,9 @@ function PhoneStep({ orgId, companyId, stepData, onDone }: StepProps) {
       </div>
       <button className={primaryBtn} disabled={!companyId || provision.isPending} onClick={() => void go()}>
         {provision.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
-        {result ? "Re-provision" : receptionistCopy("Get my Marina number", brand)}
+        {result ? "Re-provision" : "Get my AI number"}
       </button>
-      <p className="text-[11px] text-muted-foreground/70">Already have a number you want to keep? You can port it later from Settings — for now, {receptionistCopy("get a Marina number to try it.", brand)}</p>
+      <p className="text-[11px] text-muted-foreground/70">Already have a number you want to keep? You can port it later from Settings — for now, {copy("get a Everly number to try it.")}</p>
     </div>
   );
 }
@@ -435,6 +438,7 @@ function WebsiteStep({ orgId, companyId, onDone }: StepProps) {
 // ── Step 6: Test call ─────────────────────────────────────────────────────────
 function TestCallStep({ orgId, onDone, onSkip, phoneNumber }: StepProps & { phoneNumber?: string | null }) {
   const brand = useBrand();
+  const copy = useAssistantCopy();
   const { data: activity } = useDashboardActivity(orgId, { limit: 15 }, { refetchInterval: 6000 });
   const number = phoneNumber ?? null;
   const recentCall = useMemo(
@@ -443,13 +447,13 @@ function TestCallStep({ orgId, onDone, onSkip, phoneNumber }: StepProps & { phon
   );
   const seen = useRef(false);
   useEffect(() => {
-    if (recentCall && !seen.current) { seen.current = true; toast.success(receptionistCopy("Call received — Marina answered!", brand)); onDone(); }
+    if (recentCall && !seen.current) { seen.current = true; toast.success(copy("Call received — Everly answered!")); onDone(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentCall]);
 
   return (
     <div className="space-y-4 max-w-xl">
-      <p className="text-sm text-muted-foreground">{receptionistCopy("Call your new number and have a quick chat with Marina.", brand)} When the call lands, this step completes automatically and you'll see it in your inbox.</p>
+      <p className="text-sm text-muted-foreground">{copy("Call your new number and have a quick chat with Everly.")} When the call lands, this step completes automatically and you'll see it in your inbox.</p>
       {number ? (
         <div className="bg-card border border-border rounded-lg p-4">
           <p className="text-xs text-muted-foreground">Call this number now</p>

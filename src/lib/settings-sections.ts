@@ -16,7 +16,7 @@ export const sections = [
   { id: "billing", label: "Billing & Plans", icon: CreditCard, description: "Manage your subscription and plan", group: "basics" },
   { id: "front-desk", label: "AI front desk", icon: Bot, description: "Your assistant that answers customer texts and calls", group: "advanced" },
   { id: "packs", label: "Industry pack", icon: Package, description: "Apply a starter pack for your trade and price its services", group: "advanced" },
-  { id: "voice", label: "Voice (Marina)", icon: Phone, description: "Set each company's outbound agent, caller ID, and system prompt", group: "advanced" },
+  { id: "voice", label: "Voice (Everly)", icon: Phone, description: "Set each company's outbound agent, caller ID, and system prompt", group: "advanced" },
   { id: "accounting", label: "Accounting", icon: BookOpenCheck, description: "Sync invoices, payments and expenses to QuickBooks or Xero", group: "advanced" },
   { id: "visits", label: "Confirm & reschedule", icon: CalendarCheck, description: "Let customers confirm, move or cancel visits from the reminder", group: "advanced" },
   { id: "checklists", label: "Job checklists", icon: ListChecks, description: "Reusable checklists your crew ticks off on each kind of job", group: "advanced" },

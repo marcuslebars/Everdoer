@@ -102,7 +102,7 @@ describe("POST /api/retell/inbound", () => {
     const res = await inbound(post("https://x/api/retell/inbound", ring));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.call_inbound.dynamic_variables).toMatchObject({ caller_known: "false", greeting: "Hi, this is Marina. How can I help you today?" });
+    expect(body.call_inbound.dynamic_variables).toMatchObject({ caller_known: "false", greeting: "Hi, this is Everly. How can I help you today?" });
     expect(h.resolveRetellTenant).not.toHaveBeenCalled();
   });
 
@@ -156,7 +156,7 @@ describe("POST /api/retell/inbound", () => {
     const res = await inbound(post("https://x/api/retell/inbound", ring));
     const body = await res.json();
     expect(h.lookupCaller).not.toHaveBeenCalled();
-    expect(body.call_inbound.dynamic_variables.greeting).toBe("Hi, this is Marina. How can I help you today?");
+    expect(body.call_inbound.dynamic_variables.greeting).toBe("Hi, this is Everly. How can I help you today?");
   });
 
   it("connects the call as a new caller when the lookup is too slow", async () => {

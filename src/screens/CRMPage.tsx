@@ -22,7 +22,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useOrg } from "@/lib/org-context";
 import { useBrand } from "@/lib/brand-context";
 import { assistantCopy } from "@/lib/platform-brand";
-import { useAssistantName } from "@/lib/use-assistant-name";
+import { useAssistantName } from "@/lib/assistant-name";
 import { QuickCallDialog } from "@/components/voice/QuickCallDialog";
 import { Modal } from "@/components/ui/Modal";
 import { 
@@ -411,7 +411,7 @@ export default function CRMPage() {
   const { data: orgCompanies } = useCompanies(organizationId);
   const showCompany = (orgCompanies?.length ?? 0) > 1;
   const brand = useBrand();
-  const callTitle = assistantCopy("Call with Marina", brand, useAssistantName());
+  const callTitle = assistantCopy("Call with Everly", brand, useAssistantName());
 
   const contactList = contacts?.rows?.items ?? [];
 

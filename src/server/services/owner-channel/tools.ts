@@ -244,7 +244,7 @@ export const CALL_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "call_customer",
     description:
-      "Have Marina phone a customer on the owner's behalf: say the owner's message and, optionally, get one question answered. The owner is shown exactly what will be said and must confirm with a code; nothing is dialed until then. Put the owner's message in purpose (their words, tidied, same meaning) and one question in ask_for only if they asked one. Use when='now' only if the owner said now / right away; otherwise leave when blank unless they gave a time.",
+      "Have the business's AI phone assistant call a customer on the owner's behalf: say the owner's message and, optionally, get one question answered. The owner is shown exactly what will be said and must confirm with a code; nothing is dialed until then. Put the owner's message in purpose (their words, tidied, same meaning) and one question in ask_for only if they asked one. Use when='now' only if the owner said now / right away; otherwise leave when blank unless they gave a time.",
     input_schema: {
       type: "object",
       properties: {
@@ -508,7 +508,7 @@ async function callCustomerTool(state: ToolRunState, input: Input) {
   if (await isDoNotCall(state.admin, state.scope, phone, state.nowMs)) return { ok: false, reason: `${who} asked not to be called, so the AI won't phone them. Offer to text them, or the owner can call personally.` };
 
   const parsed = briefInputSchema.safeParse(input);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Tell me what Marina should say." };
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Tell me what your AI should say." };
   const when = resolveCallTime(parsed.data.when, state.nowMs, state.scope.timeZone);
   if ("error" in when) return { error: when.error };
 

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { receptionistCopy } from "@/lib/platform-brand";
 import {
   Calendar,
   CheckSquare,
@@ -41,6 +40,7 @@ import { relativeTime, formatCentsCompact, formatSeconds, formatPercent } from "
 import { getYourAiStep, type DashboardActivityItem } from "@/lib/api-client";
 import { hideExtras, readExtrasHidden, setupCardView } from "@/lib/setup-card";
 import { useBrand } from "@/lib/brand-context";
+import { useAssistantCopy } from "@/lib/assistant-name";
 import { SetupProgressCard } from "@/components/onboarding/SetupProgress";
 import { ApprovalsCard } from "@/components/approvals/ApprovalsCard";
 import { WeeklyFrontDeskCard } from "@/components/reports/WeeklyFrontDeskCard";
@@ -297,7 +297,7 @@ export function DashboardErrorState({ message, onRetry }: { message: string; onR
 // ─── Event type config ───────────────────────────────────────────────────────
 
 const eventTypeConfig: Record<string, { label: string; color: string }> = {
-  "contact.call_placed": { label: "Marina call", color: "text-[hsl(var(--accent-violet))]" },
+  "contact.call_placed": { label: "Everly call", color: "text-[hsl(var(--accent-violet))]" },
   "contact.call_completed": { label: "Call outcome", color: "text-[hsl(var(--accent-violet))]" },
   booking_created: { label: "Booking created", color: "text-primary" },
   booking_completed: { label: "Booking completed", color: "text-[hsl(var(--success))]" },
@@ -315,6 +315,7 @@ function ActivityFeedItem({ item }: { item: DashboardActivityItem }) {
   const companyName = item.company?.name ?? "";
   const navigate = useNavigate();
   const brand = useBrand();
+  const copy = useAssistantCopy();
 
   const handleClick = () => {
     if (!item.entity) return;
@@ -334,7 +335,7 @@ function ActivityFeedItem({ item }: { item: DashboardActivityItem }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm text-foreground leading-snug">
-          <span className="font-medium">{receptionistCopy(cfg.label, brand)}</span>
+          <span className="font-medium">{copy(cfg.label)}</span>
           {item.entity && (
             <span className="text-foreground/70"> · {item.entity.label}</span>
           )}

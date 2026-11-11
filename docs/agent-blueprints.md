@@ -8,7 +8,7 @@ the agent roadmap (docs/agent-kernel.md).
 
 | Key | Values | Default |
 | --- | --- | --- |
-| `name` | A first name: letters, `'` or `-`, 2–20 characters | `{}` → the phone assistant is "Marina"; the texting agent has no name |
+| `name` | A first name: letters, `'` or `-`, 2–20 characters | `{}` → the phone assistant is "Everly"; the texting agent has no name |
 | `tone` | `friendly`, `professional`, `casual` | Each prompt's built-in tone |
 
 These prompts read the profile (`agent/profile.ts`):

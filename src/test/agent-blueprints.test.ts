@@ -52,11 +52,11 @@ describe("persona", () => {
     expect(cleanPersonaName("<b>Bob</b>")).toBeNull();
     expect(cleanPersonaName("A")).toBeNull();
     expect(parsePersona({ name: "zoë", tone: "loud" })).toEqual({ name: "Zoë", tone: null });
-    expect(voiceName(parsePersona({}))).toBe("Marina");
+    expect(voiceName(parsePersona({}))).toBe("Everly");
     expect(toneLine({ name: null, tone: null })).toBeNull();
 
     const plain = buildReceptionistPrompt({ companyName: "Northshore", services: [] });
-    expect(plain).toContain("You are Marina, the automated phone assistant for Northshore.");
+    expect(plain).toContain("You are Everly, the automated phone assistant for Northshore.");
     expect(plain).toContain("Be warm, concise, and helpful. Your goals:");
     const sam = buildReceptionistPrompt({ companyName: "Northshore", services: [], persona: { name: "Sam", tone: "professional" } });
     expect(sam).toContain("You are Sam, the automated phone assistant for Northshore.");

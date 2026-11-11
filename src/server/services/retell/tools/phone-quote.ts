@@ -263,7 +263,7 @@ export function toCaptureLeadPayload(
   if (plan.status === "ready" && plan.winterization) services.push("Winterization");
   const altPhone = text(args.phone);
   const summaryBits = [
-    "Quoted by Marina on the phone.",
+    "Quoted on the phone by the AI receptionist.",
     altPhone && altPhone !== call.fromNumber ? `Best number to text: ${altPhone}.` : null,
     text(args.notes),
   ].filter(Boolean);
