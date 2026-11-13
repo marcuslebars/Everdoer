@@ -13,7 +13,9 @@ Status: **pilot**. Off unless switched on per organization (see Setup).
 | A general question (how something works, advice, wording, maths, strategy) | The model itself. No tool, no limits to "the business". |
 | Something current (weather, news, a price, another business's hours) | `web_lookup`: one Claude call with Anthropic's web search, answered in a sentence or two. |
 | Something about the business (today's jobs, who's waiting, a customer, open times) | `business`: runs the owner's text-command agent (`owner-channel/agent.ts`) with the spoken request. |
+| "Any new leads?", "which quotes are still out?", "who owes me?", "what's my day?" | `business`, with the day-to-day tools below. Read-only. |
 | A change (move or cancel a booking, text or call a customer) | `business` proposes it; the code that confirms it is **texted** to the owner's phone and they text it back, exactly as by text. |
+| Something about another of their businesses | `business` with `business_name` (see "More than one business"). |
 
 Calls and texts share one memory (`agent_turns`, channel `owner_sms`): a later text can say
 "actually make it 4" about something asked on a call. The assistant uses the name and tone from
@@ -22,10 +24,67 @@ Calls and texts share one memory (`agent_turns`, channel `owner_sms`): a later t
 Prices, hours, service area and booking setup are in the per-call prompt (the same fact sheet
 the texting agent gets), so quick questions about the business need no tool.
 
+## The brief
+
+What the owner wants the assistant to know before they say a word: who they are, what each of
+their businesses does, what matters this month, how they like things done. It goes into every
+call's prompt, fenced as `<owner_brief>`, ahead of the rules.
+
+- **Where it is set:** Your AI → "When you call <name>". The card shows only where the owner
+  line is switched on for the organization, and only to owners and admins.
+- **Where it is stored:** `companies.ai_settings.owner_line.brief` (`voice/owner-brief.ts`),
+  written through the one `ai_settings` writer. No migration. It is the owner's data and is
+  **never in this repository**. Like the rest of `ai_settings`, a team member's session can read
+  the company row; the app shows and changes the brief for owners and admins only. If that is
+  not private enough, the next step is its own owner-only table.
+- **One owner, one brief:** a call uses the dialled business's brief; if it has none, the first
+  one found on the owner's other businesses in the same organization.
+- Plain text, at most 6,000 characters. `{{placeholders}}` are removed on save (the shared
+  agent's prompt is a template).
+- The brief is background. Live records come from the `business` tool, and the prompt says the
+  tool wins when the two disagree.
+
+## What it can do in the business
+
+Everything the owner can do by text, plus four read-only tools that are offered **only on the
+owner line** (`owner-channel/assistant-tools.ts`, switched on by `assistant: true` on the
+command agent). The owner-by-text agent and the AI staff's plan defaults are unchanged.
+
+| Tool | Answers |
+|---|---|
+| `new_leads` | People still marked a lead who came in over the last N days (default 14): the count and the newest ten. |
+| `open_quotes` | Quotes sent and waiting on the customer, approved without a deposit, drafts never sent: counts, totals, the newest ten. |
+| `money_owed` | Outstanding, overdue, and the five who owe the most. Left out when the Bookkeeper is on for the business: its `who_owes_me` answers instead (and `cash_snapshot`, `remind_now`, `record_offline_payment` come with it). |
+| `briefing_now` | The Office manager's morning briefing, on demand. Offered here even when the morning text is off. |
+
+Switching an AI staff role on for a business (Your AI) adds that role's own owner tools to the
+call as well: the Bookkeeper's reminders and payments, the Dispatcher's weather and crew plan,
+the Profit advisor's numbers, and so on.
+
+Not yet: creating or sending a quote or an invoice by voice.
+
+## More than one business
+
+The call belongs to the business whose number was dialled: its facts are in the prompt and
+`business` works on it by default. When the owner names another of their businesses, the
+assistant passes `business_name` and that one request runs there instead.
+
+- Reachable businesses are the ones in the **same organization** whose **verified owner cell is
+  the caller's number** (`switchableCompanies`), re-read on every tool call. Their names are
+  listed in the prompt. The model's argument only picks among those; another organization's
+  company, or one the caller isn't the verified owner of, can't be named into reach.
+- An unknown name is answered with the names that can be reached; a name that fits more than
+  one asks which.
+- One business per request. Confirmation codes, memory and the hourly limit follow the business
+  the request ran for.
+- To make a business reachable: set and confirm the same cell on it (Settings → Business →
+  Your cell).
+
 ## How a call gets there
 
 One shared Retell agent (`voice/owner-agent.ts`) whose prompt is `{{system_prompt}}`. Each call
-carries its own prompt, built in `voice/owner-line.ts` from the company's facts.
+carries its own prompt, built in `voice/owner-line.ts` from the owner's brief and the company's
+facts.
 
 - **The business's own number (one number for everything, Twilio).** `/api/twilio/voice/inbound`
   checks the caller before it stores a missed call. Caller ID equal to the called company's
@@ -47,7 +106,7 @@ Caller ID can be forged, so it is never enough for business data.
 1. The company and the caller are fixed when the call arrives and carried in the call's metadata
    with an HMAC token (`voice/owner-line-token.ts`). Every tool call re-verifies the token and
    re-checks that the caller's number is still the company's verified owner cell. The model's
-   arguments never choose a company.
+   arguments never choose a company outside the caller's own (see "More than one business").
 2. General questions and `web_lookup` need nothing more: they expose nothing.
 3. `business` needs a **verified caller**:
    - Twilio reports full carrier attestation for the call (`StirVerstat=TN-Validation-Passed-A`), or
@@ -87,7 +146,10 @@ your own account; leave it off otherwise.
 4. The owner's cell must be set and **confirmed** on the business (Settings → Business → Your cell).
 5. Call the business's Everdoer number from that cell.
 
-To change the tools or the model, re-run step 2 with `--apply`.
+To change the tools or the model, re-run step 2 with `--apply`. The tool list lives on the
+Retell agent, not in the per-call prompt: after a release that changes `buildOwnerAgentTools`
+(for example the one that added `business_name`), re-run it or the live agent keeps the old
+tools.
 
 ## Known gaps (pilot)
 
@@ -95,6 +157,9 @@ To change the tools or the model, re-run step 2 with `--apply`.
   cap (`OWNER_LINE_MAX_CALL_MINUTES`) is the only limit.
 - **Testing the receptionist.** With the owner line on, the owner calling their own number from
   their own cell no longer reaches the receptionist. Call from another phone to hear it.
-- **Several businesses on one cell.** The business is the one whose number was dialled.
+- **Several businesses on one cell.** Facts in the prompt are the dialled business's only; the
+  others are reached one request at a time through `business_name`.
+- **Long answers are short.** The command agent replies in text-message length, so a briefing
+  or a list comes back as the headline and the top few.
 - **Retell stores the call** (recording and transcript) under its default settings.
 - The mobile app and the web app have no "call your AI" entry point yet.

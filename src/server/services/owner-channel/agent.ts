@@ -15,6 +15,7 @@ import type { AdminClient } from "@/server/services/front-desk/contracts";
 import { recordAiUsageSafe } from "@/server/services/usage";
 import { isRetellOutboundActive } from "@/server/services/voice";
 import { hasReceptionistPlan } from "@/server/services/voice/minutes";
+import { ASSISTANT_TOOL_NOTES, assistantOwnerTools } from "./assistant-tools";
 import type { CompanyScope } from "./schedule";
 import { ownerToolsFor, runOwnerTool, type ToolRunState } from "./tools";
 
@@ -115,6 +116,12 @@ export interface OwnerAgentInput {
   logId?: string | null;
   /** Injectable model (tests); defaults to the real client. */
   client?: ModelClient;
+  /**
+   * The owner's own assistant is asking (voice/owner-line.ts), not a text: also offer the
+   * read-only day-to-day tools (assistant-tools.ts: leads, open quotes, money owed, the
+   * briefing). Unset, the agent is exactly the owner-by-text agent.
+   */
+  assistant?: boolean;
 }
 
 export interface OwnerAgentResult {
@@ -133,12 +140,13 @@ function clip(text: string): string {
 export async function runOwnerCommandAgent(input: OwnerAgentInput): Promise<OwnerAgentResult> {
   const nowMs = input.nowMs ?? Date.now();
   const staffRoles = await activeRolesFor(input.admin, { organizationId: input.scope.organizationId, companyId: input.scope.companyId });
-  const roleTools = staffRoles.flatMap((r) => r.ownerTools);
+  const staffTools = staffRoles.flatMap((r) => r.ownerTools);
+  const roleTools = input.assistant ? [...staffTools, ...assistantOwnerTools(staffTools)] : staffTools;
   const calls = await ownerCallsAvailability(input.admin, input.scope.organizationId);
   const callsEnabled = calls === "enabled";
   const salesCallsEnabled = callsEnabled && Boolean(salesAgentId());
   const callNotes = callsEnabled ? [...CALL_RULES, ...(salesCallsEnabled ? SALES_CALL_RULES : [])] : [calls === "not_set_up" ? CALLS_NOT_SET_UP_RULE : CALLS_NOT_IN_PLAN_RULE];
-  const roleNotes = [...callNotes, ...staffRoles.flatMap((r) => r.ownerPromptNotes)];
+  const roleNotes = [...callNotes, ...staffRoles.flatMap((r) => r.ownerPromptNotes), ...(input.assistant ? ASSISTANT_TOOL_NOTES : [])];
   const state: ToolRunState = { admin: input.admin, scope: input.scope, ownerPhone: input.ownerPhone, nowMs, confirmation: null, actions: [], roleOwnerTools: roleTools, callsEnabled, salesCallsEnabled };
   if (!isAIConfigured()) return { reply: FALLBACK_HELP, confirmationId: null, actions: [], rounds: 0, memoryActions: [] };
 

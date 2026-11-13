@@ -1,11 +1,12 @@
 /**
  * Your AI (docs/your-ai.md): what the assistant does for you, as plain switches, plus its name and
  * tone. Each switch is the same setting as in Settings → AI front desk; "Customize" goes there for
- * the details (timings, wording, hours).
+ * the details (timings, wording, hours). Where calling your own assistant is switched on
+ * (docs/owner-line.md), owners and admins also see what they've told it about themselves.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bot, ChevronRight, Loader2 } from "lucide-react";
+import { Bot, ChevronRight, Loader2, PhoneCall } from "lucide-react";
 import { useOrg } from "@/lib/org-context";
 import { useAuth } from "@/lib/auth-context";
 import { useCompanies } from "@/lib/api-hooks";
@@ -152,6 +153,77 @@ function PersonaCard({ view, canManage, busy, onSave }: { view: YourAiView; canM
   );
 }
 
+const BRIEF_PLACEHOLDER = [
+  "About me: I own two businesses and do most of the selling myself.",
+  "",
+  "My businesses: what each one does, who the customers are, a typical job and price.",
+  "",
+  "Right now: the two or three things I'm pushing on this month.",
+  "",
+  "How I like things: short answers, numbers first, ask me before anything goes to a customer.",
+].join("\n");
+
+/** What the owner's own assistant knows about them when they call it (docs/owner-line.md → "The brief"). */
+function OwnerBriefCard({ view, busy, onSave }: { view: YourAiView; busy: boolean; onSave: (brief: string | null) => void }) {
+  const saved = view.ownerLine?.brief ?? "";
+  const max = view.ownerLine?.maxChars ?? 6000;
+  const [text, setText] = useState(saved);
+  useEffect(() => setText(saved), [saved]);
+  const changed = text.trim() !== saved.trim();
+  const over = text.trim().length > max;
+  const name = view.persona.name ?? view.persona.defaultName;
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/15 text-primary shrink-0">
+          <PhoneCall className="w-5 h-5" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground">When you call {name}</h2>
+          <p className="text-xs text-muted-foreground">
+            What {name} should already know when you call from your own phone: who you are, what each of your businesses does, and what matters right now. Customers never hear this.
+          </p>
+        </div>
+      </div>
+      <form
+        className="mt-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (changed && !over) onSave(text.trim() || null);
+        }}
+      >
+        <label htmlFor="your-ai-brief" className="text-xs font-medium text-muted-foreground">
+          About you and your businesses
+        </label>
+        <textarea
+          id="your-ai-brief"
+          value={text}
+          rows={10}
+          disabled={busy}
+          placeholder={BRIEF_PLACEHOLDER}
+          aria-describedby="your-ai-brief-help"
+          aria-invalid={over}
+          onChange={(e) => setText(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p id="your-ai-brief-help" className={cn("text-[11px]", over ? "text-destructive" : "text-muted-foreground")}>
+            {over
+              ? `That's ${(text.trim().length - max).toLocaleString()} characters too long. Trim it and save.`
+              : "Saved on this business. Calls to your other businesses use it too, unless they have notes of their own."}
+          </p>
+          {changed && (
+            <button type="submit" disabled={busy || over} className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              Save
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export default function YourAiPage() {
   const { organizationId, companyId } = useOrg();
   const { session } = useAuth();
@@ -188,6 +260,18 @@ export default function YourAiPage() {
     );
   };
 
+  const saveBrief = (brief: string | null) => {
+    setPendingKey("brief");
+    update.mutate(
+      { ownerBrief: brief },
+      {
+        onSuccess: () => toast.success("Saved. It's used from your next call."),
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Couldn't save that. Try again."),
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <header>
@@ -209,6 +293,7 @@ export default function YourAiPage() {
       ) : (
         <>
           <PersonaCard view={data} canManage={canManage} busy={pendingKey !== null} onSave={savePersona} />
+          {data.ownerLine && canManage && <OwnerBriefCard view={data} busy={pendingKey !== null} onSave={saveBrief} />}
           {YOUR_AI_GROUPS.map((group) => {
             const items = data.switches.filter((s) => s.group === group.id);
             if (items.length === 0) return null;

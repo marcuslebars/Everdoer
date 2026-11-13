@@ -1,4 +1,4 @@
-/** "Your AI" page client (docs/your-ai.md): GET the switches, PATCH one switch or the name/tone. */
+/** "Your AI" page client (docs/your-ai.md): GET the switches, PATCH one switch, the name/tone, or your assistant's notes. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 
@@ -22,9 +22,17 @@ export interface YourAiView {
   companyId: string;
   persona: { name: string | null; tone: YourAiTone | null; defaultName: string };
   switches: YourAiSwitch[];
+  /**
+   * Calling your own assistant (docs/owner-line.md): what you've told it about you and your
+   * businesses. Null unless that is switched on for the account and you are an owner or admin.
+   */
+  ownerLine?: { brief: string | null; maxChars: number } | null;
 }
 
-export type YourAiPatch = { switch: string; on: boolean; choice?: string } | { persona: { name: string | null; tone: YourAiTone | null } };
+export type YourAiPatch =
+  | { switch: string; on: boolean; choice?: string }
+  | { persona: { name: string | null; tone: YourAiTone | null } }
+  | { ownerBrief: string | null };
 
 export const YOUR_AI_GROUPS: Array<{ id: YourAiSwitch["group"]; title: string }> = [
   { id: "customers", title: "Talking to customers" },
