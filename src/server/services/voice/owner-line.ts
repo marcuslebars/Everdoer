@@ -15,7 +15,14 @@
  * a booking, text or call a customer, turn the AI on or off, remember a note).
  *
  * One shared Retell agent (voice/owner-agent.ts) whose prompt is the `{{system_prompt}}`
- * passthrough; each call carries its own prompt, built here from the company's facts.
+ * passthrough; each call carries its own prompt, built here from the company's facts and the
+ * owner's own brief (voice/owner-brief.ts: who they are, their businesses, what matters now).
+ *
+ * More than one business: the call is for the business that was dialled, and the `business`
+ * tool can also work on the owner's OTHER businesses in the same organization when they name
+ * one — only ones whose verified owner cell is the caller's number (switchableCompanies).
+ * On this line the command agent also gets the read-only day-to-day tools
+ * (owner-channel/assistant-tools.ts: new leads, open quotes, money owed, the briefing).
  *
  * Who is really calling. Caller ID can be forged, so:
  *   • general questions and web lookups need nothing more — they expose nothing;
@@ -52,6 +59,7 @@ import {
   unlockCode,
   type OwnerLineClaims,
 } from "@/server/services/voice/owner-line-token";
+import { cleanBrief, loadOwnerBrief } from "@/server/services/voice/owner-brief";
 import { ownerWebLookup } from "@/server/services/voice/owner-web-lookup";
 
 export * from "@/server/services/voice/owner-line-token";
@@ -120,6 +128,10 @@ export interface OwnerLinePromptInput {
   now: Date;
   /** Business tools are open from the start of the call. */
   callerVerified: boolean;
+  /** The owner's own brief (voice/owner-brief.ts): who they are, their businesses, what matters now. */
+  brief?: string | null;
+  /** The owner's OTHER businesses the business tool can reach on this call (switchableCompanies). */
+  otherBusinesses?: string[];
 }
 
 /** What the assistant says first. PURE. */
@@ -128,40 +140,61 @@ export function ownerLineOpening(facts: Pick<BusinessFacts, "ownerFirstName" | "
   return facts.ownerFirstName ? `Hi ${facts.ownerFirstName}, it's ${name}. What do you need?` : `Hi, it's ${name}. What do you need?`;
 }
 
+function listed(names: string[]): string {
+  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** The per-call system prompt for the owner's own assistant. PURE. */
 export function buildOwnerLinePrompt(input: OwnerLinePromptInput): string {
   const { facts } = input;
   const name = voiceName(facts.persona);
   const owner = facts.ownerFirstName ?? "the owner";
+  const Owner = facts.ownerFirstName ?? "The owner";
+  const others = (input.otherBusinesses ?? []).filter((n) => n.trim() && n !== facts.businessName);
+  const brief = cleanBrief(input.brief);
   const localNow = input.now.toLocaleString("en-CA", { timeZone: facts.timeZone, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
   return [
-    `You are ${name}, the AI assistant of ${owner === "the owner" ? "the owner" : owner}, who owns ${facts.businessName}. ${owner === "the owner" ? "The owner" : owner} is calling you from their own phone. This is NOT a customer call: you are talking to your boss.`,
+    `You are ${name}, the AI assistant of ${owner}, who owns ${facts.businessName}${others.length ? ` and ${others.length === 1 ? "one other business" : `${others.length} other businesses`} on this account` : ""}. ${Owner} is calling you from their own phone. This is NOT a customer call: you are talking to your boss, and your job is to help with anything they need.`,
     `It is ${localNow} (${facts.timeZone}).`,
     `Open with exactly: "${ownerLineOpening(facts)}"`,
+    ...(brief
+      ? [
+          "",
+          `What ${owner} wants you to know (their own notes about themselves, their businesses and what matters right now; rely on it as background, and where it says how they like things done, do it that way):`,
+          "<owner_brief>",
+          brief,
+          "</owner_brief>",
+        ]
+      : []),
     "",
     "What you are for:",
     "- Anything they ask. General knowledge, how things work, advice, a second opinion, maths, wording for a message, business and pricing strategy, brainstorming, planning. Answer from what you know, the way a sharp, well-read colleague would. You are not limited to this business.",
-    "- Their business. Questions about it and things they want done in it.",
+    "- Running their day. What's on, who is waiting on them, new leads, quotes still out, money owed, the morning briefing, and getting things done: moving a job, texting or calling a customer.",
+    "- Thinking with them. When they ask what to do or what to focus on, pull the live numbers if they matter, weigh them against what you know of their priorities, and give one clear recommendation with the reason. Offer options only when it is a real toss-up.",
     "",
     "How to talk:",
     `- ${toneLine(facts.persona) ?? "Be warm, direct and concise."} This is a phone call: speak in plain sentences, no lists, no markdown, no reading out links or symbols.`,
     "- Lead with the answer. One to three sentences unless they ask for detail, then go as deep as they want and check in now and then.",
+    "- With numbers, give the headline first (\"about forty-two hundred owed, eighteen hundred of it late\"), then the two or three items that matter, and offer the rest.",
     "- If a question is unclear, ask one short question instead of guessing.",
     "- Be honest about what you don't know. For medical, legal or tax questions give your best understanding and say plainly when a professional should confirm it.",
     "- If asked, say honestly that you are an AI assistant.",
     "",
     "Your tools:",
     "- web_lookup: for anything current or that may have changed (news, weather, prices, another business's hours, sports, events, rules, product details) and whenever you are not sure of a fact. Don't guess at current facts; look them up. Say you're checking, then give the answer in a sentence or two.",
-    "- business: for anything about THIS business's own records or anything they want done: today's or any day's jobs, who is waiting on them, looking up a customer, open times, moving or cancelling a booking, texting or calling a customer, turning the AI on or off, pausing texts, remembering a note. Pass their request in their own words in `request`, including names and times exactly as said. Read back what it returns.",
+    "- business: for anything about a business's own records or anything they want done: today's or any day's jobs, who is waiting on them, new leads, open quotes, money owed, the day's briefing, looking up a customer, open times, moving or cancelling a booking, texting or calling a customer, turning the AI on or off, pausing texts, remembering a note. Pass their request in their own words in `request`, including names and times exactly as said. Read back what it returns.",
+    others.length
+      ? `- This call came in on ${facts.businessName}'s number, so the business tool works on ${facts.businessName} unless they name another business. Their other ${others.length === 1 ? "business" : "businesses"} you can reach: ${listed(others)}. For one of those, also pass its name in \`business_name\`, spelled exactly as written here. If it isn't clear which business they mean, ask. One business per request: for "across all of them", ask the tool once per business and add it up yourself.`
+      : `- The business tool works on ${facts.businessName} only. If they ask about a business that isn't listed here, say you can't reach its records on this line.`,
     "- A change is never done from this call alone: the business tool texts a code to their phone and they confirm by texting it back. Say that; never say something was changed unless the tool says so.",
     input.callerVerified
       ? "- The business tool is ready to use on this call."
       : "- The first time you use the business tool on this call it texts a six-digit security code to their phone. Ask them to read it out, then call the tool again with the same request and the digits in `unlock_code`. Keep passing that code on later business requests in this call.",
     "- end_call: when they say goodbye or they're done.",
     "",
-    "Quick answers about the business can come straight from these facts (prices are before HST). For anything about specific customers, bookings or money owed, use the business tool; never invent a customer, a booking, a time or an amount.",
+    `Quick answers about ${facts.businessName} can come straight from the facts below (prices are before HST). For anything about specific customers, bookings, leads, quotes or money owed, use the business tool; never invent a customer, a booking, a time or an amount. Your notes above are background, not live records: if they and the tool disagree, the tool is right.`,
     "",
-    "Business facts:",
+    `Business facts (${facts.businessName}):`,
     factSheet(facts),
   ].join("\n");
 }
@@ -183,6 +216,41 @@ export interface OwnerLineDeps {
   fetchImpl?: FetchLike;
   findOwnerCompanies?: typeof findOwnerCompanies;
   loadFacts?: (admin: AdminClient, companyId: string) => Promise<BusinessFacts>;
+  loadBrief?: typeof loadOwnerBrief;
+}
+
+/**
+ * The owner's OTHER businesses the business tool may work on during a call to `dialled`: same
+ * organization, and the caller's number is that business's verified owner cell too (candidates
+ * come from findOwnerCompanies, which is exactly that check). Never another organization. PURE.
+ */
+export function switchableCompanies(candidates: OwnerCompany[], dialled: { organizationId: string; companyId: string }): OwnerCompany[] {
+  return candidates.filter((c) => c.organizationId === dialled.organizationId && c.companyId !== dialled.companyId);
+}
+
+function nameKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Which of the owner's businesses a spoken name means: an exact match first, then a name that
+ * contains it (or the other way round). "none" and "unclear" are for the assistant to ask. PURE.
+ */
+export function pickBusiness(companies: OwnerCompany[], spoken: string): { kind: "one"; company: OwnerCompany } | { kind: "none" } | { kind: "unclear"; names: string[] } {
+  const key = nameKey(spoken);
+  if (!key) return { kind: "none" };
+  const exact = companies.filter((c) => nameKey(c.name) === key);
+  if (exact.length === 1) return { kind: "one", company: exact[0] };
+  const loose = exact.length > 1 ? exact : companies.filter((c) => nameKey(c.name).includes(key) || (nameKey(c.name).length >= 4 && key.includes(nameKey(c.name))));
+  if (loose.length === 1) return { kind: "one", company: loose[0] };
+  return loose.length === 0 ? { kind: "none" } : { kind: "unclear", names: loose.map((c) => c.name) };
+}
+
+/** The prompt's per-call extras: the brief (dialled business first) and the other businesses' names. */
+async function promptExtras(admin: AdminClient, candidates: OwnerCompany[], company: OwnerCompany, deps: OwnerLineDeps): Promise<Pick<OwnerLinePromptInput, "brief" | "otherBusinesses">> {
+  const others = switchableCompanies(candidates, company);
+  const brief = await (deps.loadBrief ?? loadOwnerBrief)(admin, [company, ...others]).catch(() => null);
+  return { brief, otherBusinesses: others.map((c) => c.name) };
 }
 
 /** The dialled company, if the caller owns it and the owner line is switched on for it. PURE. */
@@ -221,7 +289,7 @@ export async function startOwnerLineFromTwilio(
     if (!company) return { kind: "none" };
 
     const now = deps.now ?? new Date();
-    const facts = await (deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId);
+    const [facts, extras] = await Promise.all([(deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId), promptExtras(admin, candidates, company, deps)]);
     const callerVerified = carrierVerified(input.stirVerstat) || config.trustCallerId;
     const claims: OwnerLineClaims = { organizationId: company.organizationId, companyId: company.companyId, callRef: input.callSid, callerVerified, issuedAt: Math.floor(now.getTime() / 1000) };
     const callId = await registerRetellCall(
@@ -230,7 +298,7 @@ export async function startOwnerLineFromTwilio(
         fromNumber: input.from,
         toNumber: input.to,
         metadata: buildOwnerLineMetadata(claims, config.tokenSecret),
-        dynamicVariables: buildOwnerLineVariables({ facts, now, callerVerified }),
+        dynamicVariables: buildOwnerLineVariables({ facts, now, callerVerified, ...extras }),
       },
       config,
       deps.fetchImpl,
@@ -273,13 +341,13 @@ export async function ownerLineForRetellInbound(
     if (!company) return null;
 
     const now = deps.now ?? new Date();
-    const facts = await (deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId);
+    const [facts, extras] = await Promise.all([(deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId), promptExtras(admin, candidates, company, deps)]);
     const callerVerified = config.trustCallerId;
     const claims: OwnerLineClaims = { organizationId: company.organizationId, companyId: company.companyId, callRef: input.callId, callerVerified, issuedAt: Math.floor(now.getTime() / 1000) };
     console.log(`[owner-line] owner call on a Retell number (${callerVerified ? "caller verified" : "caller unverified"})`);
     return {
       override_agent_id: config.agentId,
-      dynamic_variables: buildOwnerLineVariables({ facts, now, callerVerified }),
+      dynamic_variables: buildOwnerLineVariables({ facts, now, callerVerified, ...extras }),
       metadata: buildOwnerLineMetadata(claims, config.tokenSecret),
     };
   } catch (err) {
@@ -308,6 +376,10 @@ export interface OwnerLineToolDeps {
   consume?: typeof consumeLimit;
   webLookup?: typeof ownerWebLookup;
   loadFacts?: (admin: AdminClient, companyId: string) => Promise<BusinessFacts>;
+}
+
+function spokenList(names: string[], joiner: "and" | "or" = "and"): string {
+  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} ${joiner} ${names[names.length - 1]}`;
 }
 
 function readCallObject(raw: unknown): Record<string, unknown> {
@@ -397,35 +469,54 @@ export async function runOwnerLineTool(admin: AdminClient, req: RetellFunctionRe
       }
     }
 
+    // Which business: the one that was dialled, unless they named another of THEIR businesses.
+    // The choice is only ever among companies in the call's organization whose verified owner
+    // cell is the caller's number (`owned`, re-read just above); the model's argument picks
+    // among those and can never reach anything else.
+    let target = company;
+    const named = typeof req.args.business_name === "string" ? req.args.business_name.trim().slice(0, 120) : "";
+    if (named) {
+      const mine = [company, ...switchableCompanies(owned, company)];
+      const picked = pickBusiness(mine, named);
+      if (picked.kind === "none") {
+        return { ok: false, reason: "unknown_business", say: `I can't reach that business on this line. I can reach ${spokenList(mine.map((c) => c.name))}.` };
+      }
+      if (picked.kind === "unclear") {
+        return { ok: false, reason: "unknown_business", say: `Which one do you mean: ${spokenList(picked.names, "or")}?` };
+      }
+      target = picked.company;
+    }
+
     if (!(await consume(admin, `owner_ai:${last10}`, OWNER_AI_PER_HOUR, 3600))) {
       return { ok: false, reason: "rate_limited", say: "That's a lot at once. Give me a few minutes and ask again." };
     }
     const agent = await (deps.runAgent ?? runOwnerCommandAgent)({
       admin,
-      scope: { organizationId: company.organizationId, companyId: company.companyId, companyName: company.name, timeZone: company.timeZone },
-      ownerPhone: company.ownerPhone,
+      scope: { organizationId: target.organizationId, companyId: target.companyId, companyName: target.name, timeZone: target.timeZone },
+      ownerPhone: target.ownerPhone,
       body: request,
       nowMs,
+      assistant: true,
     });
 
     let say = agent.reply;
     if (agent.confirmationId) {
       // The code that confirms a change goes to the owner's phone, never down the call.
       const sent = await (deps.sendSms ?? sendOwnerSms)(admin, {
-        to: company.ownerPhone,
+        to: target.ownerPhone,
         body: agent.reply,
-        organizationId: company.organizationId,
-        companyId: company.companyId,
-        platformBrand: company.platformBrand,
+        organizationId: target.organizationId,
+        companyId: target.companyId,
+        platformBrand: target.platformBrand,
       });
       say = spokenConfirmation(sent.status === "sent");
     }
     // One memory for calls and texts: a later text can say "actually make it 4" about this call.
     await recordTurn(admin, {
-      organizationId: company.organizationId,
-      companyId: company.companyId,
+      organizationId: target.organizationId,
+      companyId: target.companyId,
       channel: "owner_sms",
-      threadKey: company.ownerPhone,
+      threadKey: target.ownerPhone,
       userText: request,
       reply: agent.reply,
       intent: agent.confirmationId ? "command_confirm" : "command",

@@ -117,11 +117,40 @@ describe("YourAiPage", () => {
     expect(reviews.getByRole("link", { name: /Automations/ })).toHaveAttribute("href", "/automations");
   });
 
+  it("calling your assistant: the notes card shows only where that is switched on, and saves just the notes", () => {
+    renderPage();
+    expect(screen.queryByLabelText("About you and your businesses")).toBeNull();
+
+    state.view.ownerLine = { brief: "Roofing pays the bills.", maxChars: 40 };
+    state.view.persona.name = "Sam";
+    renderPage();
+    expect(screen.getByRole("heading", { name: "When you call Sam" })).toBeInTheDocument();
+    const box = screen.getByLabelText("About you and your businesses");
+    expect(box).toHaveValue("Roofing pays the bills.");
+    // Nothing to save until it changes.
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    fireEvent.change(box, { target: { value: "  Coatings is the new one.  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mutate).toHaveBeenCalledWith({ ownerBrief: "Coatings is the new one." }, expect.anything());
+    // Emptied → cleared.
+    fireEvent.change(box, { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mutate).toHaveBeenLastCalledWith({ ownerBrief: null }, expect.anything());
+    // Too long: says by how much and won't save.
+    fireEvent.change(box, { target: { value: "x".repeat(45) } });
+    expect(screen.getByText(/5 characters too long/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it("members see the switches but can't change them", () => {
     state.role = "member";
     renderPage();
     expect(screen.getByText(/Only owners and admins/)).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Follow up on quotes" })).toBeDisabled();
     expect(screen.getByLabelText("Name")).toBeDisabled();
+    // The owner's notes are not the team's, even if a response ever carried them.
+    state.view.ownerLine = { brief: "private", maxChars: 6000 };
+    renderPage();
+    expect(screen.queryByLabelText("About you and your businesses")).toBeNull();
   });
 });

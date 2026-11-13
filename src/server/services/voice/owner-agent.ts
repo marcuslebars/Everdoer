@@ -6,8 +6,12 @@
  * agent serves every owner.
  *
  * Unlike the receptionist it has no customer tools (quote, book, capture a lead): it has
- * `business`, which runs the owner's text-command agent with the spoken request, and
+ * `business`, which runs the owner's text-command agent with the spoken request (for the
+ * dialled business, or another of the owner's own when `business_name` says so), and
  * `web_lookup` for current information. General knowledge needs no tool: that is the model.
+ *
+ * The tool list lives on the agent, not in the per-call prompt: after changing it here, run
+ * `npm run job:retell-owner-agent -- --apply` again so the live agent picks it up.
  *
  * buildOwnerAgentConfig() is the exact config; ensureOwnerAgent() creates or updates it
  * (src/server/jobs/retell-owner-agent.ts). Pure except ensureOwnerAgent.
@@ -57,11 +61,15 @@ export function buildOwnerAgentTools(input: Pick<OwnerAgentConfigInput, "baseUrl
   return [
     custom(
       "business",
-      "Anything about the owner's own business records, or anything they want done in the business: jobs on a day, who is waiting on them, look up a customer, open times, move or cancel a booking, text or call a customer, turn the AI on or off, pause texts, remember or recall a note. Returns `say`: what to tell the owner.",
+      "Anything about the owner's own business records, or anything they want done in the business: jobs on a day, who is waiting on them, new leads, quotes still open, money owed, the day's briefing, look up a customer, open times, move or cancel a booking, text or call a customer, turn the AI on or off, pause texts, remember or recall a note. Returns `say`: what to tell the owner.",
       {
         type: "object",
         properties: {
           request: { type: "string", description: "The owner's request in their own words, with names, days and times exactly as they said them." },
+          business_name: {
+            type: "string",
+            description: "Only when the owner means one of their OTHER businesses listed in your instructions: that business's name, spelled exactly as listed. Leave out for the business this call came in on.",
+          },
           unlock_code: { type: "string", description: "The six-digit security code the owner read out on this call, digits only. Leave out until they have read one out; then include it every time." },
         },
         required: ["request"],

@@ -50,14 +50,18 @@ page has two parts:
 
 **Access.** Everyone in the org can see the page. Only owners and admins can change it.
 
+**"When you call <name>".** Where calling your own assistant is switched on for the organization
+(docs/owner-line.md), owners and admins also get a card for what the assistant should know about
+them and their businesses. Members never receive it (`ownerLine` is null in their response).
+
 **Code**
 
 - Server: `src/server/services/your-ai/switches.ts`, with `readSwitches`, `aiSettingsMutation` and
   `overlappingAutomations` (all pure).
 - API: `GET` / `PATCH /api/organizations/:org/companies/:company/your-ai`. The `PATCH` body is
-  either `{ switch, on, choice? }` or `{ persona: { name, tone } }`.
+  one of `{ switch, on, choice? }`, `{ persona: { name, tone } }` or `{ ownerBrief }`.
 - Client: `src/lib/your-ai-api.ts` and `src/screens/YourAiPage.tsx`.
-- Tests: `your-ai.test.ts` and `your-ai-page.test.tsx`.
+- Tests: `your-ai.test.ts`, `your-ai-page.test.tsx` and `your-ai-owner-brief-route.test.ts`.
 
 ## Set up in onboarding
 
