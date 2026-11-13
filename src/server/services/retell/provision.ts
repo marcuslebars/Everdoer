@@ -33,6 +33,10 @@ export interface RetellClient {
   updateLlm(llmId: string, body: Record<string, unknown>): Promise<{ llm_id: string }>;
   createAgent(body: Record<string, unknown>): Promise<{ agent_id: string }>;
   updateAgent(agentId: string, body: Record<string, unknown>): Promise<{ agent_id: string }>;
+  /** Read-backs and publishing, for the setup jobs (voice/owner-agent.ts). Optional: test fakes needn't have them. */
+  getLlm?(llmId: string): Promise<Record<string, unknown>>;
+  getAgent?(agentId: string): Promise<Record<string, unknown>>;
+  publishAgentVersion?(agentId: string, version: number): Promise<unknown>;
   createPhoneNumber(body: Record<string, unknown>): Promise<RetellPhoneNumber>;
   updatePhoneNumber(phoneNumber: string, body: Record<string, unknown>): Promise<RetellPhoneNumber>;
   listPhoneNumbers(): Promise<RetellPhoneNumber[]>;
@@ -118,6 +122,9 @@ export function createRetellClient(apiKey: string): RetellClient {
     updateLlm: (id, b) => call("PATCH", `/update-retell-llm/${id}`, b) as Promise<{ llm_id: string }>,
     createAgent: (b) => call("POST", "/create-agent", b) as Promise<{ agent_id: string }>,
     updateAgent: (id, b) => call("PATCH", `/update-agent/${id}`, b) as Promise<{ agent_id: string }>,
+    getLlm: (id) => call("GET", `/get-retell-llm/${id}`) as Promise<Record<string, unknown>>,
+    getAgent: (id) => call("GET", `/get-agent/${id}`) as Promise<Record<string, unknown>>,
+    publishAgentVersion: (id, version) => call("POST", `/publish-agent-version/${id}`, { version }),
     createPhoneNumber: (b) => call("POST", "/create-phone-number", b) as Promise<RetellPhoneNumber>,
     updatePhoneNumber: (num, b) => call("PATCH", `/update-phone-number/${encodeURIComponent(num)}`, b) as Promise<RetellPhoneNumber>,
     listPhoneNumbers: () => listAllPages((key) => call("GET", phoneNumberListPath(key)) as Promise<RetellListPage<RetellPhoneNumber>>),
