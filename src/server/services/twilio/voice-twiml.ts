@@ -116,6 +116,12 @@ export function buildHangupTwiml(): string {
   return `${XML_HEADER}<Response><Hangup/></Response>`;
 }
 
+/** The owner called their own number and their assistant didn't pick up (voice/owner-line.ts). */
+export function buildOwnerLineUnavailableTwiml(voice?: string): string {
+  const v = escapeXml(voice?.trim() || DEFAULT_SAY_VOICE);
+  return `${XML_HEADER}<Response><Say voice="${v}">Sorry, your assistant couldn't pick up just now. Try again in a minute, or send a text instead.</Say><Hangup/></Response>`;
+}
+
 /** After the voicemail (the <Record> action): thank them and hang up. */
 export function buildVoicemailDoneTwiml(voice?: string): string {
   const v = escapeXml(voice?.trim() || DEFAULT_SAY_VOICE);

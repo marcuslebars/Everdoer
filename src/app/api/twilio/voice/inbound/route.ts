@@ -18,10 +18,12 @@ import {
   sayVoice,
   transcriptionEnabled,
   VOICE_AI_HANDOFF_PATH,
+  VOICE_OWNER_LINE_PATH,
   VOICE_RECORDING_PATH,
   voicemailMaxSecondsSetting,
 } from "@/server/services/twilio/voice-config";
 import { startAiAnswer } from "@/server/services/voice/ai-answer";
+import { startOwnerLineFromTwilio } from "@/server/services/voice/owner-line";
 import {
   buildAiHandoffTwiml,
   buildCatcherGreetingTwiml,
@@ -65,6 +67,11 @@ export const dynamic = "force-dynamic";
  *   7) otherwise answer with TwiML: greeting + <Record> voicemail (recording/transcription
  *      callbacks go to /api/twilio/voice/recording).
  * The lead, call.missed and text-back happen in the worker (handleMissedCall).
+ *
+ * Owner line (docs/owner-line.md), between steps 2 and 3: when it is switched on and the caller
+ * is the called company's own verified owner, the call goes to the owner's assistant instead.
+ * It is not a missed call, so nothing is enqueued — no lead, no text-back. If the owner line is
+ * off, the caller isn't the owner, or anything fails, the call carries on from step 3 unchanged.
  */
 export async function POST(request: Request): Promise<Response> {
   const backstop = await enforceWebhookBackstop(request, "twilio_voice_inbound");
@@ -100,6 +107,20 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
   const payload = forwardingTestId ? { ...params, [forwardingTestLegKeyForWrite()]: forwardingTestId } : params;
+
+  if (!fromOurTestCallerId) {
+    const owner = await startOwnerLineFromTwilio(admin, { from, to, callSid, stirVerstat: params.StirVerstat ?? null });
+    if (owner.kind === "owner") {
+      return twimlResponse(
+        buildAiHandoffTwiml({
+          sipUri: owner.sipUri,
+          actionUrl: `${callbackBaseUrl(request)}${VOICE_OWNER_LINE_PATH}?event=dial`,
+          ringTimeoutSeconds: owner.ringTimeoutSeconds,
+          timeLimitSeconds: owner.timeLimitSeconds,
+        }),
+      );
+    }
+  }
 
   try {
     await enqueueInboundWebhookJob(admin, { provider: VOICE_JOB_PROVIDER, externalId: callSid, payload });

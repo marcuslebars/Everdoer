@@ -207,7 +207,8 @@ export interface RegisterCallInput {
   agentId: string;
   fromNumber: string | null;
   toNumber: string | null;
-  metadata: AnswerMetadata;
+  /** The signed tenant metadata: an AI-answered catcher call's, or the owner line's (voice/owner-line.ts). */
+  metadata: AnswerMetadata | Record<string, string>;
   dynamicVariables: Record<string, string>;
 }
 

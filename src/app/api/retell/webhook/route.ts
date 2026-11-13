@@ -8,6 +8,7 @@ import { readString } from "@/server/services/retell/payload";
 import { verifyRetellSignature } from "@/server/services/retell/signature";
 import { createRetellAdminClient } from "@/server/services/retell/tenant";
 import { enforceWebhookBackstop } from "@/server/services/rate-limit";
+import { isOwnerLineWebhook } from "@/server/services/voice/owner-line-token";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
   }
   logRetellPayload("webhook", payload);
+
+  // The owner talking to their own assistant (docs/owner-line.md) is not a customer call: no
+  // "answering a call" text, no lead, no call record.
+  if (isOwnerLineWebhook(payload)) {
+    return NextResponse.json({ ok: true, ignored: "owner_line" }, { status: 200 });
+  }
 
   const event = readString(payload, ["event"]);
   if (event === "call_started") {

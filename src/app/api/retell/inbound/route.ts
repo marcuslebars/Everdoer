@@ -14,15 +14,18 @@ import {
 import { getRetellConfig } from "@/server/services/retell/config";
 import { verifyRetellSignature } from "@/server/services/retell/signature";
 import { createRetellAdminClient, resolveRetellTenant } from "@/server/services/retell/tenant";
+import { getOwnerLineConfig, ownerLineForRetellInbound, type OwnerLineInboundOverride } from "@/server/services/voice/owner-line";
 
 export const dynamic = "force-dynamic";
 
 /** Retell waits on this while the phone rings; stay well inside it. */
 const BUDGET_MS = 1500;
+/** The owner-line check loads the company's facts for the prompt; Retell allows 10 s per attempt. */
+const OWNER_LINE_BUDGET_MS = 5000;
 
 interface InboundBody {
   event?: string;
-  call_inbound?: { from_number?: string; to_number?: string; agent_id?: string };
+  call_inbound?: { from_number?: string; to_number?: string; agent_id?: string; call_id?: string };
 }
 
 function withinBudget<T>(work: Promise<T>, fallback: T): Promise<T> {
@@ -61,6 +64,16 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const admin = createRetellAdminClient();
   const inbound = body.call_inbound ?? {};
+
+  // The owner calling their own number (docs/owner-line.md): hand the call to their assistant.
+  // Off, not the owner, slow or failing → null, and the call is answered exactly as before.
+  if (getOwnerLineConfig().enabled) {
+    const owner = await Promise.race([
+      ownerLineForRetellInbound(admin, { from: inbound.from_number ?? null, to: inbound.to_number ?? null, agentId: inbound.agent_id ?? null, callId: inbound.call_id ?? null }),
+      new Promise<OwnerLineInboundOverride | null>((resolve) => setTimeout(() => resolve(null), OWNER_LINE_BUDGET_MS)),
+    ]);
+    if (owner) return NextResponse.json({ call_inbound: owner });
+  }
 
   const result = await withinBudget(
     (async (): Promise<{ profile: CallerProfile; greeting: GreetingContext }> => {
