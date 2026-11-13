@@ -83,5 +83,7 @@ export const SMS_INBOUND_PATH = "/api/twilio/sms/inbound";
 export const FORWARDING_TEST_CALLBACK_PATH = "/api/twilio/voice/forwarding-test";
 /** <Dial> action for an AI-answered call (docs/front-desk-ai.md → "## Phone answering"). */
 export const VOICE_AI_HANDOFF_PATH = "/api/twilio/voice/ai-handoff";
+/** The <Dial> action of an owner-line call (voice/owner-line.ts). */
+export const VOICE_OWNER_LINE_PATH = "/api/twilio/voice/owner-line";
 /** Voice URL of a ported business line (docs/ai-staff.md → "Keep your number"): rings the owner first. */
 export const VOICE_BUSINESS_LINE_PATH = "/api/twilio/voice/business-line";

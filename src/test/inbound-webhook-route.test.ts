@@ -87,6 +87,18 @@ describe("retell webhook — durable-first", () => {
     expect(jobUpsert?.options).toEqual({ onConflict: "provider,external_id", ignoreDuplicates: true });
   });
 
+  it("an owner talking to their own assistant is not a customer call: nothing stored, no announcement", async () => {
+    h.fromCalls.length = 0;
+    h.upserts.length = 0;
+
+    for (const event of ["call_started", "call_analyzed"]) {
+      const response = await postRetell({ event, call: { ...callAnalyzed.call, metadata: { source: "owner_line" } } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, ignored: "owner_line" });
+    }
+    expect(h.fromCalls).toEqual([]);
+  });
+
   it("does not enqueue for non-analyzed events", async () => {
     h.fromCalls.length = 0;
     h.upserts.length = 0;
