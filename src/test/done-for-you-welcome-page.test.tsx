@@ -85,11 +85,12 @@ describe("Done-for-you welcome page", () => {
     icon.remove();
   });
 
-  it("tells the buyer the payment is safe when provisioning failed", async () => {
+  it("tells the buyer the order is safe when provisioning failed (true with or without a payment today)", async () => {
     statuses = ["failed"];
     renderPage();
     await screen.findByTestId("welcome-delayed");
-    expect(screen.getByText(/Your payment is safe/)).toBeInTheDocument();
+    expect(screen.getByText(/Your order is safe/)).toBeInTheDocument();
+    expect(screen.queryByText(/payment/i)).toBeNull();
   });
 
   it("handles a missing session id", async () => {

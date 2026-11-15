@@ -145,6 +145,24 @@ export function doneForYouAutomaticTax(): boolean {
   return process.env.STRIPE_AUTOMATIC_TAX?.trim().toLowerCase() === "true";
 }
 
+/** Longest free trial the checkout will ask Stripe for, in days (a typo like 1400 must not give years away). */
+export const DONE_FOR_YOU_MAX_TRIAL_DAYS = 60;
+
+/**
+ * Free-trial length in days for a done-for-you Checkout. OFF (0) unless
+ * EVERDOER_CHECKOUT_TRIAL_DAYS is a whole number from 1 to DONE_FOR_YOU_MAX_TRIAL_DAYS: anything
+ * else (unset, 0, "14 days", 1.5, 365) means no trial, so a bad value can never start giving the
+ * service away. The card is still collected at checkout and Stripe charges the monthly price when
+ * the trial ends; a setup fee that isn't discounted to $0 is still charged at checkout.
+ * See docs/done-for-you-purchase.md "Free trial".
+ */
+export function doneForYouTrialDays(): number {
+  const raw = process.env.EVERDOER_CHECKOUT_TRIAL_DAYS?.trim() ?? "";
+  if (!/^\d{1,3}$/.test(raw)) return 0;
+  const days = Number(raw);
+  return days >= 1 && days <= DONE_FOR_YOU_MAX_TRIAL_DAYS ? days : 0;
+}
+
 // ── Checkout branding ─────────────────────────────────────────────────────────
 
 /**

@@ -132,6 +132,7 @@ Traced from the code, not assumed. Legend: ✅ required · ➕ recommended · �
 | `VOICE_OVERAGE_ANSWER_MINUTES` (def 0) | ○ | — | — | — |
 | `STRIPE_PRICE_EVERDOER_CATCH` / `_CLOSE` / `_FRONT_DESK` (old `STRIPE_PRICE_CL_*` still read for one release) | ✅ (done-for-you) | ✅ (done-for-you) | ➕ | — |
 | `STRIPE_SETUP_FEE_EVERDOER_*`, `STRIPE_COUPON_EVERDOER_FOUNDING`, `EVERDOER_SITE_ORIGINS`, `EVERDOER_CANCEL_URL` (old `STRIPE_SETUP_FEE_CL_*` / `STRIPE_COUPON_CL_FOUNDING` / `CRANKLEADS_*` names still read for one release), `STRIPE_AUTOMATIC_TAX` | ✅/○ (done-for-you) | — | — | — |
+| `EVERDOER_CHECKOUT_TRIAL_DAYS` (free trial on done-for-you checkout, off when unset; [Free trial](done-for-you-purchase.md#free-trial)) | ○ (done-for-you) | — | — | — |
 | `RESEND_API_KEY`, `OUTBOUND_FROM_EMAIL`, `OWNER_EMAIL`, `TWILIO_*` | ✅ | ✅ (done-for-you provisioning) | — | ✅ |
 | `BILLING_EVENT_WORKER_ID` / `_BATCH_SIZE` / `_POLL_MS` / `_STALE_AFTER_SECONDS` | — | ○ | — | — |
 | `NEXT_PUBLIC_SUPABASE_URL` | ✅ | ✅ | ✅ | ✅ |

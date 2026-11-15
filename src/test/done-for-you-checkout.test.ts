@@ -82,6 +82,7 @@ beforeEach(() => {
   vi.stubEnv("CRANKLEADS_SITE_ORIGINS", "");
   vi.stubEnv("CRANKLEADS_CANCEL_URL", "");
   vi.stubEnv("STRIPE_AUTOMATIC_TAX", "");
+  vi.stubEnv("EVERDOER_CHECKOUT_TRIAL_DAYS", "");
 });
 
 afterEach(() => {
@@ -238,6 +239,50 @@ describe("POST /api/public/crankleads/checkout", () => {
     expect(sessionsCreate.mock.calls[0][0].discounts).toEqual([{ coupon: "crankleads_founding_50" }]);
     expect(sessionsCreate.mock.calls[1][0].discounts).toBeUndefined();
     expect(sessionsCreate.mock.calls[1][1].idempotencyKey).toMatch(/-nodiscount$/);
+  });
+
+  it("starts a free trial only when EVERDOER_CHECKOUT_TRIAL_DAYS is set: card still collected, coupon and prices unchanged", async () => {
+    vi.stubEnv("EVERDOER_CHECKOUT_TRIAL_DAYS", "14");
+    vi.stubEnv("STRIPE_COUPON_CL_FOUNDING", "crankleads_founding_100");
+    await POST(post({ ...validBody, founding: true }));
+    const [params] = sessionsCreate.mock.calls[0];
+    // The trial sits on the subscription; the one-time setup price stays a line item (first invoice).
+    expect(params.subscription_data.trial_period_days).toBe(14);
+    expect(params.subscription_data.metadata).toEqual(params.metadata);
+    expect(params.metadata.trialDays).toBe("14");
+    expect(params.payment_method_collection).toBe("always");
+    expect(params.mode).toBe("subscription");
+    expect(params.line_items).toEqual([
+      { price: "price_cl_close_m", quantity: 1 },
+      { price: "price_cl_close_s", quantity: 1 },
+    ]);
+    expect(params.discounts).toEqual([{ coupon: "crankleads_founding_100" }]);
+
+    // The trial doesn't depend on the founding coupon, and survives the no-discount retry.
+    vi.stubEnv("STRIPE_COUPON_CL_FOUNDING", "");
+    sessionsCreate.mockClear();
+    await POST(post({ ...validBody, tier: "front_desk" }));
+    expect(sessionsCreate.mock.calls[0][0].subscription_data.trial_period_days).toBe(14);
+    expect(sessionsCreate.mock.calls[0][0].allow_promotion_codes).toBe(false);
+  });
+
+  it("no trial for an unset, zero, malformed or over-long EVERDOER_CHECKOUT_TRIAL_DAYS (the params are exactly the no-trial ones)", async () => {
+    for (const bad of ["", "0", "00", "-14", "14 days", "1.5", "61", "365", "1400", "true"]) {
+      vi.stubEnv("EVERDOER_CHECKOUT_TRIAL_DAYS", bad);
+      sessionsCreate.mockClear();
+      await POST(post(validBody));
+      const [params] = sessionsCreate.mock.calls[0];
+      expect(params.subscription_data, bad).toEqual({ metadata: params.metadata });
+      expect(params.metadata.trialDays, bad).toBeUndefined();
+      expect("payment_method_collection" in params, bad).toBe(false);
+    }
+    // Boundaries: 1 and 60 are accepted (whitespace around the number is fine).
+    for (const [raw, days] of [["1", 1], [" 60 ", 60], ["07", 7]] as const) {
+      vi.stubEnv("EVERDOER_CHECKOUT_TRIAL_DAYS", raw);
+      sessionsCreate.mockClear();
+      await POST(post(validBody));
+      expect(sessionsCreate.mock.calls[0][0].subscription_data.trial_period_days, raw).toBe(days);
+    }
   });
 
   it("rejects invalid input with 400 and field errors — nothing staged, Stripe not called", async () => {

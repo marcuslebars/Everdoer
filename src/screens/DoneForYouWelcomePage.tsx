@@ -136,7 +136,7 @@ export default function DoneForYouWelcomePage() {
           {view.kind === "missing" ? (
             <Missing />
           ) : view.kind === "loading" ? (
-            <Working title="Payment received" detail="Checking on your setup…" />
+            <Working title="Checkout complete" detail="Checking on your setup…" />
           ) : view.data.status === "ready" ? (
             <div className="space-y-4" data-testid="welcome-ready">
               <div className="flex items-center gap-3">
@@ -186,16 +186,16 @@ export default function DoneForYouWelcomePage() {
             <div className="space-y-3" data-testid="welcome-delayed">
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-7 h-7 text-amber-500 shrink-0" />
-                <h1 className="text-lg font-semibold text-foreground">Payment received — setup is taking longer</h1>
+                <h1 className="text-lg font-semibold text-foreground">Checkout complete — setup is taking longer</h1>
               </div>
               <p className="text-sm text-muted-foreground">
-                Your payment is safe. We've been alerted and will finish setting up {view.data.businessName} for you —
+                Your order is safe. We've been alerted and will finish setting up {view.data.businessName} for you —
                 watch for an email at <strong>{view.data.emailMasked}</strong>. You can close this page.
               </p>
             </div>
           ) : (
             <Working
-              title="Payment received — setting up your system…"
+              title="Checkout complete — setting up your system…"
               detail={`Building ${view.data.businessName}: your account, automations and website form. This takes a few seconds.`}
             />
           )}
@@ -222,8 +222,8 @@ function Missing() {
     <div className="space-y-3" data-testid="welcome-missing">
       <h1 className="text-lg font-semibold text-foreground">We couldn't find that purchase</h1>
       <p className="text-sm text-muted-foreground">
-        If you just paid, check your email for your login link — it's on its way. Otherwise reply to your receipt email
-        and we'll sort it out.
+        If you just checked out, check your email for your login link — it's on its way. Otherwise email{" "}
+        {EVERDOER_BRAND.supportEmail} and we'll sort it out.
       </p>
       <Link to="/signin" className="text-sm font-medium text-primary hover:underline">
         Go to sign in

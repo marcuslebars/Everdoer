@@ -191,8 +191,8 @@ export interface OperatorFailureEmailInput {
 export function renderOperatorFailureEmail(input: OperatorFailureEmailInput): RenderedEmail {
   const subject = `ACTION NEEDED: ${DONE_FOR_YOU_OFFER_NAME} provisioning failed — ${input.businessName} (${input.tier ? PLAN_TIER_LABELS[input.tier] : "unknown tier"})`;
   const body = [
-    "A paid Everdoer purchase could not be set up automatically. The payment is safe and recorded",
-    "(crankleads_purchases.status = 'failed'); nothing is lost.",
+    "A completed Everdoer checkout (paid, or a free trial with a card on file) could not be set up",
+    "automatically. It is safe and recorded (crankleads_purchases.status = 'failed'); nothing is lost.",
     "",
     `Buyer: ${input.ownerEmail}`,
     `Checkout session: ${input.sessionId ?? "-"}`,
