@@ -21,6 +21,7 @@ import {
   doneForYouFoundingCouponId,
   doneForYouMonthlyPriceId,
   doneForYouSetupPriceId,
+  doneForYouTrialDays,
 } from "@/server/services/done-for-you/config";
 import { stripeSourceForWrite } from "@/server/services/done-for-you/stripe-source";
 import { writeNewNames } from "@/server/services/rebrand/write-names";
@@ -135,6 +136,11 @@ export function buildDoneForYouSessionParams(
     ownerPhone: truncate(input.phone),
     utm: utmMetadata(utm),
   };
+  // Free trial (EVERDOER_CHECKOUT_TRIAL_DAYS; 0 = off, and then these params are exactly as before).
+  const trialDays = doneForYouTrialDays();
+  if (trialDays > 0) {
+    metadata.trialDays = String(trialDays);
+  }
 
   // After paying, the buyer lands on the done-for-you app host (CRANKLEADS_APP_BASE_URL) — the
   // same host their welcome email and every later link uses (docs/everdoer-branding.md).
@@ -171,7 +177,13 @@ export function buildDoneForYouSessionParams(
     // promotion-code box (any active promo code in the account would otherwise apply).
     ...(coupon ? { discounts: [{ coupon }] } : { allow_promotion_codes: false }),
     metadata,
-    subscription_data: { metadata },
+    // With a trial the monthly price is first charged when the trial ends. The one-time setup
+    // price still rides on the first (trial-start) invoice, so it is charged at checkout unless the
+    // founding coupon takes it to $0 — in which case nothing is due today and the session completes
+    // with payment_status "no_payment_required" (provisioned like a paid one: provision.ts
+    // isProvisionablePaymentStatus). The card is always collected, so the trial converts by itself.
+    subscription_data: trialDays > 0 ? { metadata, trial_period_days: trialDays } : { metadata },
+    ...(trialDays > 0 ? { payment_method_collection: "always" as const } : {}),
     // Rebrand: the /welcome/everdoer twin exists from PR 1; we link to it only once writers switch.
     success_url: `${base}/welcome/${writeNewNames() ? "everdoer" : "crankleads"}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: doneForYouCancelUrl(),

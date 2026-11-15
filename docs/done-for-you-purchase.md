@@ -158,7 +158,9 @@ purchase id, `currency: cad`, `billing_address_collection: required`, `automatic
 `STRIPE_AUTOMATIC_TAX=true`, `discounts: [{coupon}]` when `founding` and
 `STRIPE_COUPON_EVERDOER_FOUNDING` (old `STRIPE_COUPON_CL_FOUNDING` still read) is set **and still valid in Stripe** (an exhausted/expired/missing
 coupon — or a create that rejects it — falls back to full price instead of failing the sale),
-`allow_promotion_codes: false` (no other promo code can be applied), `metadata` and
+`allow_promotion_codes: false` (no other promo code can be applied),
+`subscription_data.trial_period_days` + `payment_method_collection: always` only when
+`EVERDOER_CHECKOUT_TRIAL_DAYS` is set (see [Free trial](#free-trial)), `metadata` and
 `subscription_data.metadata` = `{source: "crankleads", purchaseId, tier, plan, businessName,
 businessType, ownerName, ownerPhone, utm}` (utm JSON kept ≤ 500 chars),
 `success_url = APP_BASE_URL/welcome/crankleads?session_id={CHECKOUT_SESSION_ID}` (`/welcome/everdoer`
@@ -207,6 +209,15 @@ is a credential; this public endpoint stops minting them).
    `--replace` (Stripe prices are immutable; the lookup key moves to the new price).
    Setup fees sit on their own `…_setup` products so the founding coupon (`duration: once`,
    `applies_to` the three setup products) discounts **only the setup fee**.
+
+   **Live catalog since 15 Nov 2026** (the amounts above are the original test example, not today's
+   prices): Close **$299/month**, Front Desk **$499/month**, each with a **$499** setup fee, and the
+   coupon `crankleads_founding_100` (100% off setup, 25 redemptions). Catch is unchanged in Stripe
+   ($500/month + $1,500 setup) but everdoer.com no longer sells it. The equivalent command is
+   `--catch-setup 150000 --catch-monthly 50000 --close-setup 49900 --close-monthly 29900 --front-desk-setup 49900 --front-desk-monthly 49900 --founding-percent 100 --founding-max 25`.
+   The live prices were created without this script, because it also renames products and
+   `crankleads_close` is named "Everdoer Operate" on purpose (it carries the self-serve Operate
+   price too): running the script against live renames it back to "Everdoer Close".
 3. **Paste the env** the script prints into Railway. The new names are `STRIPE_PRICE_EVERDOER_*`,
    `STRIPE_SETUP_FEE_EVERDOER_*` and `STRIPE_COUPON_EVERDOER_FOUNDING`; the old `STRIPE_PRICE_CL_*`,
    `STRIPE_SETUP_FEE_CL_*` and `STRIPE_COUPON_CL_FOUNDING` names (which the script may still print)
@@ -279,6 +290,46 @@ Migration `20261003120000_crankleads_purchase.sql` (rollback
 - `crankleads_purchases` — staging + state machine. **Tenancy exception:** it is written before
   any organization exists, so `organization_id` is nullable (filled by provisioning). RLS is on
   with **no policies** and no grants to `anon`/`authenticated`: service role only.
+
+## Free trial
+
+`EVERDOER_CHECKOUT_TRIAL_DAYS` on **[web]** gives every done-for-you checkout a free trial of that
+many days. Unset (the default), `0`, or anything that isn't a whole number from 1 to 60 means no
+trial, and the Checkout Session params are exactly what they were before the setting existed.
+
+With it set (`doneForYouTrialDays()` in `done-for-you/config.ts`, used by
+`buildDoneForYouSessionParams`):
+
+- The session carries `subscription_data.trial_period_days`, `payment_method_collection: always`
+  and `metadata.trialDays`. The buyer still enters a card; Stripe Checkout states the trial and
+  the price that follows, and Stripe charges the monthly price when the trial ends.
+- The setup fee is **not** part of the trial: a one-time price rides on the first invoice, which
+  Stripe issues at checkout. With the founding coupon taking it to $0, nothing is due today and
+  the session completes with `payment_status: no_payment_required`; without the coupon the setup
+  fee is charged at checkout and the monthly price starts after the trial. (Read back against the
+  live prices on 15 Nov 2026: $0.00 due today with the coupon, $499.00 without, before tax.)
+- Provisioning is unchanged. `isProvisionablePaymentStatus` already accepts `no_payment_required`
+  (the billing worker and the `--stuck` sweep both use it), so a trial buyer is set up exactly
+  like a paying one.
+- Status: Stripe's `customer.subscription.created` arrives as `trialing`, which `mapStripeStatus`
+  keeps and gating treats as healthy (no `trial_ends_at` is written for a Stripe-managed trial, so
+  it never lapses on our side). `checkout.session.completed` and the $0 `invoice.paid` write
+  `active`. Whichever is processed last wins, so during the trial the billing page may say
+  "Trialing" or "Active"; both unlock the plan, and "Renews <date>" shows the day the trial ends.
+  At the end of the trial Stripe moves the subscription to `active` and charges the card
+  (`invoice.paid`), or to `past_due` if the charge fails (`invoice.payment_failed`, then the
+  normal grace period).
+- Cancelling during the trial (billing settings → Manage subscription) ends it with no charge.
+- Cost of a trial that doesn't convert: the texting number, any texts, and on Front Desk up to
+  the 500 included AI minutes.
+
+Turn it on only together with the site: `trialDays` in the site's `src/config.ts` must be the same
+number, because the pricing page and the checkout dialog state the trial. Also turn on Stripe's
+own trial reminder in the Dashboard's Subscriptions and emails settings
+(https://dashboard.stripe.com/settings/billing/automatic): "Send a reminder email 7 days before a
+free trial ends". The card networks require buyers to be reminded before a trial converts
+(https://docs.stripe.com/billing/subscriptions/trials/manage-trial-compliance); the app does not
+send that email itself.
 
 ## Stripe Managed Payments
 
