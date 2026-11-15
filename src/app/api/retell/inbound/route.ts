@@ -14,7 +14,7 @@ import {
 import { getRetellConfig } from "@/server/services/retell/config";
 import { verifyRetellSignature } from "@/server/services/retell/signature";
 import { createRetellAdminClient, resolveRetellTenant } from "@/server/services/retell/tenant";
-import { getOwnerLineConfig, ownerLineForRetellInbound, type OwnerLineInboundOverride } from "@/server/services/voice/owner-line";
+import { getOwnerLineConfig, isDedicatedOwnerNumber, ownerLineForRetellInbound, REJECT_INBOUND, type OwnerLineInboundAnswer } from "@/server/services/voice/owner-line";
 
 export const dynamic = "force-dynamic";
 
@@ -50,29 +50,37 @@ export async function POST(request: Request): Promise<NextResponse> {
   const newCaller = (g: GreetingContext = { companyName: "", agentName: DEFAULT_AGENT_NAME }) =>
     NextResponse.json({ call_inbound: { dynamic_variables: toDynamicVariables(UNKNOWN_CALLER, g) } });
 
-  if (!verifyRetellSignature(rawBody, request.headers.get("x-retell-signature"), cfg.apiKey, cfg.toleranceMs)) {
-    console.warn("[retell:inbound] unsigned or bad signature — answering as a new caller");
-    return newCaller();
-  }
-
-  let body: InboundBody;
+  const signed = verifyRetellSignature(rawBody, request.headers.get("x-retell-signature"), cfg.apiKey, cfg.toleranceMs);
+  let body: InboundBody | null = null;
   try {
     body = JSON.parse(rawBody) as InboundBody;
   } catch {
-    return newCaller();
+    body = null;
   }
+  const inbound = body?.call_inbound ?? {};
+  const ownerLine = getOwnerLineConfig();
+  // The assistant's own number (docs/owner-line.md → "A number just for the assistant"):
+  // owners only. A bad signature, a stranger, a slow lookup or any failure declines the call:
+  // nobody but the owner ever reaches the assistant there.
+  const dedicated = isDedicatedOwnerNumber(ownerLine, inbound.to_number);
+
+  if (!signed) {
+    console.warn(`[retell:inbound] unsigned or bad signature — ${dedicated ? "declined (assistant's own number)" : "answering as a new caller"}`);
+    return dedicated ? NextResponse.json({ call_inbound: REJECT_INBOUND }) : newCaller();
+  }
+  if (!body) return newCaller();
 
   const admin = createRetellAdminClient();
-  const inbound = body.call_inbound ?? {};
 
-  // The owner calling their own number (docs/owner-line.md): hand the call to their assistant.
-  // Off, not the owner, slow or failing → null, and the call is answered exactly as before.
-  if (getOwnerLineConfig().enabled) {
+  // The owner calling (docs/owner-line.md): hand the call to their assistant. On a business
+  // number, off / not the owner / slow / failing → null, and the call is answered exactly as before.
+  if (dedicated || ownerLine.enabled) {
     const owner = await Promise.race([
       ownerLineForRetellInbound(admin, { from: inbound.from_number ?? null, to: inbound.to_number ?? null, agentId: inbound.agent_id ?? null, callId: inbound.call_id ?? null }),
-      new Promise<OwnerLineInboundOverride | null>((resolve) => setTimeout(() => resolve(null), OWNER_LINE_BUDGET_MS)),
+      new Promise<OwnerLineInboundAnswer | null>((resolve) => setTimeout(() => resolve(dedicated ? REJECT_INBOUND : null), OWNER_LINE_BUDGET_MS)),
     ]);
     if (owner) return NextResponse.json({ call_inbound: owner });
+    if (dedicated) return NextResponse.json({ call_inbound: REJECT_INBOUND });
   }
 
   const result = await withinBudget(

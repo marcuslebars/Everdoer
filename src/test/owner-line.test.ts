@@ -38,6 +38,7 @@ import {
   unlockCode,
   type OwnerLineClaims,
   type OwnerLineConfig,
+  type OwnerLineInboundOverride,
 } from "@/server/services/voice/owner-line";
 import { ownerWebLookup, spokenAnswer } from "@/server/services/voice/owner-web-lookup";
 
@@ -60,6 +61,9 @@ const CONFIG: OwnerLineConfig = {
   ringTimeoutSeconds: 12,
   registerTimeoutMs: 3000,
   maxCallSeconds: 1200,
+  dedicatedNumbers: new Set<string>(),
+  onBusinessNumbers: true,
+  homeCompanyId: null,
 };
 
 const COMPANY: OwnerCompany = { companyId: CO, organizationId: ORG, name: "Northshore Roofing", timeZone: "America/Toronto", ownerPhone: OWNER, platformBrand: "everdoer" };
@@ -250,7 +254,7 @@ describe("a call to a dedicated Retell number", () => {
   const deps = { config: CONFIG, now: NOW, findOwnerCompanies: async () => [COMPANY], loadFacts: async () => FACTS };
 
   it("the owner gets the owner agent for this call only, bound to Retell's call id", async () => {
-    const out = await ownerLineForRetellInbound(admin, input, deps);
+    const out = (await ownerLineForRetellInbound(admin, input, deps)) as OwnerLineInboundOverride | null;
     expect(out?.override_agent_id).toBe("agent_owner");
     expect(out?.dynamic_variables.system_prompt).toContain("six-digit security code");
     expect(readOwnerLineMetadata(out?.metadata, SECRET, NOW.getTime())).toMatchObject({ callRef: "call_in_1", callerVerified: false });

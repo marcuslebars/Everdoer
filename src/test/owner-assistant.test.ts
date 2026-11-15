@@ -63,6 +63,9 @@ const CONFIG: OwnerLineConfig = {
   ringTimeoutSeconds: 12,
   registerTimeoutMs: 3000,
   maxCallSeconds: 1200,
+  dedicatedNumbers: new Set<string>(),
+  onBusinessNumbers: true,
+  homeCompanyId: null,
 };
 
 const company = (over: Partial<OwnerCompany> = {}): OwnerCompany => ({ companyId: CO, organizationId: ORG, name: "Northshore Roofing", timeZone: "America/Toronto", ownerPhone: OWNER, platformBrand: "everdoer", ...over });

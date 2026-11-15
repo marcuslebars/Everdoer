@@ -96,6 +96,32 @@ facts.
 Not the owner, the owner line off, a slow lookup or any failure → the call carries on exactly
 as before.
 
+### A number just for the assistant
+
+The assistant can have its own number, so the receptionist's numbers stay the receptionist's
+for everyone, the owner included (and the owner can call their own business to hear what
+customers hear).
+
+- Buy or import the number in Retell. Set its inbound agent to the owner agent and its inbound
+  webhook to `https://<api host>/api/retell/inbound`.
+- Set `OWNER_LINE_NUMBERS` to it (comma-separated for more than one; any common format).
+- Optional: `OWNER_LINE_HOME_COMPANY_ID`, the business a call starts on when the owner has more
+  than one (otherwise the first by name). The others are reachable by name, as usual.
+
+On that number:
+
+- **Owners only.** The caller must be the verified owner cell of a business in an organization
+  the owner line is on for. Anyone else, a bad signature, a slow lookup or any failure gets
+  `{ reject: true }`: Retell hangs up before any agent answers. If Everdoer can't be reached at
+  all, Retell falls back to the number's own agent, whose built-in prompt only says it can't
+  help on this line, and its tools refuse a call without the signed token.
+- Calls aren't tied to a business's number, so the prompt and the token are for the home
+  business; everything else (the brief, switching business, the security code) is the same.
+
+With `OWNER_LINE_NUMBERS` set, business numbers stop sending the owner to the assistant
+(`OWNER_LINE_ON_BUSINESS_NUMBERS` unset means exactly that). Set `OWNER_LINE_ON_BUSINESS_NUMBERS=1`
+to keep both, or `=0` to switch business numbers off without a dedicated number.
+
 `/api/retell/webhook` ignores owner-line calls (`isOwnerLineWebhook`): no "answering a call"
 text, no lead, no call record.
 
@@ -137,6 +163,9 @@ your own account; leave it off otherwise.
    | `RETELL_OWNER_LLM_ID` | printed by the job (so a re-run updates in place) |
    | `OWNER_LINE_ORG_IDS` | the organization ids it is on for, comma-separated; `*` = all |
 
+   For an assistant-only number: `OWNER_LINE_NUMBERS`, `OWNER_LINE_HOME_COMPANY_ID`,
+   `OWNER_LINE_ON_BUSINESS_NUMBERS` (see "A number just for the assistant").
+
    Optional: `RETELL_OWNER_AGENT_MODEL` (default `claude-5.5-sonnet`), `RETELL_OWNER_AGENT_VOICE_ID`,
    `OWNER_LINE_MAX_CALL_MINUTES` (default 20), `OWNER_LINE_TRUST_CALLER_ID`.
 
@@ -155,8 +184,9 @@ tools.
 
 - **Minutes aren't metered.** Owner calls don't count against the plan's AI minutes; the per-call
   cap (`OWNER_LINE_MAX_CALL_MINUTES`) is the only limit.
-- **Testing the receptionist.** With the owner line on, the owner calling their own number from
-  their own cell no longer reaches the receptionist. Call from another phone to hear it.
+- **Testing the receptionist.** With the owner line on business numbers, the owner calling
+  their own number from their own cell doesn't reach the receptionist. Give the assistant its
+  own number (above), or call from another phone.
 - **Several businesses on one cell.** Facts in the prompt are the dialled business's only; the
   others are reached one request at a time through `business_name`.
 - **Long answers are short.** The command agent replies in text-message length, so a briefing

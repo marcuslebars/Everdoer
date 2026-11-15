@@ -92,6 +92,30 @@ export interface OwnerLineConfig {
   ringTimeoutSeconds: number;
   registerTimeoutMs: number;
   maxCallSeconds: number;
+  /**
+   * OWNER_LINE_NUMBERS: the assistant's own numbers (Retell). Only owners reach anything there;
+   * every other caller is turned away before an agent answers.
+   */
+  dedicatedNumbers: ReadonlySet<string>;
+  /**
+   * Whether the owner calling a BUSINESS number (the receptionist's) gets the assistant.
+   * OWNER_LINE_ON_BUSINESS_NUMBERS=1/0; unset: on, unless dedicated numbers are set, in which
+   * case business numbers are left to the receptionist for everyone, the owner included.
+   */
+  onBusinessNumbers: boolean;
+  /** OWNER_LINE_HOME_COMPANY_ID: which of the owner's businesses a dedicated-number call starts on. */
+  homeCompanyId: string | null;
+}
+
+/** "+1 (249) 500-3606", "12495003606", "2495003606" → "+12495003606". Anything else → null. PURE. */
+export function normalizeE164(raw: string | null | undefined): string | null {
+  const text = raw?.trim() ?? "";
+  if (!text) return null;
+  const digits = text.replace(/\D/g, "");
+  if (text.startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
 }
 
 export function getOwnerLineConfig(env: Record<string, string | undefined> = process.env): OwnerLineConfig {
@@ -103,6 +127,13 @@ export function getOwnerLineConfig(env: Record<string, string | undefined> = pro
     .filter(Boolean);
   const orgIds: OwnerLineConfig["orgIds"] = listed.includes("*") ? "all" : new Set(listed);
   const minutes = Number.parseInt(env.OWNER_LINE_MAX_CALL_MINUTES ?? "", 10);
+  const dedicatedNumbers = new Set(
+    (env.OWNER_LINE_NUMBERS ?? "")
+      .split(",")
+      .map((n) => normalizeE164(n))
+      .filter((n): n is string => Boolean(n)),
+  );
+  const businessFlag = env.OWNER_LINE_ON_BUSINESS_NUMBERS?.trim();
   return {
     enabled: Boolean(answer.enabled && agentId && answer.apiKey && answer.tokenSecret && (orgIds === "all" || orgIds.size > 0)),
     agentId,
@@ -114,7 +145,28 @@ export function getOwnerLineConfig(env: Record<string, string | undefined> = pro
     ringTimeoutSeconds: answer.ringTimeoutSeconds,
     registerTimeoutMs: answer.registerTimeoutMs,
     maxCallSeconds: (Number.isFinite(minutes) ? Math.min(60, Math.max(2, minutes)) : 20) * 60,
+    dedicatedNumbers,
+    onBusinessNumbers: businessFlag === "1" ? true : businessFlag === "0" ? false : dedicatedNumbers.size === 0,
+    homeCompanyId: env.OWNER_LINE_HOME_COMPANY_ID?.trim() || null,
   };
+}
+
+/** Is this one of the assistant's own numbers? PURE. */
+export function isDedicatedOwnerNumber(config: Pick<OwnerLineConfig, "dedicatedNumbers">, to: string | null | undefined): boolean {
+  const number = normalizeE164(to);
+  return Boolean(number && config.dedicatedNumbers.has(number));
+}
+
+/**
+ * Which business a call to the assistant's own number starts on: the home business if the
+ * caller owns it, else their only one, else the first by name. Only businesses in organizations
+ * the owner line is on for. Null → not an owner here. PURE.
+ */
+export function homeBusiness(candidates: OwnerCompany[], config: Pick<OwnerLineConfig, "orgIds" | "homeCompanyId">): OwnerCompany | null {
+  const allowed = candidates.filter((c) => ownerLineAllowed(config, c.organizationId));
+  if (allowed.length === 0) return null;
+  const home = config.homeCompanyId ? allowed.find((c) => c.companyId === config.homeCompanyId) : undefined;
+  return home ?? [...allowed].sort((a, b) => a.name.localeCompare(b.name) || a.companyId.localeCompare(b.companyId))[0];
 }
 
 export function ownerLineAllowed(config: Pick<OwnerLineConfig, "orgIds">, organizationId: string): boolean {
@@ -273,7 +325,9 @@ export async function startOwnerLineFromTwilio(
   deps: OwnerLineDeps = {},
 ): Promise<OwnerLineStart> {
   const config = deps.config ?? getOwnerLineConfig();
-  if (!config.enabled || !config.agentId || !config.tokenSecret || !input.from || !input.to) return { kind: "none" };
+  // A Twilio number is always a business number: with the owner line off for those, the
+  // receptionist answers everyone, the owner included.
+  if (!config.enabled || !config.onBusinessNumbers || !config.agentId || !config.tokenSecret || !input.from || !input.to) return { kind: "none" };
   try {
     // Cheapest check first: almost every caller is a customer, and this is one indexed lookup.
     // It runs before the missed call is stored, so it gets a short budget: a slow lookup means
@@ -318,6 +372,10 @@ export interface OwnerLineInboundOverride {
   metadata: Record<string, string>;
 }
 
+/** Retell's inbound-webhook answer that declines the call before any agent picks up. */
+export const REJECT_INBOUND = { reject: true } as const;
+export type OwnerLineInboundAnswer = OwnerLineInboundOverride | typeof REJECT_INBOUND;
+
 /**
  * A call to a company's dedicated Retell number (Retell's inbound webhook). Same rule as
  * above; the answer is the per-call override Retell applies. There is no carrier attestation
@@ -328,9 +386,28 @@ export async function ownerLineForRetellInbound(
   admin: AdminClient,
   input: { from: string | null; to: string | null; agentId: string | null; callId: string | null },
   deps: OwnerLineDeps = {},
-): Promise<OwnerLineInboundOverride | null> {
+): Promise<OwnerLineInboundAnswer | null> {
   const config = deps.config ?? getOwnerLineConfig();
-  if (!config.enabled || !config.agentId || !config.tokenSecret || !input.from || !input.callId) return null;
+  const dedicated = isDedicatedOwnerNumber(config, input.to);
+  // The assistant's own number: owners only. Everyone else (and any failure) is turned away,
+  // never handed to the number's agent with no prompt. Retell's own fallback, if this webhook
+  // can't be reached at all, is that agent's "can't help on this line" prompt.
+  if (dedicated) {
+    if (!config.enabled || !config.agentId || !config.tokenSecret || !input.from || !input.callId) return REJECT_INBOUND;
+    try {
+      const candidates = await (deps.findOwnerCompanies ?? findOwnerCompanies)(admin, input.from);
+      const company = homeBusiness(candidates, config);
+      if (!company) {
+        console.log("[owner-line] call to the assistant's own number from someone who isn't an owner: declined");
+        return REJECT_INBOUND;
+      }
+      return await ownerOverride(admin, { ...config, agentId: config.agentId, tokenSecret: config.tokenSecret }, candidates, company, input.callId, deps, "the assistant's own number");
+    } catch (err) {
+      console.error("[owner-line] dedicated-number check failed (declined):", err instanceof Error ? err.message : err);
+      return REJECT_INBOUND;
+    }
+  }
+  if (!config.enabled || !config.onBusinessNumbers || !config.agentId || !config.tokenSecret || !input.from || !input.callId) return null;
   try {
     const candidates = await (deps.findOwnerCompanies ?? findOwnerCompanies)(admin, input.from);
     if (candidates.length === 0) return null;
@@ -339,21 +416,33 @@ export async function ownerLineForRetellInbound(
     if (!tenant.organizationId || !tenant.companyId || tenant.resolvedBy === "legacy") return null;
     const company = ownedDialledCompany(candidates, config, { organizationId: tenant.organizationId, companyId: tenant.companyId });
     if (!company) return null;
-
-    const now = deps.now ?? new Date();
-    const [facts, extras] = await Promise.all([(deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId), promptExtras(admin, candidates, company, deps)]);
-    const callerVerified = config.trustCallerId;
-    const claims: OwnerLineClaims = { organizationId: company.organizationId, companyId: company.companyId, callRef: input.callId, callerVerified, issuedAt: Math.floor(now.getTime() / 1000) };
-    console.log(`[owner-line] owner call on a Retell number (${callerVerified ? "caller verified" : "caller unverified"})`);
-    return {
-      override_agent_id: config.agentId,
-      dynamic_variables: buildOwnerLineVariables({ facts, now, callerVerified, ...extras }),
-      metadata: buildOwnerLineMetadata(claims, config.tokenSecret),
-    };
+    return await ownerOverride(admin, { ...config, agentId: config.agentId, tokenSecret: config.tokenSecret }, candidates, company, input.callId, deps, "a Retell number");
   } catch (err) {
     console.error("[owner-line] inbound check failed (answering as a normal call):", err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+/** The per-call override that hands a Retell call to the owner's assistant for `company`. */
+async function ownerOverride(
+  admin: AdminClient,
+  config: OwnerLineConfig & { agentId: string; tokenSecret: string },
+  candidates: OwnerCompany[],
+  company: OwnerCompany,
+  callId: string,
+  deps: OwnerLineDeps,
+  where: string,
+): Promise<OwnerLineInboundOverride> {
+  const now = deps.now ?? new Date();
+  const [facts, extras] = await Promise.all([(deps.loadFacts ?? loadBusinessFacts)(admin, company.companyId), promptExtras(admin, candidates, company, deps)]);
+  const callerVerified = config.trustCallerId;
+  const claims: OwnerLineClaims = { organizationId: company.organizationId, companyId: company.companyId, callRef: callId, callerVerified, issuedAt: Math.floor(now.getTime() / 1000) };
+  console.log(`[owner-line] owner call on ${where} (${callerVerified ? "caller verified" : "caller unverified"})`);
+  return {
+    override_agent_id: config.agentId,
+    dynamic_variables: buildOwnerLineVariables({ facts, now, callerVerified, ...extras }),
+    metadata: buildOwnerLineMetadata(claims, config.tokenSecret),
+  };
 }
 
 // ── The tools ─────────────────────────────────────────────────────────────────
