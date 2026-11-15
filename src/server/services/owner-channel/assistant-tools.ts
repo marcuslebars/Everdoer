@@ -1,9 +1,10 @@
 /**
  * Extra tools the owner's own assistant gets (voice/owner-line.ts → `assistant: true` on the
  * owner command agent): the day-to-day questions an owner asks out loud — "any new leads?",
- * "which quotes are still out?", "who owes me?", "what's my day look like?".
+ * "which quotes are still out?", "who owes me?", "what's my day look like?" — and invoices by
+ * voice (invoice-tools.ts).
  *
- * All four are READ-ONLY and scoped to the one company the run is for (state.scope). They are
+ * The four below are READ-ONLY and scoped to the one company the run is for (state.scope). They are
  * only offered on the owner line, so the owner-by-text agent and the AI staff's plan defaults
  * are exactly as they were (docs/owner-line.md → "What it can do in the business").
  *
@@ -21,13 +22,14 @@ import { fullNameOf, ownerMoney, shortDate } from "@/server/services/staff/bookk
 import { officeManagerOwnerTools } from "@/server/services/staff/office-manager/owner-tool";
 import type { RoleOwnerTool } from "@/server/services/staff/types";
 import { shortWhen } from "./common";
+import { INVOICE_TOOL_NAMES, INVOICE_TOOL_NOTES, invoiceOwnerTools } from "./invoice-tools";
 import type { ToolRunState } from "./tools";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
 type Input = Record<string, unknown>;
 
-export const ASSISTANT_TOOL_NAMES = ["new_leads", "open_quotes", "money_owed", "briefing_now"] as const;
+export const ASSISTANT_TOOL_NAMES = ["new_leads", "open_quotes", "money_owed", "briefing_now", ...INVOICE_TOOL_NAMES] as const;
 
 const DEFAULT_LEAD_DAYS = 14;
 const MAX_LEAD_DAYS = 90;
@@ -190,7 +192,8 @@ const MONEY_TOOL: RoleOwnerTool = {
 /** Rules for the owner agent's prompt when these tools are listed. */
 export const ASSISTANT_TOOL_NOTES = [
   "new_leads, open_quotes, money_owed (or who_owes_me) and briefing_now are read-only pictures of the business. Use them for 'any new leads', 'which quotes are out', 'who owes me', 'what's my day'. Give the headline number first, then the two or three that matter most; offer the rest.",
-  "You can't send, change or approve a quote or an invoice from these tools. If the owner wants to chase one, offer to text or call that customer (text_customer / call_customer), which they confirm with a code.",
+  "To chase an unpaid invoice or an open quote, offer to text or call that customer (text_customer / call_customer), which they confirm with a code.",
+  ...INVOICE_TOOL_NOTES,
 ];
 
 /**
@@ -204,5 +207,6 @@ export function assistantOwnerTools(activeRoleTools: RoleOwnerTool[]): RoleOwner
     QUOTES_TOOL,
     ...(has("who_owes_me") ? [] : [MONEY_TOOL]),
     ...(has("briefing_now") ? [] : officeManagerOwnerTools()),
+    ...invoiceOwnerTools(has),
   ].filter((t) => !has(t.tool.name));
 }

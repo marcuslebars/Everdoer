@@ -64,7 +64,7 @@ const CONFIRM_MINUTES = 30;
 const MAX_OWNER_TEXT = 300;
 
 /** Every destructive command waits for "Reply 4821 to confirm" (owner-commands.ts). */
-async function proposeConfirmation(state: ToolRunState, contactId: string | null, proposal: { summary: string; payload: OwnerCommandPayload }) {
+export async function proposeConfirmation(state: ToolRunState, contactId: string | null, proposal: { summary: string; payload: OwnerCommandPayload }) {
   const confirm = newConfirmation();
   state.confirmation = await createApproval(state.admin, {
     organizationId: state.scope.organizationId,
@@ -86,6 +86,7 @@ export function proposalTarget(payload: Partial<OwnerCommandPayload> | Record<st
   const p = payload as Record<string, unknown>;
   if (p.action === "reschedule" || p.action === "cancel") return typeof p.bookingId === "string" ? `booking:${p.bookingId}` : null;
   if (p.action === "text_customer") return typeof p.contactId === "string" ? `text:${p.contactId}` : null;
+  if (p.action === "send_invoice") return typeof p.invoiceId === "string" ? `invoice:${p.invoiceId}` : null;
   return null; // calls: one open call per customer (cancel_customer_call), never superseded here
 }
 

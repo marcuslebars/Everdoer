@@ -333,12 +333,12 @@ describe("the day-to-day tools", () => {
   it("an AI staff role's own tool wins: no second tool for the same question", () => {
     expect(assistantOwnerTools([]).map((t) => t.tool.name)).toEqual([...ASSISTANT_TOOL_NAMES]);
     const active = roleOwnerTools().filter((t) => t.tool.name === "who_owes_me" || t.tool.name === "briefing_now");
-    expect(assistantOwnerTools(active).map((t) => t.tool.name)).toEqual(["new_leads", "open_quotes"]);
+    expect(assistantOwnerTools(active).map((t) => t.tool.name)).toEqual(["new_leads", "open_quotes", "price_list", "add_customer", "draft_invoice", "draft_invoices", "send_invoice"]);
   });
 
   it("the new names don't collide with the owner's core tools or any role's (the briefing is the role's own tool)", () => {
     const taken = new Set([...OWNER_TOOLS.map((t) => t.name), ...roleOwnerTools().map((t) => t.tool.name)]);
-    expect(["new_leads", "open_quotes", "money_owed"].filter((n) => taken.has(n))).toEqual([]);
+    expect(["new_leads", "open_quotes", "money_owed", "price_list", "add_customer", "draft_invoice", "draft_invoices", "send_invoice"].filter((n) => taken.has(n))).toEqual([]);
     expect(taken.has("briefing_now")).toBe(true);
   });
 

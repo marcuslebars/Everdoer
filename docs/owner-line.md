@@ -14,7 +14,8 @@ Status: **pilot**. Off unless switched on per organization (see Setup).
 | Something current (weather, news, a price, another business's hours) | `web_lookup`: one Claude call with Anthropic's web search, answered in a sentence or two. |
 | Something about the business (today's jobs, who's waiting, a customer, open times) | `business`: runs the owner's text-command agent (`owner-channel/agent.ts`) with the spoken request. |
 | "Any new leads?", "which quotes are still out?", "who owes me?", "what's my day?" | `business`, with the day-to-day tools below. Read-only. |
-| A change (move or cancel a booking, text or call a customer) | `business` proposes it; the code that confirms it is **texted** to the owner's phone and they text it back, exactly as by text. |
+| "Invoice Dave for the shrink wrap, $750, he paid $200 down" | `business`, with the invoice tools below: a **draft** is saved and read back; sending needs the texted code. |
+| A change (move or cancel a booking, text or call a customer, send an invoice) | `business` proposes it; the code that confirms it is **texted** to the owner's phone and they text it back, exactly as by text. |
 | Something about another of their businesses | `business` with `business_name` (see "More than one business"). |
 
 Calls and texts share one memory (`agent_turns`, channel `owner_sms`): a later text can say
@@ -46,7 +47,7 @@ call's prompt, fenced as `<owner_brief>`, ahead of the rules.
 
 ## What it can do in the business
 
-Everything the owner can do by text, plus four read-only tools that are offered **only on the
+Everything the owner can do by text, plus the invoice tools above and four read-only tools that are offered **only on the
 owner line** (`owner-channel/assistant-tools.ts`, switched on by `assistant: true` on the
 command agent). The owner-by-text agent and the AI staff's plan defaults are unchanged.
 
@@ -62,6 +63,29 @@ call as well: the Bookkeeper's reminders and payments, the Dispatcher's weather 
 the Profit advisor's numbers, and so on.
 
 Not yet: creating or sending a quote or an invoice by voice.
+
+## Invoices
+
+Offered on the owner line only (`owner-channel/invoice-tools.ts`). They make real Everdoer
+invoices with the same service as the Invoices page (`invoices/service.ts`): numbering, HST,
+deposits, the PDF, payment links and reminders all behave exactly as from the app.
+
+| Tool | Does |
+|---|---|
+| `price_list` | The business's prices (before tax), to fill in a price the owner didn't say. |
+| `add_customer` | A new customer when `find_customer` finds no one. Same phone or email already here → that person, no duplicate. Created with **no automations** (nobody is texted or emailed). |
+| `draft_invoice` | A **draft** from spoken lines, from a job (`from_booking_id`) or from an approved quote (`from_quote_id`); or revises a draft (`invoice_id`). Returns every line and the totals to read back. |
+| `draft_invoices` | Drafts waiting to go out, with ids ("send the Miller one"). |
+| `send_invoice` | Proposes sending (email if on file, else text; or as asked). The owner confirms with the texted code. |
+
+The rule is unchanged for anything a customer sees: **nothing is sent without the code.** Drafts
+and new customer records are internal, so they are made straight away and read back; the owner
+can fix a draft by voice, or edit or void it in the app. When the code comes back the invoice
+is re-checked (same business, not void or paid, and the **total is what was confirmed**:
+edited since → nothing sent, ask again), then `sendInvoice` issues and delivers it.
+
+Every line needs a price from the owner or the price list; the assistant asks rather than
+guess. A sent invoice can't be changed by voice (change or void it in the app).
 
 ## More than one business
 
@@ -138,8 +162,9 @@ Caller ID can be forged, so it is never enough for business data.
    - Twilio reports full carrier attestation for the call (`StirVerstat=TN-Validation-Passed-A`), or
    - the caller reads back a six-digit code texted to the owner's cell during the call. The
      assistant asks for it the first time `business` is used.
-4. Changes are still confirmed by a code texted to the owner's cell. Nothing is changed from the
-   call alone.
+4. Anything a customer sees (a text, a call, an invoice going out) and any move or cancel is
+   confirmed by a code texted to the owner's cell. Drafts and new customer records are made
+   from the call (internal; read back; editable or voidable in the app).
 
 `OWNER_LINE_TRUST_CALLER_ID=1` treats a matching caller ID as verified. It exists for a pilot on
 your own account; leave it off otherwise.
@@ -220,6 +245,7 @@ non-zero when something this job owns is not in place.
   own number (above), or call from another phone.
 - **Several businesses on one cell.** Facts in the prompt are the dialled business's only; the
   others are reached one request at a time through `business_name`.
+- **Quotes by voice** aren't built yet (invoices are).
 - **Long answers are short.** The command agent replies in text-message length, so a briefing
   or a list comes back as the headline and the top few.
 - **Retell stores the call** (recording and transcript) under its default settings.
