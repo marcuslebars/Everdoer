@@ -12,6 +12,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import type { Json, Tables } from "@/server/db/database.types";
 import { toJson } from "@/server/db/json";
 import { rescheduleBooking, updateBookingStatus } from "@/server/services/bookings";
+import { sendInvoice } from "@/server/services/invoices/service";
 import { updateAiSettings } from "@/server/services/front-desk/ai-settings-write";
 import type { AdminClient, ApprovalDecision, ExecuteResult, OwnerApprovalRow } from "@/server/services/front-desk/contracts";
 import { markOwnerTakeover } from "@/server/services/sms-agent/takeover";
@@ -34,6 +35,8 @@ export type OwnerCommandPayload =
   | { action: "text_customer"; contactId: string; message: string; who: string }
   /** A Marina call the owner asked for (calls.ts); the brief lives on the owner_call_requests row. */
   | { action: "call_customer"; requestId: string; contactId: string; who: string }
+  /** An invoice the owner asked their assistant to send (invoice-tools.ts). */
+  | { action: "send_invoice"; invoiceId: string; email: boolean; sms: boolean; who: string; totalCents: number; balanceCents: number }
   /** A sales call the owner asked for (sales-calls/owner-request.ts). */
   | SalesCallPayload;
 
@@ -83,6 +86,8 @@ export async function executeOwnerCommand(admin: AdminClient, approval: OwnerApp
   if (!decision.approved) return { ok: true, message: "OK, left it as is." };
   const scope = await scopeForApproval(admin, approval);
   if (!scope) return { ok: false, message: "I couldn't find that business." };
+
+  if (payload.action === "send_invoice") return executeSendInvoice(admin, scope, payload);
 
   if (payload.action === "text_customer") {
     // Exactly the message the owner confirmed (it was echoed back to them word for word).
@@ -139,6 +144,42 @@ export async function executeOwnerCommand(admin: AdminClient, approval: OwnerApp
   }
 
   return { ok: false, message: "I don't know how to do that one." };
+}
+
+/**
+ * A confirmed "send this invoice". The invoice is loaded by the approval's own organization +
+ * company, and must be exactly what the owner confirmed: if its total changed since (someone
+ * edited it in the app), nothing is sent and the owner is asked again.
+ */
+async function executeSendInvoice(admin: AdminClient, scope: CompanyScope, payload: Partial<Extract<OwnerCommandPayload, { action: "send_invoice" }>>): Promise<ExecuteResult> {
+  const who = payload.who ?? "them";
+  if (typeof payload.invoiceId !== "string") return { ok: false, message: "There was no invoice to send." };
+  const { data } = await admin
+    .from("invoices")
+    .select("id, status, total_cents, invoice_number")
+    .eq("organization_id", scope.organizationId)
+    .eq("company_id", scope.companyId)
+    .eq("id", payload.invoiceId)
+    .maybeSingle();
+  const invoice = data as Pick<Tables<"invoices">, "id" | "status" | "total_cents" | "invoice_number"> | null;
+  if (!invoice) return { ok: false, message: `I couldn't find ${who}'s invoice any more.` };
+  if (invoice.status === "void") return { ok: false, message: `${who}'s invoice was voided - nothing sent.` };
+  if (invoice.status === "paid") return { ok: true, message: `${who}'s invoice is already paid - nothing sent.` };
+  if (typeof payload.totalCents === "number" && invoice.total_cents !== payload.totalCents) {
+    return { ok: false, message: `${who}'s invoice changed after you confirmed - nothing sent. Ask me again and I'll read you the new total.` };
+  }
+  const result = await sendInvoice(ctxFor(admin, scope.organizationId), invoice.id, { email: payload.email !== false, sms: payload.sms === true });
+  const number = result.invoice.invoice_number ?? invoice.invoice_number ?? "the invoice";
+  const went = [result.email?.delivered ? "by email" : null, result.sms?.delivered ? "by text" : null].filter(Boolean);
+  const failed = [result.email && !result.email.delivered ? "the email" : null, result.sms && !result.sms.delivered ? "the text" : null].filter(Boolean);
+  if (went.length === 0) {
+    return { ok: false, message: `${number} is issued to ${who}, but ${failed.join(" and ") || "the delivery"} didn't go through. Resend it from the app.`, detail: { invoiceId: invoice.id } };
+  }
+  return {
+    ok: true,
+    message: `Sent ${number} to ${who} ${went.join(" and ")}.${failed.length ? ` (${failed.join(" and ")} didn't go through.)` : ""}`,
+    detail: { invoiceId: invoice.id, invoiceNumber: number },
+  };
 }
 
 /**

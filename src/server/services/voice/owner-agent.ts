@@ -74,11 +74,11 @@ export function buildOwnerAgentTools(input: Pick<OwnerAgentConfigInput, "baseUrl
   return [
     custom(
       "business",
-      "Anything about the owner's own business records, or anything they want done in the business: jobs on a day, who is waiting on them, new leads, quotes still open, money owed, the day's briefing, look up a customer, open times, move or cancel a booking, text or call a customer, turn the AI on or off, pause texts, remember or recall a note. Returns `say`: what to tell the owner.",
+      "Anything about the owner's own business records, or anything they want done in the business: jobs on a day, who is waiting on them, new leads, quotes still open, money owed, the day's briefing, look up a customer, open times, move or cancel a booking, text or call a customer, write up, change or send an invoice, add a customer, turn the AI on or off, pause texts, remember or recall a note. Returns `say`: what to tell the owner.",
       {
         type: "object",
         properties: {
-          request: { type: "string", description: "The owner's request in their own words, with names, days and times exactly as they said them." },
+          request: { type: "string", description: "The owner's request in their own words, with names, items, prices, quantities, days and times exactly as they said them." },
           business_name: {
             type: "string",
             description: "Only when the owner means one of their OTHER businesses listed in your instructions: that business's name, spelled exactly as listed. Leave out for the business this call came in on.",
