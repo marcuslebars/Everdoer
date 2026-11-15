@@ -125,8 +125,10 @@ your own account; leave it off otherwise.
 2. Create the agent:
 
    ```
-   npm run job:retell-owner-agent              # dry run: prints the config
-   npm run job:retell-owner-agent -- --apply   # creates it; prints the two ids
+   npm run job:retell-owner-agent                        # dry run: prints the config
+   npm run job:retell-owner-agent -- --apply             # creates it; prints the two ids
+   npm run job:retell-owner-agent -- --check             # reads the live agent back; changes nothing
+   npm run job:retell-owner-agent -- --apply --publish   # update, then publish that version
    ```
 
 3. On the **web** service set:
@@ -137,8 +139,8 @@ your own account; leave it off otherwise.
    | `RETELL_OWNER_LLM_ID` | printed by the job (so a re-run updates in place) |
    | `OWNER_LINE_ORG_IDS` | the organization ids it is on for, comma-separated; `*` = all |
 
-   Optional: `RETELL_OWNER_AGENT_MODEL` (default `claude-5.5-sonnet`), `RETELL_OWNER_AGENT_VOICE_ID`,
-   `OWNER_LINE_MAX_CALL_MINUTES` (default 20), `OWNER_LINE_TRUST_CALLER_ID`.
+   Optional: `RETELL_OWNER_AGENT_MODEL`, `RETELL_OWNER_AGENT_VOICE_ID` (see "The model and the
+   voice"), `OWNER_LINE_MAX_CALL_MINUTES` (default 20), `OWNER_LINE_TRUST_CALLER_ID`.
 
    It also needs what phone answering already uses: `RETELL_INTAKE_ENABLED=1`, `RETELL_API_KEY`,
    `RETELL_FUNCTION_SECRET`, `APP_BASE_URL`.
@@ -146,10 +148,39 @@ your own account; leave it off otherwise.
 4. The owner's cell must be set and **confirmed** on the business (Settings → Business → Your cell).
 5. Call the business's Everdoer number from that cell.
 
-To change the tools or the model, re-run step 2 with `--apply`. The tool list lives on the
-Retell agent, not in the per-call prompt: after a release that changes `buildOwnerAgentTools`
-(for example the one that added `business_name`), re-run it or the live agent keeps the old
-tools.
+### What lives where
+
+| | Where it lives | Who changes it |
+|---|---|---|
+| The real prompt | Built per call by the app (`buildOwnerLinePrompt`: the brief, the rules, the business facts) | A release, and the owner's brief in Your AI |
+| The prompt box in Retell | Exactly `{{system_prompt}}`. Anything else there and calls ignore their own prompt | The job (`--apply` puts it back) |
+| The tools (`business`, `web_lookup`, `end_call`) | On the Retell agent | The job. A release that changes `buildOwnerAgentTools` needs `--apply` |
+| The model and the voice | On the Retell agent | Retell's dashboard, or the two variables below |
+
+Do not paste a prompt into Retell's prompt box. Put what the assistant should know about the
+owner in Your AI ("When you call <name>"); it reaches every call from there.
+
+### The model and the voice
+
+A new agent is created on `claude-5.5-sonnet` with the default voice. After that the job
+**keeps whatever model and voice the live agent has**, so the model can be switched in Retell's
+dashboard (for example to a speech-to-speech model such as Grok Voice) and a later `--apply`
+does not undo it. Tools added to the agent by hand are kept too.
+
+To set them from here instead: `RETELL_OWNER_AGENT_MODEL` (a text model such as
+`claude-5.5-sonnet`, or a speech-to-speech one such as `grok-voice-3.0` or `gpt-realtime-2.1`,
+which is sent as `model_config` type `s2s`) and `RETELL_OWNER_AGENT_VOICE_ID`. A speech-to-speech
+model speaks with its own voices: a new agent on one needs the voice id set.
+
+### Versions and publishing
+
+Retell's update endpoints write to the agent's latest **draft** version; a published version is
+read-only. After `--apply`, either add `--publish` or publish the draft in the dashboard.
+`--check` prints the version it read and whether it is published.
+
+`--check` is read-only and prints, without any secret: the model, the voice, whether the prompt
+is the passthrough, each tool as ok / MISSING / OUT OF DATE (and why), and the version. It exits
+non-zero when something this job owns is not in place.
 
 ## Known gaps (pilot)
 
