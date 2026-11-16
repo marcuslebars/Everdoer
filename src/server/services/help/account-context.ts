@@ -26,7 +26,7 @@ export interface HelpAccountContext {
 export const PLAN_LABELS: Record<string, string> = {
   internal: "Internal (house account)",
   launch: "Launch",
-  operate: "Operate",
+  operate: "Close",
   front_desk: "Front Desk",
 };
 

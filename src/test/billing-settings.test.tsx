@@ -138,7 +138,7 @@ describe("billing page plan cards", () => {
     state.billing = billing({ plan: "operate", subscription_status: "trialing", trial_ends_at: inDays(9) }, null);
     const { container } = renderPage();
     expect(screen.queryByText("Launch")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Operate" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Close" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Front Desk" })).toBeInTheDocument();
     expect(container.querySelector(".md\\:grid-cols-2")).not.toBeNull();
     expect(container.querySelector(".md\\:grid-cols-3")).toBeNull();

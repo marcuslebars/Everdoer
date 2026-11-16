@@ -144,7 +144,7 @@ describe("POST /help/ask", () => {
     });
 
     const prompt = String(h.callHelpModel.mock.calls[0][0]);
-    expect(prompt).toContain("Plan: Operate");
+    expect(prompt).toContain("Plan: Close");
     expect(prompt).toContain("Setup steps done: Business");
     expect(prompt).not.toContain("Secret Competitor");
     expect(prompt).not.toContain(OTHER_ORG);
@@ -221,7 +221,7 @@ describe("POST /help/escalate", () => {
     expect(mail.replyTo).toBe("owner@acme.test");
     expect(mail.subject).toContain("Acme Roofing");
     expect(mail.body).toContain("From: owner@acme.test");
-    expect(mail.body).toContain("Plan: Operate");
+    expect(mail.body).toContain("Plan: Close");
     expect(mail.body).toContain("Bought through: Everdoer Catch");
     expect(mail.body).toContain("Customer: how do I add my google review link?");
     expect(mail.body).toContain("Assistant: I'm not sure");

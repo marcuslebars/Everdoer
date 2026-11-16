@@ -223,9 +223,11 @@ is a credential; this public endpoint stops minting them).
    coupon `crankleads_founding_100` (100% off setup, 25 redemptions). Catch is unchanged in Stripe
    ($500/month + $1,500 setup) but everdoer.com no longer sells it. The equivalent command is
    `--catch-setup 150000 --catch-monthly 50000 --close-setup 49900 --close-monthly 29900 --front-desk-setup 49900 --front-desk-monthly 49900 --founding-percent 100 --founding-max 25`.
-   The live prices were created without this script, because it also renames products and
-   `crankleads_close` is named "Everdoer Operate" on purpose (it carries the self-serve Operate
-   price too): running the script against live renames it back to "Everdoer Close".
+   The live prices were created without this script. `crankleads_close` carries both the
+   everdoer.com Close price and the in-app `operate` plan's price; since 16 Nov 2026 the product
+   is named **"Everdoer Close"** and the app shows the `operate` plan as "Close", so buyers see one
+   name on checkout, receipts, invoices and the billing portal (it was "Everdoer Operate"). The
+   plan key stays `operate` in code and data.
 3. **Paste the env** the script prints into Railway. The new names are `STRIPE_PRICE_EVERDOER_*`,
    `STRIPE_SETUP_FEE_EVERDOER_*` and `STRIPE_COUPON_EVERDOER_FOUNDING`; the old `STRIPE_PRICE_CL_*`,
    `STRIPE_SETUP_FEE_CL_*` and `STRIPE_COUPON_CL_FOUNDING` names (which the script may still print)
