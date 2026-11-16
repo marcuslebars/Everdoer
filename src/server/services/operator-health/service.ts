@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { sendEmail as defaultSendEmail, isEmailSendConfigured, type SendEmailInput, type SendEmailResult } from "@/server/outbound/email";
 import { getPastDueGraceDays } from "@/server/services/billing/env";
+import { platformOperatorEmail } from "@/server/services/operator-email";
 import type { AdminClient } from "@/server/services/done-for-you/purchases";
 import { localClock } from "@/server/services/done-for-you/followup-schedule";
 import { loadOperatorHealthFacts, type LoadFactsInput } from "@/server/services/operator-health/load";
@@ -58,7 +59,7 @@ function validTimeZone(raw: string | undefined): string {
  * The Stripe dashboard links point at test mode when STRIPE_SECRET_KEY is a test key.
  */
 export function readOperatorHealthConfig(env: Record<string, string | undefined> = process.env): OperatorHealthConfig {
-  const recipient = env.OWNER_EMAIL?.trim() || null;
+  const recipient = platformOperatorEmail(env);
   const flag = env.OPERATOR_HEALTH_ENABLED?.trim().toLowerCase() ?? "";
   const switchedOff = ["false", "0", "off", "no"].includes(flag);
   const stripeKey = env.STRIPE_SECRET_KEY?.trim() ?? "";
@@ -267,7 +268,7 @@ export async function runOperatorHealthJob(
   const delivery = decideDelivery(report, config.allClearMode, localClock(config.timeZone, nowMs).weekday);
   const email = renderOperatorHealthEmail(report, { allClearMode: config.allClearMode });
   if (args.dryRun || !args.send) return { report, email, delivery, sentTo: null };
-  if (!config.recipient) throw new Error("OWNER_EMAIL is not set — nowhere to send the report.");
+  if (!config.recipient) throw new Error("EVERDOER_OPERATOR_EMAIL / OWNER_EMAIL is not set — nowhere to send the report.");
   await deps.sendEmail({ to: config.recipient, subject: email.subject, body: email.text, html: email.html, fromName: email.fromName });
   return { report, email, delivery, sentTo: config.recipient };
 }

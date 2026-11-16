@@ -64,6 +64,7 @@ import { switchOnEverything, type SwitchOnResult } from "@/server/services/dfy/s
 import type { RetellClient } from "@/server/services/retell/provision";
 import { toE164 } from "@/server/services/retell/payload";
 import type { TenantServiceContext } from "@/server/services/shared";
+import { platformOperatorEmail } from "@/server/services/operator-email";
 import {
   deliverMessage as defaultDeliverMessage,
   resolveOwnerContacts,
@@ -118,7 +119,7 @@ async function defaultGoLive(
 const defaultDeps: DoneForYouDeps = { deliver: defaultDeliverMessage, sendEmail: defaultSendEmail };
 
 function operatorEmail(): string | null {
-  return process.env.OWNER_EMAIL?.trim() || null;
+  return platformOperatorEmail();
 }
 
 function operatorTimeZone(): string {
@@ -311,7 +312,7 @@ function operatorCallInput(state: CompanyState, checklist: SetupChecklist | null
 async function emailOperator(deps: DoneForYouDeps, email: { subject: string; body: string; html: string; fromName: string }): Promise<string> {
   const to = operatorEmail();
   if (!to) {
-    console.error(`[dfy] OWNER_EMAIL is not set — operator email not sent: ${email.subject}`);
+    console.error(`[dfy] EVERDOER_OPERATOR_EMAIL / OWNER_EMAIL is not set — operator email not sent: ${email.subject}`);
     return "skipped:no_owner_email_env";
   }
   try {

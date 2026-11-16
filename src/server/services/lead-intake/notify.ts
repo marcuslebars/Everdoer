@@ -96,10 +96,36 @@ export function leadFromHeader(companyName: string | null, env: NodeJS.ProcessEn
   return `${name} leads <${address}>`;
 }
 
+/**
+ * The `sourceSite` tags of the platform's own marketing site, everdoer.com. Its question form
+ * still sends the old wire name "crankleads"; "everdoer" is what it becomes.
+ */
+const PLATFORM_SITE_SOURCE_SITES = new Set(["crankleads", "everdoer"]);
+
+/** Is this lead an enquiry about Everdoer itself (from everdoer.com), not a house business's customer? PURE. */
+export function isPlatformSiteLead(sourceSite: string | null | undefined): boolean {
+  return Boolean(sourceSite && PLATFORM_SITE_SOURCE_SITES.has(sourceSite.trim().toLowerCase()));
+}
+
+/**
+ * Who gets the operator copy of a lead. PURE.
+ *  - An enquiry from everdoer.com → the platform inbox (EVERDOER_OPERATOR_EMAIL, else as below).
+ *  - Everything else that reaches here (a house business's lead, e.g. A1 Marine Care; a lead we
+ *    couldn't route) → LEAD_NOTIFY_EMAIL, else OWNER_EMAIL, exactly as before.
+ * Until 16 Nov 2026 both went to the one address, so A1's blocked inbox also swallowed every
+ * everdoer.com enquiry.
+ */
+export function leadNotifyRecipient(sourceSite: string | null | undefined, env: Record<string, string | undefined> = process.env): string | null {
+  const platform = env.EVERDOER_OPERATOR_EMAIL?.trim();
+  if (platform && isPlatformSiteLead(sourceSite)) return platform;
+  return env.LEAD_NOTIFY_EMAIL ?? env.OWNER_EMAIL ?? null;
+}
+
 export async function sendLeadNotification(lead: NotifyLead): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.LEAD_NOTIFY_EMAIL ?? process.env.OWNER_EMAIL;
-  const from = leadFromHeader(lead.companyName);
+  const to = leadNotifyRecipient(lead.sourceSite);
+  // An everdoer.com enquiry has no company: sign it "Everdoer leads", not "New lead leads".
+  const from = leadFromHeader(lead.companyName ?? (isPlatformSiteLead(lead.sourceSite) ? "Everdoer" : null));
 
   if (!apiKey || !to) {
     console.warn("[intake] RESEND_API_KEY or LEAD_NOTIFY_EMAIL not set — skipping notification email");
