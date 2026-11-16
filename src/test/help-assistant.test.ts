@@ -69,7 +69,7 @@ describe("buildHelpUserMessage", () => {
 
   it("describes only the caller's own account — no ids, nothing from another org", () => {
     const msg = buildHelpUserMessage({ question, history: [], sections, account: ACCOUNT_A });
-    expect(msg).toContain("Plan: Operate");
+    expect(msg).toContain("Plan: Close");
     expect(msg).toContain("Bought through: Everdoer Catch");
     expect(msg).toContain("Setup steps remaining: Phone, Payments");
     expect(msg).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);

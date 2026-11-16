@@ -1709,7 +1709,7 @@ export default function AutomationsPage() {
         </div>
         <UpgradeNudge
           title="Automations aren't in your plan"
-          description="Upgrade to the Operate plan to build workflows that run your operations automatically."
+          description="Upgrade to the Close plan to build workflows that run your operations automatically."
         />
       </div>
     );

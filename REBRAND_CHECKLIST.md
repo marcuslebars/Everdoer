@@ -79,7 +79,7 @@ If a service is missed, it keeps reading the old name and keeps logging `env/<ol
 - Undo: delete the new variable; the old name is read again.
 
 ### 1.6 Turn on new names for writes (after PR 1 has been stable for 48 h)
-- [ ] **Set `EVERDOER_WRITE_NEW_NAMES=1` on every service in project EmpireVu:**
+- [x] **Set `EVERDOER_WRITE_NEW_NAMES=1` on every service in project EmpireVu:** *(done 16 Nov 2026 on all seven services in Railway project "Everdoer": Everdoer (web), workflow-events, crankleads-sweep, billiing-worker, billing-reconcile, quote-maintenance, monthly-scorecard. There is no separate "EmpireVu worker" service in the project any more.)*
   - EmpireVu (web)
   - EmpireVu worker
   - workflow-events

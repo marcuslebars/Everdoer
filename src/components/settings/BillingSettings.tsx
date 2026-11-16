@@ -18,7 +18,7 @@ import type { PlanPricing, PurchasablePlan } from "@/lib/api-client";
 const planLabel: Record<string, string> = {
   internal: "Internal",
   launch: "Launch",
-  operate: "Operate",
+  operate: "Close",
   front_desk: "Front Desk",
 };
 
