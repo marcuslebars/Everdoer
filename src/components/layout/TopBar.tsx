@@ -639,7 +639,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         <CreateEntityDialog
           title="New company"
           label="Company name"
-          placeholder="North Shore Marina"
+          placeholder="e.g. Northshore Roofing"
           isPending={createCompanyMutation.isPending}
           error={createError}
           onSubmit={submitCreateCompany}

@@ -1,5 +1,5 @@
 /** Weekly "what your front desk did" report (docs/front-desk-ai.md → "Weekly report"). */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api-client";
 
@@ -116,6 +116,78 @@ export function useWeeklyReport(
     enabled: Boolean(orgId && companyId),
     staleTime: 5 * 60_000,
   });
+}
+
+/**
+ * The same weeks summed across several companies — the dashboard's "All companies" view. Each
+ * company keeps its own report (and Monday text); this only adds them up for display.
+ */
+export function useWeeklyReportAcrossCompanies(
+  orgId: string,
+  companyIds: string[],
+  options: { weeks?: number; includeCurrent?: boolean } = {},
+) {
+  const results = useQueries({
+    queries: companyIds.map((companyId) => ({
+      queryKey: [KEY, orgId, companyId, options.weeks ?? 8, Boolean(options.includeCurrent)],
+      queryFn: () => fetchWeeklyReport(orgId, companyId, options),
+      enabled: Boolean(orgId && companyId),
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const views = results.map((r) => r.data).filter((v): v is WeeklyReportView => Boolean(v));
+  return {
+    data: views.length === companyIds.length && views.length > 0 ? combineWeeklyReportViews(views) : undefined,
+    isLoading: results.some((r) => r.isLoading),
+    isError: results.some((r) => r.isError),
+    refetch: () => results.forEach((r) => void r.refetch()),
+  };
+}
+
+/** Add two metric blocks for the same week. Pure (tested). */
+export function sumWeeklyMetrics(a: WeeklyReportMetrics, b: WeeklyReportMetrics): WeeklyReportMetrics {
+  const afterHours = a.calls.afterHours === null && b.calls.afterHours === null ? null : (a.calls.afterHours ?? 0) + (b.calls.afterHours ?? 0);
+  return {
+    ...a,
+    textConversations: a.textConversations + b.textConversations,
+    textReplies: a.textReplies === undefined && b.textReplies === undefined ? undefined : (a.textReplies ?? 0) + (b.textReplies ?? 0),
+    approvals: { asked: a.approvals.asked + b.approvals.asked, approved: a.approvals.approved + b.approvals.approved },
+    calls: { answered: a.calls.answered + b.calls.answered, afterHours, minutes: a.calls.minutes + b.calls.minutes },
+    missedCalls: { caught: a.missedCalls.caught + b.missedCalls.caught, textedBack: a.missedCalls.textedBack + b.missedCalls.textedBack },
+    leads: a.leads + b.leads,
+    quotes: {
+      sent: a.quotes.sent + b.quotes.sent,
+      approved: a.quotes.approved + b.quotes.approved,
+      approvedCents: a.quotes.approvedCents + b.quotes.approvedCents,
+    },
+    jobsBooked: a.jobsBooked + b.jobsBooked,
+    collected: {
+      cents: a.collected.cents + b.collected.cents,
+      deposits: a.collected.deposits + b.collected.deposits,
+      payments: a.collected.payments + b.collected.payments,
+    },
+    reviewsRequested: a.reviewsRequested + b.reviewsRequested,
+    hoursSaved: {
+      minutes: a.hoursSaved.minutes + b.hoursSaved.minutes,
+      hours: a.hoursSaved.hours + b.hoursSaved.hours,
+      wageValueCents: a.hoursSaved.wageValueCents + b.hoursSaved.wageValueCents,
+    },
+    hasActivity: a.hasActivity || b.hasActivity,
+  };
+}
+
+/** Several companies' views as one: weeks matched by label + partial, metrics summed. Pure (tested). */
+export function combineWeeklyReportViews(views: WeeklyReportView[]): WeeklyReportView {
+  const [first, ...rest] = views;
+  const weeks = first.weeks.map((week) => {
+    let metrics = week.metrics;
+    for (const view of rest) {
+      const match = view.weeks.find((w) => w.label === week.label && w.partial === week.partial);
+      if (match) metrics = sumWeeklyMetrics(metrics, match.metrics);
+    }
+    return { ...week, metrics, send: null };
+  });
+  return { ...first, companyName: "All businesses", weeks };
 }
 
 export function useWeeklyReportSettings(orgId: string, companyId: string | null) {

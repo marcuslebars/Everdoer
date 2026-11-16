@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { PerBusinessPicker } from "@/components/layout/PerBusinessPicker";
 import { CalendarRange, Clock, Headset, Mail, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,7 @@ export default function ReportsWeeklyPage() {
 
   return (
     <div className="max-w-[1440px] mx-auto space-y-6">
+      <PerBusinessPicker companies={companies} shownCompanyId={companyId} what="Weekly reports" />
       <div className="flex flex-wrap items-center justify-between gap-4 opacity-0 animate-fade-in">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Your front desk, week by week</h1>

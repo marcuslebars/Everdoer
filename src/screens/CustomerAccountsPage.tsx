@@ -76,7 +76,7 @@ export default function CustomerAccountsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Business accounts</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Marinas, clubs and other businesses you invoice</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Property managers, marinas and other businesses you invoice</p>
         </div>
         <button
           onClick={startCreate}

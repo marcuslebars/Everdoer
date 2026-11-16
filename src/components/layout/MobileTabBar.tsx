@@ -5,8 +5,9 @@ import { PRIMARY_NAV, isNavActive, isUnderMore } from "./nav-items";
 
 /**
  * Phones and tablets: the everyday places and Your AI as a bottom tab bar (thumb reach), plus
- * "More", which opens the full menu. Seven columns: labels are one short word each and truncate
- * rather than wrap on a narrow phone. Hidden from lg up, where the sidebar shows instead.
+ * "More", which opens the full menu. Seven columns: labels are one short word each, set tight with
+ * no side padding so "Customers" fits a 360px-wide phone; narrower than that they truncate
+ * rather than wrap. Hidden from lg up, where the sidebar shows instead.
  */
 export function MobileTabBar({ onMore }: { onMore: () => void }) {
   const { pathname } = useLocation();
@@ -25,7 +26,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
                 to={item.path}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-0.5 h-14 px-0.5 text-[10px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-0.5 h-14 px-0 text-[10px] font-medium tracking-tight transition-colors",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >

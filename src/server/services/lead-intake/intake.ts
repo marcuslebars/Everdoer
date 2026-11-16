@@ -480,7 +480,7 @@ async function parseIntoRecords(
           {
             companyId,
             contactId,
-            title: `Lead booking — ${envelope.source}`,
+            title: leadBookingTitle(envelope),
             description: envelope.message ?? null,
             scheduledFor: planned.scheduledFor,
             windowKey: planned.windowKey,
@@ -493,6 +493,22 @@ async function parseIntoRecords(
   }
 
   return { contactId, matched, returning, crossBrandBrands };
+}
+
+/**
+ * A readable title for a booking made from a lead form: what they booked, then who. It is the
+ * title of the job and of any invoice made from it, so customers see it — never the internal
+ * source slug (that used to give "Lead booking — a1marinecare-booking").
+ */
+export function leadBookingTitle(envelope: Pick<LeadEnvelope, "services" | "lineItems" | "asset" | "contact">): string {
+  const services = (envelope.services ?? []).map((s) => s.trim()).filter(Boolean);
+  const items = (envelope.lineItems ?? []).map((i) => i.description.trim()).filter(Boolean);
+  const named = services.length ? services : items;
+  let what = named.length > 2 ? `${named.slice(0, 2).join(", ")} + ${named.length - 2} more` : named.join(", ");
+  if (!what && envelope.asset?.type) what = envelope.asset.type.trim();
+  const who = envelope.contact.name?.trim();
+  const title = what && who ? `${what} — ${who}` : what || (who ? `Booking — ${who}` : "Online booking");
+  return title.length > 200 ? `${title.slice(0, 199)}…` : title;
 }
 
 /**

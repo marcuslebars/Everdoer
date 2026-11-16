@@ -219,7 +219,7 @@ export function JobSheetView({ orgId, job }: { orgId: string; job: JobSheet }) {
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   maxLength={300}
-                  placeholder="e.g. Wye Heritage Marina, dock C slip 14"
+                  placeholder="e.g. 42 Lakeshore Rd, side door — gate code 1234"
                   className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </label>

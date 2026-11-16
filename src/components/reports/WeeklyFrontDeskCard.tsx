@@ -4,7 +4,13 @@ import { ChevronRight, Clock, Headset, MessageSquareText, PhoneCall, CalendarChe
 import { ErrorBanner, SkeletonCard } from "@/components/ui/StateViews";
 import { useCompanies } from "@/lib/api-hooks";
 import { cn } from "@/lib/utils";
-import { hoursSavedShort, useWeeklyReport, wholeDollars, type WeeklyReportWeek } from "@/lib/weekly-report-api";
+import {
+  hoursSavedShort,
+  useWeeklyReport,
+  useWeeklyReportAcrossCompanies,
+  wholeDollars,
+  type WeeklyReportWeek,
+} from "@/lib/weekly-report-api";
 
 /**
  * Dashboard "This week" card — what the AI front desk handled this week so far, with last
@@ -59,10 +65,15 @@ export function WeeklyFrontDeskCard({
   className?: string;
 }) {
   const { data: companies } = useCompanies(orgId);
-  const effectiveCompanyId = companyId ?? companies?.[0]?.id ?? null;
-  const { data, isLoading, isError, refetch } = useWeeklyReport(orgId, effectiveCompanyId, { weeks: 1, includeCurrent: true });
+  // "All companies" selected: add every business's numbers up. (It used to show only the first
+  // business, which read as "0 calls, quiet week" while another business's AI was busy.)
+  const allCompanyIds = companyId ? [] : (companies ?? []).map((c) => c.id);
+  const combined = allCompanyIds.length > 1;
+  const single = useWeeklyReport(orgId, combined ? null : (companyId ?? allCompanyIds[0] ?? null), { weeks: 1, includeCurrent: true });
+  const across = useWeeklyReportAcrossCompanies(orgId, combined ? allCompanyIds : [], { weeks: 1, includeCurrent: true });
+  const { data, isLoading, isError, refetch } = combined ? across : single;
 
-  if (!effectiveCompanyId && companies && companies.length === 0) return null;
+  if (!companyId && companies && companies.length === 0) return null;
 
   const current = data?.weeks.find((w) => w.partial);
   const last = data?.weeks.find((w) => !w.partial);
@@ -84,7 +95,11 @@ export function WeeklyFrontDeskCard({
           </span>
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground tracking-tight">Your front desk this week</h3>
-            {current && <p className="text-[11px] text-muted-foreground">{current.label} · so far</p>}
+            {current && (
+              <p className="text-[11px] text-muted-foreground">
+                {current.label} · so far{combined ? " · all businesses" : ""}
+              </p>
+            )}
           </div>
         </div>
         <Link

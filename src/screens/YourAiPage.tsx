@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCompanies } from "@/lib/api-hooks";
 import { AiReadinessCard } from "@/components/front-desk/AiReadinessCard";
 import { cn } from "@/lib/utils";
+import { PerBusinessPicker } from "@/components/layout/PerBusinessPicker";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/sonner";
 import { ErrorBanner } from "@/components/ui/StateViews";
@@ -25,16 +26,31 @@ const TONES: Array<{ value: YourAiTone | null; label: string }> = [
   { value: "casual", label: "Casual" },
 ];
 
+/** "Needs your AI phone number" → "needs your AI phone number" (it follows a colon). */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function SwitchRow({ item, canManage, busy, onChange }: { item: YourAiSwitch; canManage: boolean; busy: boolean; onChange: (on: boolean, choice?: string) => void }) {
   const id = `your-ai-${item.key}`;
+  // On, but something it depends on is missing: say plainly it isn't running, instead of a green
+  // switch that reads as "working".
+  const waiting = item.on && Boolean(item.needs);
   return (
     <li className="py-3.5 flex items-start gap-4" data-testid={id}>
       <div className="min-w-0 flex-1">
-        <label htmlFor={id} className="text-sm font-medium text-foreground cursor-pointer">
-          {item.label}
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor={id} className="text-sm font-medium text-foreground cursor-pointer">
+            {item.label}
+          </label>
+          {waiting && (
+            <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning">Not running yet</span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
-        {item.needs && <p className="text-xs text-warning mt-1">{item.needs}</p>}
+        {item.needs && (
+          <p className="text-xs text-warning mt-1">{waiting ? `Switched on, but it won't run until this is done: ${lowerFirst(item.needs)}` : item.needs}</p>
+        )}
         {item.alsoDoneBy && (
           <p className="text-xs text-muted-foreground mt-1">
             Your “{item.alsoDoneBy}” automation does this too.{" "}
@@ -71,7 +87,14 @@ function SwitchRow({ item, canManage, busy, onChange }: { item: YourAiSwitch; ca
           )}
         </div>
       </div>
-      <Switch id={id} checked={item.on} disabled={!canManage || busy} onCheckedChange={(on) => onChange(on)} aria-label={item.label} />
+      <Switch
+        id={id}
+        checked={item.on}
+        disabled={!canManage || busy}
+        onCheckedChange={(on) => onChange(on)}
+        aria-label={waiting ? `${item.label} (not running yet)` : item.label}
+        className={cn(waiting && "data-[state=checked]:bg-warning")}
+      />
     </li>
   );
 }
@@ -281,6 +304,8 @@ export default function YourAiPage() {
         </p>
         {!canManage && <p className="text-xs text-muted-foreground mt-1">Only owners and admins can change these.</p>}
       </header>
+
+      <PerBusinessPicker companies={companies} shownCompanyId={effectiveCompanyId} what="These settings" />
 
       <AiReadinessCard orgId={organizationId} companyId={effectiveCompanyId} hideDuringSetup={false} omit={["texts", "calls"]} />
 

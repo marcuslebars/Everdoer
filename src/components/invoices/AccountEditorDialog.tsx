@@ -107,7 +107,7 @@ export function AccountEditorDialog({
             onChange={(e) => setName(e.target.value)}
             autoFocus
             maxLength={200}
-            placeholder="Bayview Marina"
+            placeholder="e.g. Bayview Property Management"
             className={inputCls}
           />
         </div>
