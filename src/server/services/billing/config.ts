@@ -28,6 +28,22 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export type PurchasablePlan = Exclude<BillingPlan, "internal">;
 export const PURCHASABLE_PLANS: readonly PurchasablePlan[] = ["launch", "operate", "front_desk"];
 
+/**
+ * Plans a business is offered when it picks or changes a plan (the billing page's plan cards and
+ * the plan checkout). `launch` is no longer sold (pricing decision, 15 Nov 2026) but stays a valid
+ * plan everywhere else — Stripe price → plan mapping, gating, BILLING_TRIAL_PLAN, the ops cost
+ * report — so an org already on it keeps working and still sees its own plan.
+ */
+export const OFFERED_PLANS: readonly PurchasablePlan[] = ["operate", "front_desk"];
+
+/**
+ * The plans to show (and accept at checkout) for an org: the offered ones, plus the org's own
+ * plan when that is a purchasable plan we no longer offer. Order follows PURCHASABLE_PLANS.
+ */
+export function planChoicesFor(currentPlan: string | null | undefined): PurchasablePlan[] {
+  return PURCHASABLE_PLANS.filter((plan) => OFFERED_PLANS.includes(plan) || plan === currentPlan);
+}
+
 export const BILLING_FEATURES = [
   "lead_intake",
   "bookings",

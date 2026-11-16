@@ -101,7 +101,7 @@ export function renderWelcomeEmail(input: WelcomeEmailInput): RenderedEmail {
   const body = [
     `Hi ${firstName(input.ownerName)},`,
     "",
-    `Thanks for buying ${DONE_FOR_YOU_OFFER_NAME} ${tierLabel}. You don't have to set anything up — we're setting up ${input.businessName} for you.`,
+    `Thanks for choosing ${DONE_FOR_YOU_OFFER_NAME} ${tierLabel}. You don't have to set anything up — we're setting up ${input.businessName} for you.`,
     "",
     ...setupLines,
     "",
@@ -126,7 +126,7 @@ export function renderWelcomeEmail(input: WelcomeEmailInput): RenderedEmail {
     `<p><a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 20px;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600">${escapeHtml(label)}</a></p>`;
   const html = [
     `<p>Hi ${escapeHtml(firstName(input.ownerName))},</p>`,
-    `<p>Thanks for buying ${DONE_FOR_YOU_OFFER_NAME} ${escapeHtml(tierLabel)}. You don't have to set anything up — we're setting up <strong>${escapeHtml(input.businessName)}</strong> for you.</p>`,
+    `<p>Thanks for choosing ${DONE_FOR_YOU_OFFER_NAME} ${escapeHtml(tierLabel)}. You don't have to set anything up — we're setting up <strong>${escapeHtml(input.businessName)}</strong> for you.</p>`,
     input.setupUrl
       ? `<p><strong>Check your texts:</strong> we just sent you a link to a 60-second quick setup — 3 questions, no login. Here it is too:</p>${button(input.setupUrl, "Start the 60-second setup")}`
       : "<p><strong>Check your texts:</strong> we're sending you a link to a 60-second quick setup — 3 questions, no login.</p>",

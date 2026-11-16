@@ -8,7 +8,7 @@ import {
   getStripeSetupFeePriceId,
 } from "@/server/services/billing/env";
 import { getStripeClient } from "@/server/services/billing/stripe";
-import { doneForYouCheckoutBranding } from "@/server/services/done-for-you/config";
+import { doneForYouAutomaticTax, doneForYouCheckoutBranding } from "@/server/services/done-for-you/config";
 import { appBaseUrlFor, brandForOrg, type PlatformBrand } from "@/server/services/platform-brand";
 import type { createSupabaseAdminClient } from "@/server/supabase/admin";
 
@@ -96,6 +96,11 @@ async function ensureStripeCustomer(
   return customer.id;
 }
 
+/** `managed_payments` is not in the Stripe SDK's types yet (same as DoneForYouSessionCreateParams). */
+type PlanCheckoutSessionCreateParams = Stripe.Checkout.SessionCreateParams & {
+  managed_payments?: { enabled: boolean };
+};
+
 export interface CreateCheckoutSessionParams {
   organizationId: string;
   plan: PurchasablePlan;
@@ -134,16 +139,29 @@ export async function createCheckoutSession(
   const brand = brandForOrg(org);
   const base = billingBaseUrl(brand);
   const branding = checkoutBrandingFor(brand);
-  const session = await stripe.checkout.sessions.create({
+  // Same selling terms as the everdoer.com purchase checkout (done-for-you/checkout.ts): Everdoer
+  // is the seller and charges HST itself. The live account has Stripe Managed Payments (Stripe as
+  // merchant of record) on by default; left alone it took over tax, invoices and receipts for
+  // in-app subscriptions only, while everdoer.com purchases were sold by Everdoer. With
+  // STRIPE_AUTOMATIC_TAX=true Stripe Tax adds HST; that needs the buyer's billing address, which
+  // is saved to the customer so every later invoice is taxed the same way.
+  const automaticTax = doneForYouAutomaticTax();
+  const sessionParams: PlanCheckoutSessionCreateParams = {
     ...(branding ? { branding_settings: branding } : {}),
     cancel_url: params.cancelUrl ?? `${base}/settings/billing?checkout=cancelled`,
     customer: customerId,
     line_items: lineItems,
+    managed_payments: { enabled: false },
+    automatic_tax: { enabled: automaticTax },
+    ...(automaticTax
+      ? { billing_address_collection: "required" as const, customer_update: { address: "auto" as const, name: "auto" as const } }
+      : {}),
     metadata: { organizationId: org.id, plan: params.plan },
     mode: "subscription",
     subscription_data: { metadata: { organizationId: org.id, plan: params.plan } },
     success_url: params.successUrl ?? `${base}/settings/billing?checkout=success`,
-  });
+  };
+  const session = await stripe.checkout.sessions.create(sessionParams);
 
   if (!session.url) {
     throw new Error("Stripe did not return a Checkout URL.");

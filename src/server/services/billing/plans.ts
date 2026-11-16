@@ -25,8 +25,11 @@ export interface PlanPricing {
  * no dollar amounts in code). Resilient: a plan whose price env is unset or whose
  * Stripe lookup fails comes back `available: false` with null amounts rather than
  * failing the whole request, so the billing page still renders its feature matrix.
+ *
+ * `plans` defaults to every purchasable plan (the ops cost report needs them all); the billing
+ * page passes planChoicesFor(org.plan), which leaves out plans that are no longer sold.
  */
-export async function listPlanPricing(): Promise<PlanPricing[]> {
+export async function listPlanPricing(plans: readonly PurchasablePlan[] = PURCHASABLE_PLANS): Promise<PlanPricing[]> {
   let stripe: Stripe | null = null;
   try {
     stripe = getStripeClient();
@@ -35,7 +38,7 @@ export async function listPlanPricing(): Promise<PlanPricing[]> {
   }
 
   const results: PlanPricing[] = [];
-  for (const plan of PURCHASABLE_PLANS) {
+  for (const plan of plans) {
     const fallback: PlanPricing = {
       amountCents: null,
       available: false,
