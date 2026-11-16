@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import {
-  Inbox, Search, MessageSquare, Mail, Phone, Loader2, ChevronDown, ChevronRight, Sparkles, FileText, Activity, Send, Bot,
+  Inbox, Search, MessageSquare, Mail, Phone, Loader2, ChevronDown, ChevronLeft, ChevronRight, Sparkles, FileText, Activity, Send, Bot,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -353,8 +353,8 @@ export default function InboxPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[minmax(280px,360px)_1fr] gap-4 h-[calc(100vh-180px-4rem)] lg:h-[calc(100vh-180px)]">
-        {/* Left: list */}
-        <div className="bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        {/* Left: list. On a phone it's one screen at a time: the list, or the open conversation. */}
+        <div className={cn("bg-card border border-border rounded-xl flex-col overflow-hidden", selectedRow ? "hidden md:flex" : "flex")}>
           <div className="p-3 border-b border-border space-y-2">
             <div className="relative">
               <Search className="w-4 h-4 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -383,16 +383,27 @@ export default function InboxPage() {
           </div>
         </div>
 
-        {/* Right: conversation */}
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        {/* Right: conversation (hidden on a phone until one is picked). */}
+        <div className={cn("bg-card border border-border rounded-xl overflow-hidden flex-col", selectedRow ? "flex" : "hidden md:flex")}>
           {selectedRow ? (
-            <ConversationPane
-              orgId={organizationId}
-              row={selectedRow}
-              draft={selectedRow.contact_id === linkedContactId && typeof linkedDraft === "string" ? linkedDraft : undefined}
-            />
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="md:hidden flex items-center gap-1 px-3 py-2 border-b border-border text-sm font-medium text-primary"
+              >
+                <ChevronLeft className="w-4 h-4" /> All conversations
+              </button>
+              <div className="flex-1 min-h-0">
+                <ConversationPane
+                  orgId={organizationId}
+                  row={selectedRow}
+                  draft={selectedRow.contact_id === linkedContactId && typeof linkedDraft === "string" ? linkedDraft : undefined}
+                />
+              </div>
+            </>
           ) : (
-            <div className="h-full flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center">
               <EmptyState title="Select a conversation" description="Pick a contact on the left to see and answer everything." />
             </div>
           )}
