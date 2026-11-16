@@ -107,6 +107,27 @@ function interpolateString(template: string, context: WorkflowEventContext): str
   });
 }
 
+/** A token with a dotted path ({{contact.first_name}}) needs the entity data, not just flat fields. */
+const DOTTED_TOKEN = /\{\{\s*[a-zA-Z_]+\.[^}]*\}\}/;
+
+/**
+ * Task title/description text. Dotted tokens ({{contact.first_name}}, {{company.name}}…) render
+ * like message templates (they used to stay literal: the owner's task list read "Follow up with
+ * {{contact.first_name}} — no activity in 3 days"); bare tokens keep resolving against the flat
+ * event fields. An empty value never leaves doubled spaces or a dangling "with —".
+ */
+export async function renderTaskText(
+  template: string,
+  context: WorkflowEventContext,
+  getData: () => Promise<MessageTemplateData>,
+): Promise<string> {
+  const text = DOTTED_TOKEN.test(template) ? renderTemplate(template, await getData()) : interpolateString(template, context);
+  return text
+    .replace(/\bwith\s+—/g, "with this lead —")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function resolveJsonValue(value: Json, context: WorkflowEventContext): Json {
   if (typeof value === "string") {
     return interpolateString(value, context);
@@ -189,7 +210,9 @@ export async function executeWorkflowActions(
           contact_id:
             resolveString(action.contact_id, eventContext) ??
             resolveContextString(eventContext.fields.contact_id),
-          description: resolveString(action.description, eventContext) ?? null,
+          description: action.description
+            ? await renderTaskText(action.description, eventContext, getTemplateData)
+            : (resolveString(action.description, eventContext) ?? null),
           due_at:
             typeof action.due_in_hours === "number"
               ? toIsoDate(new Date(Date.now() + action.due_in_hours * 60 * 60 * 1000))
@@ -198,7 +221,7 @@ export async function executeWorkflowActions(
                 : null,
           priority: action.priority ?? null,
           status: action.status ?? null,
-          title: interpolateString(action.title, eventContext),
+          title: await renderTaskText(action.title, eventContext, getTemplateData),
           workflow_id: options.workflow.id,
         } satisfies Json;
 
