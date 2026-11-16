@@ -1059,12 +1059,33 @@ export function useOrganizations() {
   });
 }
 
+/** Hidden from pickers and filters: a business the owner has wound down (companies.stage). */
+export function isArchivedCompany(company: { stage?: string | null }): boolean {
+  return company.stage === "archived";
+}
+
+/**
+ * The businesses an owner works with: archived ones are left out, so they drop out of the
+ * company switcher, filters, per-business pickers and totals. Their history stays. Use
+ * useAllCompanies where archived ones must still show (Settings → account).
+ */
 export function useCompanies(orgId: string) {
   return useQuery({
     queryKey: ["companies", orgId],
     queryFn: () => fetchCompanies(orgId),
     enabled: Boolean(orgId),
     staleTime: 5 * 60 * 1000, // 5 minutes
+    select: (companies) => companies.filter((c) => !isArchivedCompany(c)),
+  });
+}
+
+/** Every business, archived ones included (same cache as useCompanies). */
+export function useAllCompanies(orgId: string) {
+  return useQuery({
+    queryKey: ["companies", orgId],
+    queryFn: () => fetchCompanies(orgId),
+    enabled: Boolean(orgId),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

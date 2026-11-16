@@ -10,7 +10,8 @@ import { useOrg } from "@/lib/org-context";
 import { useAuth } from "@/lib/auth-context";
 import {
   useOrganizations,
-  useCompanies,
+  useAllCompanies,
+  isArchivedCompany,
   useUpdateOrganization,
   useOrgMembers,
   useInvitations,
@@ -40,7 +41,7 @@ import { MemberPhoneField } from "@/components/settings/staff/MemberPhoneField";
 function OrganizationSettings() {
   const { organizationId } = useOrg();
   const { data: orgs, isLoading: orgsLoading } = useOrganizations();
-  const { data: companies, isLoading: companiesLoading } = useCompanies(organizationId);
+  const { data: companies, isLoading: companiesLoading } = useAllCompanies(organizationId);
   const updateOrg = useUpdateOrganization(organizationId);
 
   const org = orgs?.find((o) => o.id === organizationId) ?? null;
@@ -130,7 +131,10 @@ function OrganizationSettings() {
                   key={c.id}
                   className="flex items-center justify-between px-3 py-2.5 bg-secondary rounded-lg"
                 >
-                  <span className="text-sm text-foreground">{c.name}</span>
+                  <span className="text-sm text-foreground">
+                    {c.name}
+                    {isArchivedCompany(c) && <span className="ml-2 text-xs text-muted-foreground">Archived</span>}
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
