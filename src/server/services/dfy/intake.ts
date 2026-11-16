@@ -123,8 +123,13 @@ export async function ensureSetupIntake(
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
+/**
+ * The first text a buyer gets. It ends with the opt-out line every later setup text carries
+ * (messages.ts): the checkout box promises "Reply STOP to opt out", and carriers expect it in
+ * the first message.
+ */
 export function renderSetupSms(input: { brandName: string; url: string }): string {
-  return `${input.brandName}: you're in. 60 seconds and we'll set the rest up for you: ${input.url}`;
+  return `${input.brandName}: you're in. 60 seconds and we'll set the rest up for you: ${input.url}\nReply STOP to stop these texts.`;
 }
 
 function escapeHtml(value: string): string {
