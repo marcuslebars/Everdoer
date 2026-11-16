@@ -5,21 +5,25 @@
 -- service + customer (leadBookingTitle, PR #233).
 --
 -- Counted read-only before writing this: 25 bookings, 2 invoices.
--- Keeps the old titles in ops_backup_lead_booking_titles so the .down.sql can put them back.
+-- Keeps the old titles in decommission.ops_backup_lead_booking_titles so the .down.sql can put them back.
 begin;
 
-create table if not exists public.ops_backup_lead_booking_titles (
+-- Backups go in the private decommission schema (not exposed by the API), like the 14 Oct one.
+create schema if not exists decommission;
+revoke all on schema decommission from public;
+
+create table if not exists decommission.ops_backup_lead_booking_titles (
   kind text not null check (kind in ('booking', 'invoice')),
   id uuid not null,
   old_title text not null,
   primary key (kind, id)
 );
 
-insert into public.ops_backup_lead_booking_titles (kind, id, old_title)
+insert into decommission.ops_backup_lead_booking_titles (kind, id, old_title)
 select 'booking', b.id, b.title from public.bookings b where b.title like 'Lead booking — %'
 on conflict do nothing;
 
-insert into public.ops_backup_lead_booking_titles (kind, id, old_title)
+insert into decommission.ops_backup_lead_booking_titles (kind, id, old_title)
 select 'invoice', i.id, i.title from public.invoices i where i.title like 'Lead booking — %'
 on conflict do nothing;
 
