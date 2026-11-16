@@ -643,6 +643,17 @@ function Summary({ data, onEdit }: { data: SetupIntakeView; onEdit: () => void }
           value={answers.prices.skipped || priced === 0 ? "Skipped — we'll ask later" : `${priced} service${priced === 1 ? "" : "s"} priced`}
         />
       </dl>
+      {!data.locked && (
+        <div className="mt-6 rounded-2xl border border-border bg-card px-4 py-3" data-testid="setup-next">
+          <p className="text-sm font-semibold">What happens next</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-base text-muted-foreground">
+            <li>We get your number and switch everything on.</li>
+            <li>We text you one link to turn on call forwarding. It takes a minute.</li>
+            <li>We test it and text you "You're live".</li>
+          </ol>
+          <p className="mt-2 text-sm text-muted-foreground">Nothing else to do until that text arrives.</p>
+        </div>
+      )}
       {data.locked ? (
         <p className="mt-6 text-base text-muted-foreground" data-testid="setup-locked">
           You're live, so this page is read-only now. To change anything, log in to the app.
