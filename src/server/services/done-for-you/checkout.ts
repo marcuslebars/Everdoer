@@ -25,7 +25,6 @@ import {
   doneForYouTrialDays,
 } from "@/server/services/done-for-you/config";
 import { stripeSourceForWrite } from "@/server/services/done-for-you/stripe-source";
-import { writeNewNames } from "@/server/services/rebrand/write-names";
 import {
   findPurchaseBySession,
   insertPurchase,
@@ -199,7 +198,10 @@ export function buildDoneForYouSessionParams(
     subscription_data: trialDays > 0 ? { metadata, trial_period_days: trialDays } : { metadata },
     ...(trialDays > 0 ? { payment_method_collection: "always" as const } : {}),
     // Rebrand: the /welcome/everdoer twin exists from PR 1; we link to it only once writers switch.
-    success_url: `${base}/welcome/${writeNewNames() ? "everdoer" : "crankleads"}?session_id={CHECKOUT_SESSION_ID}`,
+    // Always the new path: buyers see it in their address bar. Unlike the rebrand's machine-read
+    // names, it's only read by a browser, and the app has served /welcome/everdoer since PR 1
+    // (the old path still works for sessions already in flight), so no rollback can strand it.
+    success_url: `${base}/welcome/everdoer?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: doneForYouCancelUrl(),
   };
 }
