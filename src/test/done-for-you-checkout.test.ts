@@ -154,7 +154,7 @@ describe("POST /api/public/crankleads/checkout", () => {
       subscription_data: { metadata },
       // The buyer lands on the done-for-you app host, never the EmpireVu one.
       success_url: "https://app.crankleads.test/welcome/crankleads?session_id={CHECKOUT_SESSION_ID}",
-      cancel_url: "https://crankleads.com/#pricing",
+      cancel_url: "https://everdoer.com/#pricing",
     });
     expect(options).toEqual({ idempotencyKey: `crankleads-checkout-${row.id}` });
   });
