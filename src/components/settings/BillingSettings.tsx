@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useBrand } from "@/lib/brand-context";
-import { Loader2, Check, Minus, CreditCard, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
+import { Loader2, Check, Minus, CreditCard, Mail, AlertTriangle, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
@@ -113,6 +113,7 @@ function overageMonthLabel(month: string): string {
 
 export function BillingSettings() {
   const { organizationId } = useOrg();
+  const brand = useBrand();
   const { data: billing, isLoading } = useBilling(organizationId);
   const { data: plans, isLoading: plansLoading } = useBillingPlans(organizationId);
   const checkout = useCreateCheckout(organizationId);
@@ -156,6 +157,13 @@ export function BillingSettings() {
   const status = billing?.organization.subscription_status ?? "none";
   const isInternal = plan === "internal";
   const hasActiveSub = status === "active" || status === "trialing" || status === "past_due";
+  // A free trial the app runs itself (a new sign-up: BILLING_TRIAL_PLAN / BILLING_TRIAL_DAYS) has
+  // no Stripe subscription behind it, so there is nothing in the billing portal to change: the
+  // business subscribes from the plan cards below. A trial that started with a card at checkout
+  // (everdoer.com) does have a subscription and is managed like any paid plan.
+  const onFreeTrial = status === "trialing" && !billing?.subscription;
+  const trialEndsAt = billing?.organization.trial_ends_at ? new Date(billing.organization.trial_ends_at) : null;
+  const trialEnded = onFreeTrial && trialEndsAt !== null && trialEndsAt.getTime() <= Date.now();
   const st = statusStyle[status] ?? statusStyle.none;
   const busy = checkout.isPending || portal.isPending;
 
@@ -198,7 +206,13 @@ export function BillingSettings() {
 
         <div className="p-4 rounded-xl border border-border bg-card">
           <p className="text-sm text-foreground">
-            {hasActiveSub ? (
+            {onFreeTrial ? (
+              trialEnded ? (
+                <>Your free trial of the <span className="font-semibold">{planLabel[plan] ?? plan}</span> plan has ended. Choose a plan below to switch everything back on.</>
+              ) : (
+                <>You're trying the <span className="font-semibold">{planLabel[plan] ?? plan}</span> plan free. Choose a plan below to keep it running when the trial ends.</>
+              )
+            ) : hasActiveSub ? (
               <>You're on the <span className="font-semibold">{planLabel[plan] ?? plan}</span> plan.</>
             ) : (
               <>No active subscription. Choose a plan below to get started.</>
@@ -206,7 +220,7 @@ export function BillingSettings() {
           </p>
           {status === "trialing" && billing?.organization.trial_ends_at && (
             <p className="text-xs text-muted-foreground mt-1">
-              Trial ends {new Date(billing.organization.trial_ends_at).toLocaleDateString()}.
+              {trialEnded ? "Trial ended" : "Trial ends"} {new Date(billing.organization.trial_ends_at).toLocaleDateString()}.
             </p>
           )}
           {status === "past_due" && (
@@ -234,7 +248,7 @@ export function BillingSettings() {
             <Loader2 className="w-4 h-4 animate-spin" /> Loading plans…
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={cn("grid grid-cols-1 gap-4", (plans ?? []).length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>
             {(plans ?? []).map((p) => {
               const isCurrent = hasActiveSub && p.plan === plan;
               return (
@@ -248,7 +262,7 @@ export function BillingSettings() {
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-bold text-foreground">{planLabel[p.plan] ?? p.plan}</h4>
                     {isCurrent && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">Current</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">{onFreeTrial ? "On trial" : "Current"}</span>
                     )}
                   </div>
                   <p className="text-2xl font-bold text-foreground mt-2">
@@ -273,18 +287,19 @@ export function BillingSettings() {
                   </ul>
 
                   <div className="mt-4">
-                    {isCurrent ? (
+                    {isCurrent && !onFreeTrial ? (
                       <button disabled className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-secondary text-muted-foreground cursor-default">
                         Current plan
                       </button>
-                    ) : hasActiveSub ? (
-                      <button
-                        onClick={openPortal}
-                        disabled={busy}
-                        className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-secondary text-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50"
+                    ) : hasActiveSub && !onFreeTrial ? (
+                      // Switching a live subscription to another plan isn't self-serve yet (the billing
+                      // portal covers cards, invoices and cancelling), so this goes to a person.
+                      <a
+                        href={`mailto:${brand.supportEmail}?subject=${encodeURIComponent(`Switch to the ${planLabel[p.plan] ?? p.plan} plan`)}`}
+                        className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-secondary text-foreground hover:bg-secondary/80 transition-colors"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" /> Change in portal
-                      </button>
+                        <Mail className="w-3.5 h-3.5" /> Email us to switch
+                      </a>
                     ) : (
                       <button
                         onClick={() => openCheckout(p.plan)}

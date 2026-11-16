@@ -84,6 +84,37 @@ billing worker** on `checkout.session.completed` — see
 - The billing worker therefore now also needs `APP_BASE_URL`, `RESEND_API_KEY`,
   `OUTBOUND_FROM_EMAIL`, `OWNER_EMAIL`, `TWILIO_*` (recipe activation only) and `STRIPE_PRICE_EVERDOER_*` (old `STRIPE_PRICE_CL_*` still read).
 
+## Plans on offer, free trials and the billing page
+
+- **Plans on offer.** The billing page's plan cards and the plan checkout use
+  `OFFERED_PLANS` (`billing/config.ts`): **Operate** and **Front Desk**. `launch` stopped being
+  sold on 15 Nov 2026 but is still a valid plan: its Stripe price still maps to it, gating is
+  unchanged, and an org already on it sees its own card (`planChoicesFor(org.plan)`). The plan
+  checkout refuses a plan the org isn't shown (`400 plan_not_offered`). The ops cost report still
+  prices every purchasable plan.
+- **A free trial the app runs** (a new sign-up: `BILLING_TRIAL_PLAN` / `BILLING_TRIAL_DAYS`) has
+  no Stripe subscription, so the billing page shows **Subscribe** on every plan card, including
+  the plan being tried, and says when the trial ends or that it has ended. Before 16 Nov 2026 a
+  trialing org was treated as subscribed: it got "Current plan" and "Change in portal", the
+  portal answered "Choose a plan first", and there was no way to start paying.
+- **A trial that started with a card** (everdoer.com, `EVERDOER_CHECKOUT_TRIAL_DAYS`) has a
+  Stripe subscription and is shown like a paid plan: "Current plan" and **Manage subscription**.
+  The page tells the two apart by whether a `subscriptions` row exists.
+- **Plan checkout terms.** The in-app plan checkout sends `managed_payments: { enabled: false }`
+  and `automatic_tax` from `STRIPE_AUTOMATIC_TAX`, like the everdoer.com checkout
+  ([Stripe Managed Payments](done-for-you-purchase.md#stripe-managed-payments)). The live account
+  defaults to Managed Payments, so before this in-app subscriptions were sold by Stripe as
+  merchant of record while everdoer.com purchases were sold by Everdoer. With Stripe Tax on, the
+  session asks for a billing address and saves it to the customer
+  (`customer_update.address: auto`) so later invoices are taxed too. Read back on 16 Nov 2026:
+  $299.00 + HST = $337.87 for an Ontario customer.
+- **Changing plans.** The live billing portal (default configuration, created 16 Nov 2026) covers
+  payment methods, invoices, customer details and cancelling at the end of the period; plan
+  switching is off there. It can't simply be turned on: Operate and Front Desk each carry two
+  prices (in-app and everdoer.com), and a switch to the wrong one leaves `crankleads_tier` out of
+  step with the plan. Until there is an in-app upgrade, the other plan's card on the billing page
+  is an "Email us to switch" link and a person moves the subscription.
+
 ## Platform fee (money tenants collect)
 
 Everdoer can take a percentage of the money a tenant collects **through** Everdoer — quote
@@ -279,7 +310,9 @@ of that org for the internal routes.
    → org `subscription_status = active`, a `subscriptions` row exists, and
    `GET /api/organizations/{orgId}/billing` shows the gating map.
 2. **Upgrade / downgrade** — `POST .../billing/portal`, open the portal, switch
-   plan. → `customer.subscription.updated` → local `plan` updates.
+   plan (test mode only: the live portal has plan switching off, see
+   [Plans on offer](#plans-on-offer-free-trials-and-the-billing-page)).
+   → `customer.subscription.updated` → local `plan` updates.
 3. **Fail payment** — `stripe trigger invoice.payment_failed` (or use a failing
    test card). → `subscription_status = past_due`. Paid features stay on until
    `current_period_end + BILLING_PAST_DUE_GRACE_DAYS`, then gate off.
