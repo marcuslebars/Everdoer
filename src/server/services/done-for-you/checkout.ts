@@ -17,6 +17,7 @@ import {
   PLAN_TIERS,
   doneForYouAutomaticTax,
   doneForYouCancelUrl,
+  doneForYouCheckoutNote,
   doneForYouCheckoutBranding,
   doneForYouFoundingCouponId,
   doneForYouMonthlyPriceId,
@@ -172,6 +173,13 @@ export function buildDoneForYouSessionParams(
       button_color: brand.buttonColor,
       font_family: "inter",
       border_style: "rounded",
+    },
+    // Beside the pay button, in the site's own words: which plan this is, what is charged today
+    // and after the trial, and that the founding discount never changes the monthly price.
+    custom_text: {
+      submit: {
+        message: doneForYouCheckoutNote({ tier: input.tier, trialDays, founding: Boolean(coupon), taxed: doneForYouAutomaticTax() }),
+      },
     },
     // Only our server-side founding coupon can discount a done-for-you checkout — no
     // promotion-code box (any active promo code in the account would otherwise apply).

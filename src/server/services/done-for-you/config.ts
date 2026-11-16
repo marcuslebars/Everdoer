@@ -166,6 +166,37 @@ export function doneForYouTrialDays(): number {
   return days >= 1 && days <= DONE_FOR_YOU_MAX_TRIAL_DAYS ? days : 0;
 }
 
+// ── Checkout note ─────────────────────────────────────────────────────────────
+
+/**
+ * The plain-words line Stripe shows beside the pay button (Checkout `custom_text.submit`).
+ *
+ * Stripe's own summary is built from the Stripe product name and the discount, and on 16 Nov 2026
+ * it read "Try Everdoer Operate — 14 days free — Then CA$299.00 per month until coupon expires"
+ * to a buyer who had picked "Close" on everdoer.com: a different plan name, and a coupon line
+ * that sounds like the price changes (the founding coupon only takes the one-time setup fee to
+ * $0). This says, in the site's words, which plan this is, when the monthly price starts, and
+ * that the discount doesn't touch the monthly price.
+ *
+ * Every clause follows from the session it is attached to: `trialDays` (0 = no trial), `founding`
+ * (the setup-fee coupon is on the session) and `taxed` (Stripe Tax is on, so tax is added). It
+ * never states an amount: Stripe's summary above it does. Stripe allows 1200 characters.
+ */
+export function doneForYouCheckoutNote(input: { tier: PlanTier; trialDays: number; founding: boolean; taxed: boolean }): string {
+  const monthly = `the monthly price shown${input.taxed ? ", plus tax" : ""}`;
+  return [
+    `This is the ${PLAN_TIER_LABELS[input.tier]} plan you picked on everdoer.com.`,
+    input.trialDays > 0
+      ? `Your ${input.trialDays}-day free trial starts today; after it you pay ${monthly}.`
+      : `You pay ${monthly}, starting today.`,
+    // True whatever the coupon's percentage: Stripe's own "Total due today" carries the amount.
+    input.founding
+      ? "Your founding discount comes off the one-time setup fee only: it never changes your monthly price."
+      : "The one-time setup fee is charged today.",
+    "Month-to-month. Cancel any time from your billing settings.",
+  ].join(" ");
+}
+
 // ── Checkout branding ─────────────────────────────────────────────────────────
 
 /**
