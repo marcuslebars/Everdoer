@@ -17,7 +17,8 @@ import {
 import { isIOSDevice } from "@/lib/dfy-api";
 import { bookingHoursFromCompanyHours, parseTime } from "@/server/services/dfy/hours";
 import {
-  areaCodeForAttempt,
+  areaCodesForAttempt,
+  localAreaCodes,
   areaCodeFromPhone,
   ensureDfyNumber,
   NUMBER_MAX_ATTEMPTS,
@@ -133,9 +134,14 @@ describe("area code for the number", () => {
     expect(areaCodeFromPhone("555-0100")).toBe(705);
     expect(areaCodeFromPhone(null)).toBe(705);
   });
-  it("retries: own area code twice, then 705, then any", () => {
-    expect([1, 2, 3, 4, 5].map((n) => areaCodeForAttempt(416, n))).toEqual([416, 416, 705, 705, null]);
-    expect(areaCodeForAttempt(705, 3)).toBe(705);
+  it("tries the owner's area code and its overlays, then 705/249, then any", () => {
+    expect(areaCodesForAttempt(416, 1)).toEqual([416, 647, 437]);
+    expect(areaCodesForAttempt(416, 3)).toEqual([416, 647, 437, 705, 249, null]);
+    // Georgian Bay: 705 ran out of numbers on 16 Nov 2026 — its overlay 249 is tried at once.
+    expect(areaCodesForAttempt(705, 1)).toEqual([705, 249]);
+    expect(areaCodesForAttempt(705, 3)).toEqual([705, 249, null]);
+    expect(localAreaCodes(249)).toEqual([249, 705]);
+    expect(localAreaCodes(867)).toEqual([867]);
   });
   it("number type per tier", () => {
     expect(numberKindForTier("catch")).toBe("catcher");
@@ -330,6 +336,30 @@ describe("number at purchase (ensureDfyNumber)", () => {
     expect(log).toContain("buy 416");
   });
 
+  it("an area code with no numbers left: its overlay is bought in the same attempt (705 → 249)", async () => {
+    db = createFakeDb(tables());
+    const log: string[] = [];
+    const twilio = fakeTwilio(log);
+    const empty705: TwilioNumbersClient = {
+      ...twilio,
+      async searchAvailableLocal(country, areaCode) {
+        if (areaCode === 705) {
+          log.push(`search ${country} 705`);
+          return [];
+        }
+        return twilio.searchAvailableLocal(country, areaCode);
+      },
+    };
+    const out = await ensureDfyNumber(
+      db.client,
+      { ...input, ownerPhone: "(705) 529-6157" },
+      { twilio: empty705, lookupOwner: async () => null, now: () => at("2026-11-16T14:25:00Z") },
+    );
+    expect(out).toMatchObject({ status: "ready", phoneNumber: "+12495550000", purchasedNow: true });
+    expect(log.filter((l) => l.startsWith("search"))).toEqual(["search CA 705", "search CA 249"]);
+    expect(db.tables.dfy_progress[0]).toMatchObject({ number_attempts: 1, number_last_error: null });
+  });
+
   it("never throws: a failure is recorded, retried with backoff, then flagged for an operator ONCE", async () => {
     db = createFakeDb(tables());
     const alert = vi.fn(async () => undefined);
@@ -346,7 +376,9 @@ describe("number at purchase (ensureDfyNumber)", () => {
       t += 2 * 3_600_000;
       expect(await ensureDfyNumber(db.client, input, deps)).toMatchObject({ status: "failed", attempts: i });
     }
-    expect(log.filter((l) => l.startsWith("search"))).toEqual(["search CA 416", "search CA 416", "search CA 705", "search CA 705", "search CA any"]);
+    const local = ["search CA 416", "search CA 647", "search CA 437"];
+    const wide = [...local, "search CA 705", "search CA 249", "search CA any"];
+    expect(log.filter((l) => l.startsWith("search"))).toEqual([...local, ...local, ...wide, ...wide, ...wide]);
     expect(db.tables.dfy_progress[0].number_flagged_at).toBeTruthy();
     expect(alert).toHaveBeenCalledTimes(1);
     t += 2 * 3_600_000;
