@@ -6,6 +6,7 @@ import type { SendEmailInput, SendEmailResult } from "@/server/outbound/email";
 import { describeAccount, type HelpAccountContext } from "@/server/services/help/account-context";
 import { MAX_TURN_CHARS, chatTurnSchema, type ChatTurn } from "@/server/services/help/assistant";
 import type { TenantServiceContext } from "@/server/services/shared";
+import { platformOperatorEmail } from "@/server/services/operator-email";
 import { configuredAppBaseUrlFor, platformBrand } from "@/server/services/platform-brand";
 
 /**
@@ -36,7 +37,7 @@ export function trimTranscript(transcript: readonly ChatTurn[]): ChatTurn[] {
 }
 
 export function operatorEmailAddress(): string | null {
-  return process.env.OWNER_EMAIL?.trim() || null;
+  return platformOperatorEmail();
 }
 
 /** One line, no control characters — subject headers must not carry user-typed newlines. */
@@ -140,7 +141,7 @@ export async function createSupportRequest(
   const to = operatorEmailAddress();
   if (!to || !deps.isEmailConfigured()) {
     console.error(
-      `[help] support request ${id} saved but the operator email is not configured (OWNER_EMAIL / RESEND_API_KEY / OUTBOUND_FROM_EMAIL).`,
+      `[help] support request ${id} saved but the operator email is not configured (EVERDOER_OPERATOR_EMAIL or OWNER_EMAIL / RESEND_API_KEY / OUTBOUND_FROM_EMAIL).`,
     );
   } else {
     const email = buildSupportEmail({

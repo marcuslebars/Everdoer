@@ -54,6 +54,7 @@ import { applyIndustryPack, listIndustryPacks } from "@/server/services/packs/ap
 import { applyDefaultBlueprintForPack } from "@/server/agent/blueprints/service";
 import { toE164 } from "@/server/services/retell/payload";
 import type { TenantServiceContext } from "@/server/services/shared";
+import { platformOperatorEmail } from "@/server/services/operator-email";
 import { createAndSendSetupIntake, ensureSetupIntake } from "@/server/services/dfy/intake";
 import { restrictAutomationsToTier } from "@/server/services/done-for-you/tier-automations";
 import { appBaseUrlFor } from "@/server/services/platform-brand";
@@ -482,7 +483,7 @@ async function sendWelcome(
 }
 
 function operatorEmailAddress(): string | null {
-  return process.env.OWNER_EMAIL?.trim() || null;
+  return platformOperatorEmail();
 }
 
 // ── Billing events that arrived before the org existed ───────────────────────
@@ -737,7 +738,7 @@ async function handleProvisioningFailure(
       console.error(`[dfy/provision] operator FAILURE alert could not be sent: ${errorMessage(mailErr)}`);
     }
   } else {
-    console.error("[dfy/provision] OWNER_EMAIL is not set — no operator alert for a failed paid purchase!");
+    console.error("[dfy/provision] EVERDOER_OPERATOR_EMAIL / OWNER_EMAIL is not set — no operator alert for a failed paid purchase!");
   }
   throw new DoneForYouProvisioningFailedError(reason);
 }
