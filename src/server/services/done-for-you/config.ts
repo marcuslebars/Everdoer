@@ -119,7 +119,10 @@ export function doneForYouPlanForPriceId(priceId: string | null | undefined): Pu
 // ── Public site + checkout settings ───────────────────────────────────────────
 
 const DEFAULT_SITE_ORIGINS = "https://crankleads.com,https://www.crankleads.com,https://everdoer.com,https://www.everdoer.com";
-const DEFAULT_CANCEL_URL = "https://crankleads.com/#pricing";
+// Where Stripe's "Back" link on the payment page sends a buyer who doesn't finish. It was
+// https://crankleads.com/#pricing until 16 Nov 2026, when that host had stopped answering with a
+// valid certificate, so backing out of checkout ended on a browser security warning.
+const DEFAULT_CANCEL_URL = "https://everdoer.com/#pricing";
 
 /**
  * Origins allowed to call the public checkout endpoint (CORS). Env EVERDOER_SITE_ORIGINS (old

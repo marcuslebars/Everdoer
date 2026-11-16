@@ -120,7 +120,7 @@ describe("done-for-you/config.ts env renames", () => {
   it("defaults when nothing is set: Everdoer checkout branding (plus the everdoer.com origins)", async () => {
     expect(doneForYouMonthlyPriceId("close")).toBeNull();
     expect(doneForYouFoundingCouponId()).toBeNull();
-    expect(doneForYouCancelUrl()).toBe("https://crankleads.com/#pricing");
+    expect(doneForYouCancelUrl()).toBe("https://everdoer.com/#pricing");
     // No https app origin (local dev): Stripe needs an https logo, so the old hosted image.
     expect(doneForYouCheckoutBranding()).toEqual({
       displayName: "Everdoer",

@@ -166,7 +166,8 @@ businessType, ownerName, ownerPhone, utm}` (utm JSON kept ≤ 500 chars),
 `success_url = APP_BASE_URL/welcome/crankleads?session_id={CHECKOUT_SESSION_ID}` (`/welcome/everdoer`
 once `EVERDOER_WRITE_NEW_NAMES` is on; both pages work),
 `cancel_url = EVERDOER_CANCEL_URL` (old `CRANKLEADS_CANCEL_URL` still read; default
-`https://crankleads.com/#pricing`).
+`https://everdoer.com/#pricing`; it was `https://crankleads.com/#pricing` until 16 Nov 2026, when
+that host no longer had a valid certificate and Stripe's "Back" link ended on a browser warning).
 
 **Example (everdoer.com):**
 
