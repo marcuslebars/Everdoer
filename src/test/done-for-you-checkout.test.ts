@@ -149,6 +149,14 @@ describe("POST /api/public/crankleads/checkout", () => {
         font_family: "inter",
         border_style: "rounded",
       },
+      // No trial, no founding coupon, Stripe Tax off in this test: the note says exactly that.
+      custom_text: {
+        submit: {
+          message:
+            "This is the Close plan you picked on everdoer.com. You pay the monthly price shown, starting today. " +
+            "The one-time setup fee is charged today. Month-to-month. Cancel any time from your billing settings.",
+        },
+      },
       allow_promotion_codes: false,
       metadata,
       subscription_data: { metadata },
@@ -209,6 +217,12 @@ describe("POST /api/public/crankleads/checkout", () => {
       { price: "price_cl_fd_s", quantity: 1 },
     ]);
     expect(params.metadata.plan).toBe("front_desk");
+    // Stripe Tax on, founding coupon on, no trial: the note says "plus tax" and explains the coupon.
+    expect(params.custom_text.submit.message).toBe(
+      "This is the Front Desk plan you picked on everdoer.com. You pay the monthly price shown, plus tax, starting today. " +
+        "Your founding discount comes off the one-time setup fee only: it never changes your monthly price. " +
+        "Month-to-month. Cancel any time from your billing settings.",
+    );
 
     // founding requested but no coupon configured → full price, still no promo-code box.
     vi.stubEnv("STRIPE_COUPON_CL_FOUNDING", "");
@@ -257,12 +271,24 @@ describe("POST /api/public/crankleads/checkout", () => {
       { price: "price_cl_close_s", quantity: 1 },
     ]);
     expect(params.discounts).toEqual([{ coupon: "crankleads_founding_100" }]);
+    // What the buyer reads beside the pay button: the plan they picked, the trial, and that the
+    // founding coupon is about the setup fee (Stripe's own line says "until coupon expires").
+    expect(params.custom_text.submit.message).toBe(
+      "This is the Close plan you picked on everdoer.com. Your 14-day free trial starts today; after it you pay the monthly price shown. " +
+        "Your founding discount comes off the one-time setup fee only: it never changes your monthly price. " +
+        "Month-to-month. Cancel any time from your billing settings.",
+    );
 
     // The trial doesn't depend on the founding coupon, and survives the no-discount retry.
     vi.stubEnv("STRIPE_COUPON_CL_FOUNDING", "");
     sessionsCreate.mockClear();
     await POST(post({ ...validBody, tier: "front_desk" }));
     expect(sessionsCreate.mock.calls[0][0].subscription_data.trial_period_days).toBe(14);
+    // No coupon on this one, so the note must not mention a discount.
+    expect(sessionsCreate.mock.calls[0][0].custom_text.submit.message).toBe(
+      "This is the Front Desk plan you picked on everdoer.com. Your 14-day free trial starts today; after it you pay the monthly price shown. " +
+        "The one-time setup fee is charged today. Month-to-month. Cancel any time from your billing settings.",
+    );
     expect(sessionsCreate.mock.calls[0][0].allow_promotion_codes).toBe(false);
   });
 

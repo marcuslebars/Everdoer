@@ -15,6 +15,7 @@ import {
   packIdForBusinessType,
   packRecipesForTier,
   RECEPTIONIST_RECIPE_SLUGS,
+  doneForYouCheckoutNote,
 } from "@/server/services/done-for-you/config";
 import { renderWelcomeEmail } from "@/server/services/done-for-you/emails";
 import { parseProvisionJobArgs } from "@/server/services/done-for-you/rerun";
@@ -32,6 +33,47 @@ import {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("the note beside Stripe's pay button", () => {
+  // Stripe's own summary said "Try Everdoer Operate … Then CA$299.00 per month until coupon
+  // expires" to a buyer who picked Close: this is the line that puts it in the site's words.
+  it("live setup (Close, 14-day trial, founding coupon, Stripe Tax on)", () => {
+    expect(doneForYouCheckoutNote({ tier: "close", trialDays: 14, founding: true, taxed: true })).toBe(
+      "This is the Close plan you picked on everdoer.com. Your 14-day free trial starts today; after it you pay the monthly price shown, plus tax. " +
+        "Your founding discount comes off the one-time setup fee only: it never changes your monthly price. " +
+        "Month-to-month. Cancel any time from your billing settings.",
+    );
+  });
+
+  it("names the plan the buyer picked on the site, never the Stripe product", () => {
+    for (const [tier, label] of [["catch", "Catch"], ["close", "Close"], ["front_desk", "Front Desk"]] as const) {
+      const note = doneForYouCheckoutNote({ tier, trialDays: 14, founding: true, taxed: true });
+      expect(note.startsWith(`This is the ${label} plan you picked on everdoer.com.`)).toBe(true);
+      expect(note).not.toMatch(/Operate/);
+    }
+  });
+
+  it("says only what the session does: no trial, no discount, no tax unless they are on it", () => {
+    const plain = doneForYouCheckoutNote({ tier: "close", trialDays: 0, founding: false, taxed: false });
+    expect(plain).toBe(
+      "This is the Close plan you picked on everdoer.com. You pay the monthly price shown, starting today. " +
+        "The one-time setup fee is charged today. Month-to-month. Cancel any time from your billing settings.",
+    );
+    expect(plain).not.toMatch(/trial|discount|tax/);
+    // A trial without the coupon still charges the setup fee at checkout.
+    expect(doneForYouCheckoutNote({ tier: "close", trialDays: 14, founding: false, taxed: true })).toContain("The one-time setup fee is charged today.");
+  });
+
+  it("never states an amount (Stripe's summary carries those) and fits Stripe's 1200 characters", () => {
+    for (const trialDays of [0, 14, 60]) {
+      for (const founding of [true, false]) {
+        const note = doneForYouCheckoutNote({ tier: "front_desk", trialDays, founding, taxed: true });
+        expect(note).not.toMatch(/\$|\d{3}/);
+        expect(note.length).toBeLessThan(400);
+      }
+    }
+  });
 });
 
 describe("tier → plan", () => {

@@ -165,6 +165,13 @@ coupon — or a create that rejects it — falls back to full price instead of f
 businessType, ownerName, ownerPhone, utm}` (utm JSON kept ≤ 500 chars),
 `success_url = APP_BASE_URL/welcome/crankleads?session_id={CHECKOUT_SESSION_ID}` (`/welcome/everdoer`
 once `EVERDOER_WRITE_NEW_NAMES` is on; both pages work),
+`custom_text.submit.message` = a plain-words note beside the pay button (`doneForYouCheckoutNote`):
+"This is the Close plan you picked on everdoer.com. Your 14-day free trial starts today; after it
+you pay the monthly price shown, plus tax. Your founding discount comes off the one-time setup fee
+only: it never changes your monthly price. Month-to-month. Cancel any time from your billing
+settings." Each sentence follows from the session (tier, trial, coupon, Stripe Tax) and it states
+no amounts. It is there because Stripe's own summary shows the Stripe product name ("Everdoer
+Operate" for Close) and "per month until coupon expires",
 `cancel_url = EVERDOER_CANCEL_URL` (old `CRANKLEADS_CANCEL_URL` still read; default
 `https://everdoer.com/#pricing`; it was `https://crankleads.com/#pricing` until 16 Nov 2026, when
 that host no longer had a valid certificate and Stripe's "Back" link ended on a browser warning).
