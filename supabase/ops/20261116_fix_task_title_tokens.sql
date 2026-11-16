@@ -2,15 +2,19 @@
 -- "{{contact.first_name}}" in the title (e.g. "Follow up with {{contact.first_name}} — no activity
 -- in 3 days"), because task titles only filled bare tokens. Fill it with the contact's first name,
 -- or "this lead" when there's none. New tasks render it (renderTaskText).
--- Old titles are kept in ops_backup_task_titles; the .down.sql restores them.
+-- Old titles are kept in decommission.ops_backup_task_titles; the .down.sql restores them.
 begin;
 
-create table if not exists public.ops_backup_task_titles (
+-- Backups go in the private decommission schema (not exposed by the API), like the 14 Oct one.
+create schema if not exists decommission;
+revoke all on schema decommission from public;
+
+create table if not exists decommission.ops_backup_task_titles (
   id uuid primary key,
   old_title text not null
 );
 
-insert into public.ops_backup_task_titles (id, old_title)
+insert into decommission.ops_backup_task_titles (id, old_title)
 select t.id, t.title from public.tasks t where t.title like '%{{contact.first_name}}%'
 on conflict do nothing;
 
