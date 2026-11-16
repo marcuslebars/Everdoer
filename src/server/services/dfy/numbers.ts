@@ -51,13 +51,48 @@ export function areaCodeFromPhone(raw: string | null | undefined): number {
 }
 
 /**
- * Which area code to try on attempt n (1-based): the owner's own twice, then the fallback,
- * then any (Twilio/Retell pick) — a full area code shouldn't strand the buyer.
+ * Overlay area codes: the same region, so a number from one reads as local to the other. When an
+ * area code runs out of numbers (705 did on 16 Nov 2026: "No numbers available in area code 705",
+ * four attempts over an hour for a Georgian Bay buyer), its overlay usually still has some.
+ * Codes listed both ways; an unknown code simply has no overlay.
  */
-export function areaCodeForAttempt(ownerAreaCode: number, attempt: number): number | null {
-  if (attempt <= 2) return ownerAreaCode;
-  if (attempt === 3 && ownerAreaCode !== FALLBACK_AREA_CODE) return FALLBACK_AREA_CODE;
-  return attempt >= NUMBER_MAX_ATTEMPTS ? null : FALLBACK_AREA_CODE;
+const OVERLAY_GROUPS: number[][] = [
+  [705, 249],
+  [416, 647, 437],
+  [905, 289, 365, 742],
+  [519, 226, 548, 382],
+  [613, 343, 753],
+  [514, 438, 263],
+  [450, 579, 354],
+  [418, 581, 367],
+  [819, 873, 468],
+  [604, 778, 236, 672],
+  [250, 778, 236, 672],
+  [403, 587, 825, 368],
+  [780, 587, 825, 368],
+  [204, 431, 584],
+  [306, 639, 474],
+  [902, 782],
+  [506, 428],
+];
+
+/** The owner's area code first, then its overlays. PURE. */
+export function localAreaCodes(ownerAreaCode: number): number[] {
+  const group = OVERLAY_GROUPS.find((g) => g.includes(ownerAreaCode)) ?? [];
+  return [ownerAreaCode, ...group.filter((code) => code !== ownerAreaCode)];
+}
+
+/**
+ * Area codes to try, in order, on attempt n (1-based). `null` = any (Twilio/Retell pick).
+ *   attempts 1–2: the owner's code, then its overlays (a local-looking number);
+ *   attempt 3+:   those, then the fallback region and its overlays, then any —
+ * so a full area code never strands a buyer for long. PURE.
+ */
+export function areaCodesForAttempt(ownerAreaCode: number, attempt: number): Array<number | null> {
+  const local = localAreaCodes(ownerAreaCode);
+  if (attempt <= 2) return local;
+  const fallback = local.includes(FALLBACK_AREA_CODE) ? [] : localAreaCodes(FALLBACK_AREA_CODE);
+  return [...local, ...fallback, null];
 }
 
 export interface DfyNumberDeps {
@@ -231,12 +266,23 @@ export async function ensureDfyNumber(
     return { status: "failed", error: errorMessage(err), attempts };
   }
 
-  const areaCode = areaCodeForAttempt(areaCodeFromPhone(input.ownerPhone), attempt);
+  const candidates = areaCodesForAttempt(areaCodeFromPhone(input.ownerPhone), attempt);
   try {
-    const phoneNumber = await purchase(ctx, input.companyId, kind, areaCode, deps);
-    await patchProgress(admin, row, { number_ready_at: nowIso, number_last_error: null });
-    console.log(`[dfy/number] ${kind} number ready for company ${input.companyId} (attempt ${attempt}, area ${areaCode ?? "any"})`);
-    return { status: "ready", phoneNumber, purchasedNow: true, kind };
+    // Try each area code in turn within this attempt: an empty area code shouldn't cost a
+    // backoff wait when its overlay has numbers. Only the last failure is reported.
+    let lastError: unknown = null;
+    for (const areaCode of candidates) {
+      try {
+        const phoneNumber = await purchase(ctx, input.companyId, kind, areaCode, deps);
+        await patchProgress(admin, row, { number_ready_at: nowIso, number_last_error: null });
+        console.log(`[dfy/number] ${kind} number ready for company ${input.companyId} (attempt ${attempt}, area ${areaCode ?? "any"})`);
+        return { status: "ready", phoneNumber, purchasedNow: true, kind };
+      } catch (err) {
+        lastError = err;
+        console.warn(`[dfy/number] area ${areaCode ?? "any"} failed for company ${input.companyId}: ${errorMessage(err).slice(0, 200)}`);
+      }
+    }
+    throw lastError ?? new Error("no area codes to try");
   } catch (err) {
     const message = errorMessage(err).slice(0, 500);
     console.error(`[dfy/number] ${kind} number attempt ${attempt} failed for company ${input.companyId}: ${message}`);
