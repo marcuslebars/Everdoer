@@ -1,18 +1,72 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, AlertCircle, CheckCircle, Chrome } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle, Chrome, ArrowRight } from "lucide-react";
 import { supabase, getSupabaseConfigDiagnostic } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { Logo } from "@/components/brand/Logo";
 import { useBrand } from "@/lib/brand-context";
+import { PLANS_URL } from "@/lib/marketing-site";
 
 export default function SignUpPage() {
+  const [searchParams] = useSearchParams();
+  // Only someone joining an existing account (from an invite link) creates an account here.
+  // New businesses buy on the marketing site, which creates their account for them.
+  if (!searchParams.has("invite")) return <StartOnMarketingSite />;
+  return <InvitedSignUp />;
+}
+
+/** No invite: point new businesses at plans + checkout instead of a free, unpriced sign-up. */
+function StartOnMarketingSite() {
+  const navigate = useNavigate();
+  const { status } = useAuth();
+  const brand = useBrand();
+
+  useEffect(() => {
+    if (status === "authenticated") navigate("/");
+  }, [status, navigate]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px]">
+        <div className="flex items-center justify-center mb-8">
+          <Logo className="h-8" />
+        </div>
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-xl shadow-black/10">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold tracking-tight">Start with {brand.name}</CardTitle>
+            <CardDescription className="text-muted-foreground">
+              Pick a plan and start your free trial. We set everything up for you and text you when you're live.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <Button asChild className="w-full h-11 text-base font-medium">
+              <a href={PLANS_URL}>
+                See plans and start your trial <ArrowRight className="ml-2 h-4 w-4" />
+              </a>
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              Joining your team's account? Open the invite link from your email to create your login.
+            </p>
+            <div className="pt-4 text-center text-sm text-muted-foreground border-t border-border/50">
+              Already have an account?{" "}
+              <Link to="/signin" className="text-primary font-medium hover:text-primary/90 transition-colors">
+                Sign in
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function InvitedSignUp() {
   const navigate = useNavigate();
   const { status, signInWithOAuth } = useAuth();
   const brand = useBrand();
@@ -212,9 +266,9 @@ export default function SignUpPage() {
 
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-xl shadow-black/10">
           <CardHeader className="pb-4">
-            <CardTitle className="text-xl font-semibold tracking-tight">Create your account</CardTitle>
+            <CardTitle className="text-xl font-semibold tracking-tight">Create your login</CardTitle>
             <CardDescription className="text-muted-foreground">
-              Try {brand.name} free. No card needed to start.
+              Create your {brand.name} login to join your team's account.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">

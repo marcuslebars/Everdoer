@@ -5,6 +5,7 @@ import { Loader2, CheckCircle2, AlertTriangle, Building2, LogIn } from "lucide-r
 import { useAuth } from "@/lib/auth-context";
 import { useInvitationPreview, useAcceptInvitation } from "@/lib/api-hooks";
 import { ORG_ID_KEY, writeKey } from "@/lib/storage-keys";
+import { rememberPostAuthPath } from "@/lib/public-routes";
 
 const roleLabel: Record<string, string> = {
   owner: "an owner",
@@ -114,10 +115,22 @@ export default function AcceptInvitePage() {
             <p className="text-xs text-muted-foreground">Sign in as {preview.email} to accept this invitation.</p>
             <Link
               to="/signin"
+              onClick={() => rememberPostAuthPath(`/invite/${token}`)}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               <LogIn className="w-4 h-4" /> Sign in to continue
             </Link>
+            <p className="text-xs text-muted-foreground">
+              New here?{" "}
+              <Link
+                to={`/signup?invite=${encodeURIComponent(token)}`}
+                onClick={() => rememberPostAuthPath(`/invite/${token}`)}
+                className="font-medium text-primary hover:underline"
+              >
+                Create your login
+              </Link>
+              , then come back to this link.
+            </p>
           </div>
         ) : emailMismatch ? (
           <div className="w-full mt-2 space-y-2">

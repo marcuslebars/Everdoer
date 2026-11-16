@@ -1,19 +1,27 @@
-import { Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { TopBar } from "./TopBar";
 import { MoneyTabs } from "./MoneyTabs";
 import { MobileTabBar } from "./MobileTabBar";
 import { AutomationNotifier } from "./AutomationNotifier";
+import { useAuth } from "@/lib/auth-context";
 import { useOrg } from "@/lib/org-context";
 import { useOrgRealtime } from "@/lib/realtime";
 
 export function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { status } = useAuth();
   const { organizationId } = useOrg();
+  const location = useLocation();
 
   // Live UI updates (Task 11): invalidate dashboard/CRM/jobs caches on inbound inserts.
   useOrgRealtime(organizationId);
+
+  // Signed out: go to sign-in before drawing any app chrome (sidebar, top bar, tab bar).
+  if (status === "unauthenticated") {
+    return <Navigate to="/signin" state={{ from: location }} replace />;
+  }
 
   return (
     <div className="flex min-h-screen w-full bg-background">

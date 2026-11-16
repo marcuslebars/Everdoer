@@ -10,8 +10,11 @@ import { Loader2, AlertCircle, Mail, Phone, Chrome } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { getSupabaseConfigDiagnostic } from "@/lib/supabase";
 import { Logo } from "@/components/brand/Logo";
+import { useBrand } from "@/lib/brand-context";
+import { PLANS_URL } from "@/lib/marketing-site";
 
 export default function SignInPage() {
+  const brand = useBrand();
   console.log("[SignInPage] Component rendering/mounting");
 
   const navigate = useNavigate();
@@ -189,10 +192,10 @@ export default function SignInPage() {
             </div>
 
             <div className="pt-4 text-center text-sm text-muted-foreground border-t border-border/50">
-              Don&apos;t have an account?{" "}
-              <Link to="/signup" className="text-primary font-medium hover:text-primary/90 transition-colors">
-                Create account
-              </Link>
+              New to {brand.name}?{" "}
+              <a href={PLANS_URL} className="text-primary font-medium hover:text-primary/90 transition-colors">
+                See plans and start a free trial
+              </a>
             </div>
           </CardContent>
         </Card>
