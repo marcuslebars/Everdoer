@@ -85,6 +85,7 @@ afterEach(() => {
   delete process.env.STRIPE_PRICE_LAUNCH;
   delete process.env.STRIPE_SETUP_FEE_LAUNCH;
   delete process.env.APP_BASE_URL;
+  delete process.env.STRIPE_AUTOMATIC_TAX;
 });
 
 describe("createCheckoutSession", () => {
@@ -97,6 +98,30 @@ describe("createCheckoutSession", () => {
     const params = sessionsCreate.mock.calls[0][0];
     expect(params.mode).toBe("subscription");
     expect(params.line_items).toEqual([{ price: "price_launch", quantity: 1 }]);
+  });
+
+  it("sells on the same terms as the everdoer.com checkout: Everdoer is the seller, HST only when Stripe Tax is on", async () => {
+    const { client } = makeSupabase(org());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createCheckoutSession(client as any, { organizationId: "org-1", plan: "launch" });
+    let params = sessionsCreate.mock.calls[0][0];
+    // The live account defaults to Stripe Managed Payments (Stripe as merchant of record).
+    expect(params.managed_payments).toEqual({ enabled: false });
+    expect(params.automatic_tax).toEqual({ enabled: false });
+    expect("billing_address_collection" in params).toBe(false);
+    expect("customer_update" in params).toBe(false);
+
+    process.env.STRIPE_AUTOMATIC_TAX = "true";
+    sessionsCreate.mockClear();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createCheckoutSession(client as any, { organizationId: "org-1", plan: "launch" });
+    params = sessionsCreate.mock.calls[0][0];
+    expect(params.managed_payments).toEqual({ enabled: false });
+    expect(params.automatic_tax).toEqual({ enabled: true });
+    // Stripe Tax needs an address, saved to the existing customer so later invoices are taxed too.
+    expect(params.billing_address_collection).toBe("required");
+    expect(params.customer_update).toEqual({ address: "auto", name: "auto" });
+    expect(params.customer).toBe("cus_existing");
   });
 
   it("appends a one-time setup fee as a second line item when configured", async () => {
