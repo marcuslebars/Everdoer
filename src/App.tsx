@@ -251,7 +251,10 @@ function AppBootstrapInner({ children }: { children?: React.ReactNode }) {
 
   if (authStatus === "unauthenticated") {
     console.log("[AppBootstrap] Unauthenticated -> showing signin route");
-    return children;
+    // Still inside OrgProvider (it clears itself when signed out): any route that reads the
+    // org context — the app layout, ProtectedRoute — must redirect to /signin, not crash
+    // with "useOrg must be used inside OrgProvider" (that took down a signed-out visit to /).
+    return <OrgProvider>{children}</OrgProvider>;
   }
 
   if (authStatus === "authenticated" && !session) {

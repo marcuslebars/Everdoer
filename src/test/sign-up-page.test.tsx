@@ -18,7 +18,7 @@ import SignUpPage from "@/screens/SignUpPage";
 
 function fill() {
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={["/signup?invite=tok_1"]}>
       <SignUpPage />
     </MemoryRouter>,
   );
@@ -34,6 +34,18 @@ beforeEach(() => {
 });
 
 describe("SignUpPage", () => {
+  it("without an invite → sends new businesses to plans on the marketing site, no sign-up form", () => {
+    render(
+      <MemoryRouter initialEntries={["/signup"]}>
+        <SignUpPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: /see plans and start your trial/i })).toHaveAttribute("href", "https://everdoer.com/#pricing");
+    expect(screen.queryByLabelText(/^email/i)).toBeNull();
+    expect(screen.queryByText(/no card needed/i)).toBeNull();
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/signin");
+  });
+
   it("an email that already has an account → says so, with sign in and reset (no phantom 'check your email')", async () => {
     sb.signUp.mockResolvedValue({ data: { user: { id: "u1", identities: [] }, session: null }, error: null });
     fill();

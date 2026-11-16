@@ -59,6 +59,8 @@ export const doneForYouCheckoutSchema = z.object({
   businessName: trimmed(200),
   businessType: trimmed(100),
   founding: z.boolean().optional(),
+  /** Version of everdoer.com/terms the buyer agreed to at checkout (the site requires the box). */
+  termsVersion: z.string().trim().min(1).max(40).optional(),
   utm: z.record(z.string(), z.string()).optional(),
 });
 
@@ -137,6 +139,10 @@ export function buildDoneForYouSessionParams(
     ownerPhone: truncate(input.phone),
     utm: utmMetadata(utm),
   };
+  // Proof of agreement: which terms version they ticked, kept on the Stripe session/subscription.
+  if (input.termsVersion) {
+    metadata.termsVersion = input.termsVersion;
+  }
   // Free trial (EVERDOER_CHECKOUT_TRIAL_DAYS; 0 = off, and then these params are exactly as before).
   const trialDays = doneForYouTrialDays();
   if (trialDays > 0) {

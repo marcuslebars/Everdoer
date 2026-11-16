@@ -102,6 +102,17 @@ describe("metadata.source writer", () => {
       expect((params.subscription_data?.metadata as Record<string, string>).source).toBe(value);
     }
   });
+
+  it("records the terms version the buyer agreed to on the session and subscription; absent → no key", () => {
+    process.env.STRIPE_PRICE_CL_CATCH = "price_m";
+    process.env.STRIPE_SETUP_FEE_CL_CATCH = "price_s";
+    const base = { tier: "catch", email: "a@b.co", name: "Pat", phone: "+17055550100", businessName: "Pat's", businessType: "plumbing" };
+    const agreed = buildDoneForYouSessionParams({ id: "p1" }, { ...base, termsVersion: "2026-11-16" } as never, {}, null);
+    expect(agreed.metadata?.termsVersion).toBe("2026-11-16");
+    expect((agreed.subscription_data?.metadata as Record<string, string>).termsVersion).toBe("2026-11-16");
+    const old = buildDoneForYouSessionParams({ id: "p1" }, base as never, {}, null);
+    expect(old.metadata && "termsVersion" in old.metadata).toBe(false);
+  });
 });
 
 describe("second webhook secret", () => {
