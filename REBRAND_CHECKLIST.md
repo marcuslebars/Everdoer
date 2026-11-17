@@ -97,7 +97,7 @@ If a service is missed, it keeps reading the old name and keeps logging `env/<ol
   - forwarding tests write `EverdoerForwardingTestId`
   - new Stripe checkouts carry `source: "everdoer"` and land on `/welcome/everdoer`
   - Undo: unset the variable on every service; readers accept both names either way.
-- [ ] **Retag our Twilio numbers.**
+- [x] **Retag our Twilio numbers.** *(done 16 Nov 2026, 10:07 pm: dry run listed 5 numbers, 1 with an old tag — +13653871926 "EmpireVu catcher 8894d821…" (Test Plumbing Co), no A1 numbers; renamed 1 of 1 to "Everdoer catcher …". Run from a temporary Railway Function, since the project has no worker shell.)*
   - Railway → EmpireVu worker → shell (or locally with prod env): `npm run job:twilio-retag`. This is a dry run and prints every number it would rename.
   - Check the list contains only `EmpireVu catcher …` / `EmpireVu line …` numbers and no A1 numbers.
   - Then run `npm run job:twilio-retag -- --apply`. It refuses unless step 1.6 is on.
