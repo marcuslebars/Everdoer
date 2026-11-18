@@ -33,7 +33,7 @@ function OptionalToggle({
           type="checkbox"
           checked={optional}
           onChange={(e) => onChange({ optional: e.target.checked, selected: false })}
-          className="h-3.5 w-3.5 accent-[hsl(var(--accent-blue))]"
+          className="h-3.5 w-3.5 accent-[hsl(var(--primary))]"
         />
         Customer can choose (optional)
       </label>
@@ -44,7 +44,7 @@ function OptionalToggle({
             type="checkbox"
             checked={selected}
             onChange={(e) => onChange({ selected: e.target.checked })}
-            className="h-3.5 w-3.5 accent-[hsl(var(--accent-blue))]"
+            className="h-3.5 w-3.5 accent-[hsl(var(--primary))]"
           />
           Pre-selected for them
         </label>

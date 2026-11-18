@@ -155,7 +155,7 @@ export function RecordPaymentDialog({ invoice, onClose }: { invoice: Invoice; on
             type="checkbox"
             checked={sendReceipt}
             onChange={(e) => setSendReceipt(e.target.checked)}
-            className="h-4 w-4 accent-[hsl(var(--accent-blue))]"
+            className="h-4 w-4 accent-[hsl(var(--primary))]"
           />
           <span className="text-sm text-foreground">Email a receipt to the customer</span>
         </label>

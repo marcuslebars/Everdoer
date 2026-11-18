@@ -78,7 +78,7 @@ export function QuoteConfirmDialog({
               "flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50",
               destructive
                 ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                : "bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90",
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
             {pending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

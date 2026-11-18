@@ -117,7 +117,7 @@ export function AppSidebar({
       >
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
           <div className="flex items-center overflow-hidden">
-            {collapsed ? <LogoMark className="w-7 h-7 text-sm" /> : <Logo className="h-[22px]" />}
+            {collapsed ? <LogoMark className="w-8 h-8 text-sm" /> : <Logo className="h-9" />}
           </div>
         </div>
 
@@ -150,7 +150,7 @@ export function AppSidebar({
           )}
         >
           <div className="h-14 flex items-center justify-between px-4 border-b border-sidebar-border">
-            <Logo className="h-[22px]" />
+            <Logo className="h-8" />
             <button
               onClick={onMobileClose}
               className="p-1.5 rounded-lg hover:bg-sidebar-accent text-muted-foreground transition-colors"

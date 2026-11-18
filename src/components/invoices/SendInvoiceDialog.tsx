@@ -65,7 +65,7 @@ export function SendInvoiceDialog({
 
       <div className="p-6 space-y-4">
         <label className="flex items-start gap-3 cursor-pointer">
-          <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[hsl(var(--accent-blue))]" />
+          <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]" />
           <span>
             <span className="block text-sm text-foreground">Email the invoice (PDF attached)</span>
             <span className={cn("block text-xs", to.email ? "text-muted-foreground" : "text-[hsl(var(--warning))]")}>
@@ -74,7 +74,7 @@ export function SendInvoiceDialog({
           </span>
         </label>
         <label className="flex items-start gap-3 cursor-pointer">
-          <input type="checkbox" checked={sms} onChange={(e) => setSms(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[hsl(var(--accent-blue))]" />
+          <input type="checkbox" checked={sms} onChange={(e) => setSms(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]" />
           <span>
             <span className="block text-sm text-foreground">Also text the pay link</span>
             <span className={cn("block text-xs", to.phone ? "text-muted-foreground" : "text-[hsl(var(--warning))]")}>

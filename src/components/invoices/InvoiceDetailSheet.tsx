@@ -805,7 +805,7 @@ export function InvoiceDetailSheet({
               <button
                 type="button"
                 onClick={() => setDialog("send")}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
               >
                 <Send className="w-3.5 h-3.5" /> Send invoice
               </button>
