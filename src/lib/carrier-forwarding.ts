@@ -140,7 +140,10 @@ export const CELL_CARRIERS: Record<string, CarrierEntry> = {
   bell: { label: "Bell", network: "Bell", confidence: "verify" },
   virgin: { label: "Virgin Plus", network: "Bell", confidence: "verify" },
   lucky: { label: "Lucky Mobile", network: "Bell", confidence: "verify" },
-  telus: { label: "TELUS", network: "TELUS", confidence: "verify" },
+  // Confirmed 2026-11-17 on a real TELUS Mobility phone: **004*+1…# was accepted but didn't
+  // forward; *61*1NNNNNNNNNN# (single star, no +) did. So the TELUS network gets the
+  // single-star codes, no-answer first (telusStyleCodes below).
+  telus: { label: "TELUS", network: "TELUS", confidence: "confident" },
   koodo: { label: "Koodo", network: "TELUS", confidence: "verify" },
   public: { label: "Public Mobile", network: "TELUS", confidence: "verify" },
   videotron: { label: "Videotron", network: "Videotron", confidence: "verify" },
@@ -220,6 +223,15 @@ export interface ForwardingPlan {
   providerScript: string;
 }
 
+/**
+ * TELUS-network form of the conditional codes: single star and the number as 1NNNNNNNNNN
+ * (no +), e.g. *61*17055550000#. No answer, busy, unreachable — in that order.
+ */
+export function telusStyleCodes(number: string): ForwardingCode[] {
+  const digits = toDialNumber(number).replace(/\D/g, "");
+  return CODES.map((c) => ({ condition: c.condition, label: c.label, activate: `*${c.mmi}*${digits}#`, deactivate: `##${c.mmi}#` }));
+}
+
 /** tel: href for an MMI code. `#` must be percent-encoded or the browser treats it as a fragment. */
 export function telHrefForCode(code: string): string {
   return `tel:${code.replace(/#/g, "%23")}`;
@@ -269,6 +281,34 @@ export function forwardingPlan(input: ForwardingPlanInput): ForwardingPlan {
   // Cell (or unknown → the cell path, the common case for small trades; the provider script
   // is always shown as the fallback).
   const carrier = carrierKey ? CELL_CARRIERS[carrierKey] ?? null : null;
+
+  if (carrier?.network === "TELUS") {
+    // TELUS / Koodo / Public Mobile: one code per condition, no-answer first (see CELL_CARRIERS).
+    const codes = telusStyleCodes(instructions.number);
+    const [noAnswer, busy, unreachable] = codes;
+    return {
+      kind,
+      carrierKey,
+      carrierLabel: carrier.label,
+      method: "dial_code",
+      number: instructions.number,
+      pretty: instructions.pretty,
+      code: noAnswer.activate,
+      // Resets every conditional forward back to the carrier's voicemail.
+      deactivate: "##004#",
+      telHref: telHrefForCode(noAnswer.activate),
+      confidence: carrier.confidence,
+      fallbackCodes: codes,
+      steps: [
+        "Use the phone your customers call (your business cell).",
+        `Dial ${noAnswer.activate} and press Call. You'll see a short "activation succeeded" message. This forwards calls you don't answer.`,
+        `Then do the same with ${busy.activate} (calls you decline or miss while on another call) and ${unreachable.activate} (when your phone is off).`,
+        "Your phone still rings first; only calls you miss or can't take are forwarded.",
+      ],
+      providerScript,
+    };
+  }
+
   const code = instructions.recommended.activate;
   return {
     kind,

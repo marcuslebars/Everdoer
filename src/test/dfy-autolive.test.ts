@@ -65,7 +65,7 @@ describe("forwarding plan per carrier / kind (fixtures)", () => {
   const cell = (carrier: string | null) => forwardingPlan({ forwardTo: "(705) 555-0000", kind: "cell", carrier });
 
   it("every Canadian cell carrier gets the GSM all-conditional code, # encoded in the tel: link", () => {
-    for (const key of ["rogers", "fido", "chatr", "freedom", "bell", "virgin", "lucky", "telus", "koodo", "public", "videotron"]) {
+    for (const key of ["rogers", "fido", "chatr", "freedom", "bell", "virgin", "lucky", "videotron"]) {
       const plan = cell(key);
       expect(plan.method).toBe("dial_code");
       expect(plan.code).toBe("**004*+17055550000#");
@@ -76,9 +76,23 @@ describe("forwarding plan per carrier / kind (fixtures)", () => {
     }
   });
 
-  it("confidence: Rogers-network brands + Freedom are confident; the rest need a real-phone check", () => {
-    expect(["rogers", "fido", "chatr", "freedom"].map((k) => cell(k).confidence)).toEqual(["confident", "confident", "confident", "confident"]);
-    expect(["bell", "virgin", "lucky", "telus", "koodo", "public", "videotron"].every((k) => cell(k).confidence === "verify")).toBe(true);
+  it("TELUS-network brands get the single-star codes, no-answer first (confirmed on a real TELUS phone)", () => {
+    for (const key of ["telus", "koodo", "public"]) {
+      const plan = cell(key);
+      expect(plan.method).toBe("dial_code");
+      expect(plan.code).toBe("*61*17055550000#");
+      expect(plan.telHref).toBe("tel:*61*17055550000%23");
+      expect(plan.deactivate).toBe("##004#");
+      expect(plan.carrierLabel).toBe(CELL_CARRIERS[key].label);
+      expect(plan.fallbackCodes.map((c) => c.activate)).toEqual(["*61*17055550000#", "*67*17055550000#", "*62*17055550000#"]);
+      expect(plan.steps[1]).toContain("*61*17055550000#");
+      expect(plan.steps[2]).toContain("*67*17055550000#");
+    }
+  });
+
+  it("confidence: Rogers-network brands, Freedom and TELUS are confident; the rest need a real-phone check", () => {
+    expect(["rogers", "fido", "chatr", "freedom", "telus"].map((k) => cell(k).confidence)).toEqual(["confident", "confident", "confident", "confident", "confident"]);
+    expect(["bell", "virgin", "lucky", "koodo", "public", "videotron"].every((k) => cell(k).confidence === "verify")).toBe(true);
     // unknown / other carrier → still the standard code, flagged verify
     expect(cell("Shaw Mobile")).toMatchObject({ method: "dial_code", carrierLabel: null, confidence: "verify" });
     expect(cell(null)).toMatchObject({ method: "dial_code", confidence: "verify" });

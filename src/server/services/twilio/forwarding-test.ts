@@ -75,7 +75,10 @@ import { writeNewNames } from "@/server/services/rebrand/write-names";
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 type ForwardingTestRow = Tables<"forwarding_tests">;
 type VoiceNumberRow = Tables<"voice_numbers">;
-type CompanyFields = Pick<Tables<"companies">, "id" | "organization_id" | "name" | "timezone" | "brand_reply_phone" | "owner_phone_e164" | "owner_email">;
+type CompanyFields = Pick<
+  Tables<"companies">,
+  "id" | "organization_id" | "name" | "timezone" | "brand_reply_phone" | "owner_phone_e164" | "owner_email" | "business_phone_kind" | "business_phone_carrier"
+>;
 
 /** inbound_webhook_jobs provider for status / AMD callbacks and the delayed finalize. */
 export const FORWARDING_TEST_JOB_PROVIDER = "twilio_forwarding_test";
@@ -117,7 +120,7 @@ export function readForwardingTestLegId(payload: unknown): string | null {
   return old;
 }
 const CATCHER_MODE = "missed_call_catcher";
-const COMPANY_FIELDS = "id, organization_id, name, timezone, brand_reply_phone, owner_phone_e164, owner_email";
+const COMPANY_FIELDS = "id, organization_id, name, timezone, brand_reply_phone, owner_phone_e164, owner_email, business_phone_kind, business_phone_carrier";
 
 export interface ForwardingTestDeps {
   calls?: TwilioCallsClient;
@@ -603,6 +606,8 @@ async function notifyOwnerOfResult(admin: AdminClient, test: ForwardingTestRow, 
       catcherNumber: test.catcher_number,
       answeredBy: test.outbound_answered_by,
       link: (await doneForYouForwardLink(admin, test)) ?? phoneStepLink(await ownerAppBaseUrl(admin, test.organization_id)),
+      phoneKind: company?.business_phone_kind ?? null,
+      carrier: company?.business_phone_carrier ?? null,
     });
     const useSms = Boolean(owner.phone);
     const result = await deliverMessage({
