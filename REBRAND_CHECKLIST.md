@@ -150,11 +150,11 @@ After PR 2 deploys, **every org, A1 included, sees the lime Everdoer app.** Cust
 ### 2.1 Before merging
 - [x] `EVERDOER_APP_BASE_URL` is unset on every EmpireVu service. (I checked on 2026-10-13. PR 2 also ignores any value not on everdoer.com.)
 - [x] `PLATFORM_BRAND_NAME` and `CRANKLEADS_CHECKOUT_*` are unset on every service. (Checked 2026-10-13.)
-- [ ] **Run the values audit.** Supabase → SQL editor → `supabase/tests/rebrand_values_audit.sql` (read-only).
+- [x] **Done 2026-11-17:** no quote links to move; waitlist default + 3 comments only. **Run the values audit.** Supabase → SQL editor → `supabase/tests/rebrand_values_audit.sql` (read-only).
   - It lists quote links on app.crankleads.com / app.empirevu.com that will move to app.everdoer.com.
   - It lists tenants named exactly "CrankLeads" or "EmpireVu". Rename those in the app; the migration doesn't.
   - Check any **A1 rows** in the quote-link list. A1's `quotes.a1marine*.ca` never matches, but an A1 company set to `app.empirevu.com` would move. That host serves the same app, so it's harmless.
-- [ ] **Run the migration**: `supabase/migrations/20261017100000_rebrand_everdoer_values.sql`.
+- [x] **Done 2026-11-17** (it had never been run; the app was logging `column companies.email_from_address does not exist` on every company email and falling back to `OUTBOUND_FROM_EMAIL`). **Run the migration**: `supabase/migrations/20261017100000_rebrand_everdoer_values.sql`.
   - It adds `companies.email_from_address` (service-role only, empty), moves those quote links, and changes the waitlist default and column comments.
   - Check: run the audit again; there should be no "will change" rows.
   - Undo: `supabase/rollback/20261017100000_rebrand_everdoer_values.down.sql` (unset `EVERDOER_DEFAULT_FROM_EMAIL` first).

@@ -314,7 +314,7 @@ describe("owner messages (golden)", () => {
     );
   });
   it("answered / failed", () => {
-    expect(buildForwardingResultMessage({ ...base, outcome: "answered" }).sms).toBe(
+    expect(buildForwardingResultMessage({ ...base, outcome: "answered", answeredBy: "human" }).sms).toBe(
       "Our forwarding test call to (705) 555-9999 was answered, so we couldn't check forwarding for Muskoka Plumbing. Let it ring next time. " +
         "Test again: https://app.example.test/onboarding?step=phone",
     );
@@ -322,6 +322,17 @@ describe("owner messages (golden)", () => {
       "We couldn't complete the forwarding test call to (705) 555-9999 for Muskoka Plumbing. Check your business number in the app. " +
         "Then run the test again in the app.",
     );
+  });
+  it("answered with an unknown answerer never tells the owner they answered it", () => {
+    for (const answeredBy of ["unknown", null]) {
+      const msg = buildForwardingResultMessage({ ...base, outcome: "answered", answeredBy });
+      expect(msg.sms).toBe(
+        "Our test call to (705) 555-9999 was picked up, so we couldn't confirm forwarding for Muskoka Plumbing. " +
+          "Didn't answer it? Then voicemail got it first: dial **004*+17055550100# from that phone. " +
+          "Otherwise let it ring. Test again: https://app.example.test/onboarding?step=phone",
+      );
+      expect(msg.subject).toBe("Forwarding test for Muskoka Plumbing was picked up");
+    }
   });
   it("busy is inconclusive, not 'not working'", () => {
     const busy = buildForwardingResultMessage({ ...base, outcome: "busy" });
