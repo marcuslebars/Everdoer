@@ -286,14 +286,18 @@ export default function ForwardPage() {
                     onClick={() => setShowMore((v) => !v)}
                     aria-expanded={showMore}
                   >
-                    Code didn't work?
+                    {plan.fallbackCodes.some((c) => c.activate === plan.code) ? "Busy or phone off? Two more codes" : "Code didn't work?"}
                     <ChevronDown className={showMore ? "h-4 w-4 rotate-180 transition" : "h-4 w-4 transition"} />
                   </button>
                   {showMore ? (
                     <div className="mt-3 space-y-3 text-sm text-foreground">
-                      <p className="text-muted-foreground">Some plans want the codes one at a time. Dial each and press Call:</p>
+                      <p className="text-muted-foreground">
+                        {plan.fallbackCodes.some((c) => c.activate === plan.code)
+                          ? "Also forward calls you decline or miss while on another call, and calls when your phone is off. Dial each and press Call:"
+                          : "Some plans want the codes one at a time. Dial each and press Call:"}
+                      </p>
                       <ul className="divide-y divide-border rounded-lg border border-border">
-                        {plan.fallbackCodes.map((c) => (
+                        {plan.fallbackCodes.filter((c) => c.activate !== plan.code).map((c) => (
                           <li key={c.condition} className="px-3 py-2">
                             <p className="text-xs text-muted-foreground">{c.label}</p>
                             {plan.telHref && !ios ? (

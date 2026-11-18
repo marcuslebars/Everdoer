@@ -216,7 +216,8 @@ All cell plans use the 3GPP (GSM/LTE) MMI codes, dialled from the business phone
 | --- | --- | --- | --- |
 | Rogers (`rogers`), Fido (`fido`), chatr (`chatr`) | Rogers | **confident** | Standard GSM codes, long supported. |
 | Freedom Mobile (`freedom`) | Freedom | **confident** | GSM network; standard codes. |
-| TELUS (`telus`), Koodo (`koodo`), Public Mobile (`public`) | TELUS | **verify** | Third-party guides for TELUS mobile list `*61*` / `*67*` conditional codes; `**004*` expected to work on its LTE/5G network but not yet confirmed on a real phone. Some prepaid plans may lack forwarding. |
+| TELUS (`telus`) | TELUS | **confident** | **Different codes.** Confirmed 2026-11-17 on a real TELUS Mobility phone: `**004*+1…#` was accepted but calls still went to TELUS voicemail; `*61*1NNNNNNNNNN#` (single star, no `+`) forwarded. The plan gives `*61*` as the main code, then `*67*` (busy/declined) and `*62*` (unreachable); off with `##004#`. |
+| Koodo (`koodo`), Public Mobile (`public`) | TELUS | **verify** | Same TELUS-style codes as TELUS; not yet confirmed on a real phone. Some prepaid plans may lack forwarding. |
 | Bell (`bell`), Virgin Plus (`virgin`), Lucky Mobile (`lucky`) | Bell | **verify** | Expected to accept the standard codes on LTE/5G; not yet confirmed. |
 | Videotron (`videotron`) | Videotron | **verify** | Not yet confirmed. |
 | anything else / unknown carrier, or kind unknown | — | **verify** | Same code; the provider script is always one tap away. |

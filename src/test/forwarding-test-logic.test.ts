@@ -334,6 +334,12 @@ describe("owner messages (golden)", () => {
       expect(msg.subject).toBe("Forwarding test for Muskoka Plumbing was picked up");
     }
   });
+  it("a TELUS business line is told the TELUS code, not **004", () => {
+    const msg = buildForwardingResultMessage({ ...base, outcome: "not_forwarded", answeredBy: "machine_start", phoneKind: "cell", carrier: "telus" });
+    expect(msg.sms).toContain("dial *61*17055550100# and press Call");
+    expect(msg.sms).not.toContain("**004");
+    expect(msg.emailBody).toContain("turn it off again with ##004#");
+  });
   it("busy is inconclusive, not 'not working'", () => {
     const busy = buildForwardingResultMessage({ ...base, outcome: "busy" });
     expect(busy.sms).toBe(

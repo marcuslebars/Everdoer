@@ -5,7 +5,7 @@
  * unit/golden-tested in src/test/forwarding-test-logic.test.ts. The service that talks to
  * Twilio and the DB is forwarding-test.ts.
  */
-import { buildForwardingInstructions, prettyPhone } from "@/lib/carrier-forwarding";
+import { buildForwardingInstructions, forwardingPlan, prettyPhone } from "@/lib/carrier-forwarding";
 import { normalizePhoneLast10 } from "@/server/services/lead-intake/matching";
 
 // ── Tunables (behaviour, not prices) ─────────────────────────────────────────
@@ -352,6 +352,10 @@ export interface ForwardingResultMessageInput {
   answeredBy: string | null;
   /** Deep link back to the wizard's Phone step, or null when APP_BASE_URL is unset. */
   link: string | null;
+  /** The business line's kind + carrier (companies.business_phone_*), so the code we tell
+   *  them to dial is the one their carrier takes (TELUS gets *61*…, not **004*…). */
+  phoneKind?: string | null;
+  carrier?: string | null;
 }
 
 export interface ForwardingResultMessage {
@@ -365,6 +369,10 @@ export function buildForwardingResultMessage(input: ForwardingResultMessageInput
   const name = input.companyName?.trim() || "your business";
   const line = prettyPhone(input.businessLine);
   const instructions = buildForwardingInstructions(input.catcherNumber);
+  const plan = forwardingPlan({ forwardTo: input.catcherNumber, kind: input.phoneKind ?? null, carrier: input.carrier ?? null });
+  // Mobile codes for THIS carrier (a landline/VoIP plan has none → the generic GSM code).
+  const activate = plan.code ?? instructions.recommended.activate;
+  const deactivate = plan.deactivate ?? instructions.recommended.deactivate;
   const again = input.link ? ` Test again: ${input.link}` : " Then run the test again in the app.";
   const headsUp = input.trigger === "scheduled" ? "Heads up: " : "";
 
@@ -379,7 +387,7 @@ export function buildForwardingResultMessage(input: ForwardingResultMessageInput
       const what = answeredByMachine(input.answeredBy) ? "went to voicemail" : "rang out";
       sms =
         `${headsUp}missed-call text-back for ${name} isn't working: our test call to ${line} ${what} instead of forwarding. ` +
-        `From that phone dial ${instructions.recommended.activate} and press Call.${again}`;
+        `From that phone dial ${activate} and press Call.${again}`;
       subject = `Fix your call forwarding for ${name}`;
       break;
     }
@@ -392,7 +400,7 @@ export function buildForwardingResultMessage(input: ForwardingResultMessageInput
         // before forwarding kicks in, so never tell the owner flatly that they answered it.
         sms =
           `Our test call to ${line} was picked up, so we couldn't confirm forwarding for ${name}. ` +
-          `Didn't answer it? Then voicemail got it first: dial ${instructions.recommended.activate} from that phone. ` +
+          `Didn't answer it? Then voicemail got it first: dial ${activate} from that phone. ` +
           `Otherwise let it ring.${again}`;
         subject = `Forwarding test for ${name} was picked up`;
       }
@@ -413,7 +421,7 @@ export function buildForwardingResultMessage(input: ForwardingResultMessageInput
   const emailLines = [sms, ""];
   if (input.outcome === "not_forwarded") {
     emailLines.push(
-      `Mobile: dial ${instructions.recommended.activate} from ${line} and press Call (turn it off again with ${instructions.recommended.deactivate}).`,
+      `Mobile: dial ${activate} from ${line} and press Call (turn it off again with ${deactivate}).`,
       instructions.landline,
       instructions.verifyNote,
     );
