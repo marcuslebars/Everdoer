@@ -11,8 +11,21 @@
  */
 import type { RetellClient } from "@/server/services/retell/provision";
 import { retellFunctionSecretHeaderForWrite } from "@/server/services/retell/auth";
+import { isSpeechToSpeechModel, modelFields } from "@/server/services/voice/retell-models";
 
 export const MESSAGE_AGENT_NAME = "AI front desk — message taking";
+
+/**
+ * Same voice stack as the owner line (Everly), which callers and the owner rated far above the
+ * old gpt-4.1 + ElevenLabs pairing: one speech-to-speech model that hears and speaks, so it
+ * catches names and towns better and answers faster. Override per environment with
+ * RETELL_MESSAGE_MODEL / RETELL_MESSAGE_VOICE_ID (job: retell-message-agent).
+ */
+export const MESSAGE_AGENT_DEFAULT_MODEL = "grok-voice-3.0";
+/** One of grok-voice's own voices (a speech-to-speech model can't use an ElevenLabs voice). */
+export const MESSAGE_AGENT_DEFAULT_VOICE = "xai-Liora";
+/** Text-model fallback voice, used only if the model is overridden to a non speech-to-speech one. */
+const TEXT_MODEL_VOICE = "11labs-Adrian";
 
 /** Spoken first, before anything else: name, automated, recorded. */
 export const MESSAGE_AGENT_BEGIN_MESSAGE =
@@ -32,12 +45,12 @@ export function buildMessageAgentPrompt(): string {
     "",
     "Your job, in a natural, friendly, brief way (one question at a time; don't read this as a list):",
     "1. Find out what they need (the job or problem).",
-    "2. Get their name.",
+    "2. Get their name. If it's at all unusual, or you aren't sure you heard it right, ask them to spell it.",
     "3. Confirm the best number to reach them. Their caller ID is {{user_number}} — ask if that's the best number, or take another one and read it back.",
-    "4. Get the address or town where the work is.",
+    "4. Get the address or town where the work is. Repeat the town back to them; if you aren't sure you heard it, ask them to spell it. Towns in the service area ({{service_area}}) are the likeliest.",
     "5. Ask how soon they need it (emergency, today/this week, or flexible).",
     "6. Offer what happens next: if online booking is available, offer to text them the booking link; otherwise (or if they prefer) say someone from the team will call them back, and ask when is a good time.",
-    "7. Read back a one-sentence summary, thank them, and end the call politely.",
+    "7. Read back a one-sentence summary with their name, number and town so they can correct anything, thank them, and end the call politely.",
     "",
     "Rules:",
     "- NEVER quote prices, estimates, ranges or availability, and never promise a time or a guarantee. If asked, say: \"I can't give prices on this line, but I'll get someone to follow up with that.\"",
@@ -77,14 +90,19 @@ export interface MessageAgentConfigInput {
   baseUrl: string;
   /** RETELL_FUNCTION_SECRET — sent as the tool's auth header. */
   functionSecret: string;
-  voiceId?: string;
+  /** Retell model; default MESSAGE_AGENT_DEFAULT_MODEL. */
+  model?: string | null;
+  /** Retell voice; default MESSAGE_AGENT_DEFAULT_VOICE (or an ElevenLabs voice for a text model). */
+  voiceId?: string | null;
 }
 
 export function buildMessageAgentConfig(input: MessageAgentConfigInput): { llm: Record<string, unknown>; agent: (llmId: string) => Record<string, unknown> } {
   const base = input.baseUrl.replace(/\/+$/, "");
+  const model = input.model?.trim() || MESSAGE_AGENT_DEFAULT_MODEL;
+  const voiceId = input.voiceId?.trim() || (isSpeechToSpeechModel(model) ? MESSAGE_AGENT_DEFAULT_VOICE : TEXT_MODEL_VOICE);
   return {
     llm: {
-      model: "gpt-4.1",
+      ...modelFields(model),
       start_speaker: "agent",
       begin_message: MESSAGE_AGENT_BEGIN_MESSAGE,
       general_prompt: buildMessageAgentPrompt(),
@@ -128,7 +146,9 @@ export function buildMessageAgentConfig(input: MessageAgentConfigInput): { llm: 
     agent: (llmId: string) => ({
       agent_name: MESSAGE_AGENT_NAME,
       response_engine: { type: "retell-llm", llm_id: llmId },
-      voice_id: input.voiceId ?? "11labs-Adrian",
+      voice_id: voiceId,
+      // A touch quicker than default, slower than the owner line (1.28): callers are strangers.
+      voice_speed: 1.1,
       language: "en-US",
       webhook_url: `${base}/api/retell/webhook`,
       post_call_analysis_data: MESSAGE_AGENT_ANALYSIS_FIELDS,

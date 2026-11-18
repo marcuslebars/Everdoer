@@ -23,7 +23,13 @@ async function main(): Promise<number> {
     console.error("[retell-message-agent] APP_BASE_URL and RETELL_FUNCTION_SECRET are required.");
     return 1;
   }
-  const input = { baseUrl, functionSecret: secret };
+  // Optional: RETELL_MESSAGE_MODEL / RETELL_MESSAGE_VOICE_ID override the defaults in message-agent.ts.
+  const input = {
+    baseUrl,
+    functionSecret: secret,
+    model: process.env.RETELL_MESSAGE_MODEL?.trim() || null,
+    voiceId: process.env.RETELL_MESSAGE_VOICE_ID?.trim() || null,
+  };
   if (!apply) {
     const config = buildMessageAgentConfig(input);
     const redacted = JSON.stringify({ llm: config.llm, agent: config.agent("<llm_id>") }, null, 2).split(secret).join("<RETELL_FUNCTION_SECRET>");
