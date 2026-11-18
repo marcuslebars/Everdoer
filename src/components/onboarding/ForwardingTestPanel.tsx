@@ -27,6 +27,7 @@ export interface ForwardingTestPanelProps {
 }
 
 const machine = (answeredBy: string | null) => Boolean(answeredBy && (answeredBy.startsWith("machine") || answeredBy === "fax"));
+const human = (answeredBy: string | null) => answeredBy === "human";
 
 function ResultLine({ test, instructions }: { test: ForwardingTestView; instructions?: ForwardingInstructions | null }) {
   switch (test.status) {
@@ -50,7 +51,11 @@ function ResultLine({ test, instructions }: { test: ForwardingTestView; instruct
       return (
         <p className="text-sm text-amber-400 flex items-start gap-1.5">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>The test call was answered, so we couldn't check forwarding. Run it again and let it ring.</span>
+          <span>
+            {human(test.answeredBy)
+              ? "The test call was answered, so we couldn't check forwarding. Run it again and let it ring."
+              : "The test call was picked up, so we couldn't confirm forwarding. If you didn't answer it, your voicemail is picking up before forwarding: turn forwarding on again with the code above, then run the test again. If you did, let it ring next time."}
+          </span>
         </p>
       );
     case "busy":

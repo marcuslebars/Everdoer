@@ -67,6 +67,11 @@ export function answeredByMachine(answeredBy: string | null | undefined): boolea
   return value.startsWith("machine") || value === "fax";
 }
 
+/** Twilio is sure a person (not a machine) picked up. "unknown" / missing is NOT a person. */
+export function answeredByHuman(answeredBy: string | null | undefined): boolean {
+  return (answeredBy ?? "").toLowerCase() === "human";
+}
+
 /**
  * The outcome of a test from what we know about its outbound call:
  *   • a forwarded leg reached the catcher number → passed (whatever the outbound leg says —
@@ -379,8 +384,18 @@ export function buildForwardingResultMessage(input: ForwardingResultMessageInput
       break;
     }
     case "answered":
-      sms = `Our forwarding test call to ${line} was answered, so we couldn't check forwarding for ${name}. Let it ring next time.${again}`;
-      subject = `Forwarding test for ${name} was answered`;
+      if (answeredByHuman(input.answeredBy)) {
+        sms = `Our forwarding test call to ${line} was answered, so we couldn't check forwarding for ${name}. Let it ring next time.${again}`;
+        subject = `Forwarding test for ${name} was answered`;
+      } else {
+        // Twilio couldn't tell who picked up. Most often it's the carrier's voicemail answering
+        // before forwarding kicks in, so never tell the owner flatly that they answered it.
+        sms =
+          `Our test call to ${line} was picked up, so we couldn't confirm forwarding for ${name}. ` +
+          `Didn't answer it? Then voicemail got it first: dial ${instructions.recommended.activate} from that phone. ` +
+          `Otherwise let it ring.${again}`;
+        subject = `Forwarding test for ${name} was picked up`;
+      }
       break;
     case "busy":
       sms = `Our forwarding test call to ${line} got a busy signal, so we couldn't check forwarding for ${name}. Try again when the line is free.${again}`;

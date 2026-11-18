@@ -30,7 +30,7 @@ import {
   type RetellAdminClient,
   type RetellTenant,
 } from "./tenant";
-import { answerCallMatches, isVerifiedAnswerTenant, readAnswerMetadata, type VerifiedAnswerTenant } from "@/server/services/voice/ai-answer";
+import { answerCallMatches, getAiAnswerConfig, isVerifiedAnswerTenant, readAnswerMetadata, type VerifiedAnswerTenant } from "@/server/services/voice/ai-answer";
 import { handleAnsweredCall } from "@/server/services/voice/post-call";
 import { recordOwnerCallOutcome } from "@/server/services/owner-channel/calls";
 import { recordSalesCallOutcome } from "@/server/services/sales-calls/queue";
@@ -749,7 +749,16 @@ async function ingestAnsweredCall(
   const admin = createRetellAdminClient();
   // Signed + fresh + bound to the Retell call_id we registered for that CallSid.
   if (!isVerifiedAnswerTenant(answered) || !(await answerCallMatches(admin, answered, fields.callId))) {
-    console.error(`[retell] AI-answer call ${fields.callId ?? "?"} has metadata that doesn't verify (or isn't this call's) — stored without a tenant.`);
+    if (!getAiAnswerConfig().tokenSecret) {
+      // Not a forged call: THIS service can't check any token. Every AI-answered call will be
+      // stored without a business until VOICE_AI_TOKEN_SECRET or RETELL_FUNCTION_SECRET is set here
+      // (the same value the web service signs with).
+      console.error(
+        `[retell] AI-answer call ${fields.callId ?? "?"} can't be verified: neither VOICE_AI_TOKEN_SECRET nor RETELL_FUNCTION_SECRET is set on this service — stored without a tenant.`,
+      );
+    } else {
+      console.error(`[retell] AI-answer call ${fields.callId ?? "?"} has metadata that doesn't verify (or isn't this call's) — stored without a tenant.`);
+    }
     await upsertRetellCall(admin, {
       callId: fields.callId ?? `retell_nocid_${randomBytes(8).toString("hex")}`,
       tenant: { organizationId: null, companyId: null, sourceSite: "" },
