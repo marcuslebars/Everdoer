@@ -174,6 +174,16 @@ describe("catcher → AI (mode 'ai', the done-for-you default)", () => {
     expect(verifyAnswerToken({ organizationId: ORG, companyId: COMPANY, callSid: "CA0001", issuedAt: Number(metadata.issued_at) }, metadata.token, SECRET)).toBe(true);
   });
 
+  it("holds the durable job ~10s so the AI claim always lands before the worker files a plain missed call", async () => {
+    const before = Date.now();
+    await voiceInbound(twilioRequest("/api/twilio/voice/inbound", callParams()));
+    const job = db().tables.inbound_webhook_jobs[0] as { run_at?: string };
+    expect(typeof job.run_at).toBe("string");
+    const delay = new Date(job.run_at!).getTime() - before;
+    expect(delay).toBeGreaterThanOrEqual(9_000);
+    expect(delay).toBeLessThanOrEqual(15_000);
+  });
+
   it("the tenant comes from the CALLED number only — caller-supplied fields can't pick another company", async () => {
     const params = callParams({ organization_id: OTHER_ORG, company_id: OTHER_COMPANY, CallerName: "Company B please" });
     await voiceInbound(twilioRequest("/api/twilio/voice/inbound", params));

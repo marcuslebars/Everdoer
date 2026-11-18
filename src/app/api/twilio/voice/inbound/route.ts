@@ -35,6 +35,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
+
+/** How long the durable missed-call job waits so the AI hand-off claims the call first. */
+const VOICE_JOB_HOLD_MS = 10_000;
+
 /**
  * Missed-call catcher — Twilio inbound VOICE webhook (docs/missed-call-catcher.md).
  *
@@ -123,7 +127,15 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    await enqueueInboundWebhookJob(admin, { provider: VOICE_JOB_PROVIDER, externalId: callSid, payload });
+    // A customer call is held briefly so the AI hand-off below claims the missed_calls row
+    // before the worker writes it as a plain missed call (otherwise a slow decision loses the
+    // race and the caller gets voicemail). Test legs run at once.
+    await enqueueInboundWebhookJob(admin, {
+      provider: VOICE_JOB_PROVIDER,
+      externalId: callSid,
+      payload,
+      ...(fromOurTestCallerId ? {} : { runAt: new Date(Date.now() + VOICE_JOB_HOLD_MS) }),
+    });
   } catch (err) {
     console.error("[twilio-voice] durable enqueue failed:", err instanceof Error ? err.message : err);
     return new Response("Failed to persist webhook.", { status: 500 });

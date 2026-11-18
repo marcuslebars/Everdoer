@@ -707,7 +707,10 @@ export async function startAiAnswer(admin: AdminClient, input: StartAiAnswerInpu
     console.error("[voice-ai] claim failed (voicemail):", err instanceof Error ? err.message : err);
     return { kind: "voicemail", reason: "error" };
   }
-  if (!claimed) return { kind: "voicemail", reason: "already_processed" };
+  if (!claimed) {
+    console.warn(`[voice-ai] call ${callSid} was already filed as a missed call before the AI claim (voicemail).`);
+    return { kind: "voicemail", reason: "already_processed" };
+  }
 
   try {
     const claims = { organizationId: tenant.organizationId, companyId: tenant.companyId, callSid };
