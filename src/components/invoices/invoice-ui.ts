@@ -15,7 +15,7 @@ export const labelCls = "text-xs font-medium text-muted-foreground mb-1.5 block"
 export const sectionLabelCls = "text-[10px] font-bold text-muted-foreground uppercase tracking-wider";
 
 export const primaryBtnCls =
-  "flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]";
+  "flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]";
 
 export const secondaryBtnCls =
   "flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-secondary text-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";

@@ -145,7 +145,7 @@ export default function QuotesPage() {
         </div>
         <button
           onClick={openNew}
-          className="self-start sm:self-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-all shadow-md shadow-blue-500/20 active:scale-[0.97]"
+          className="self-start sm:self-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-md shadow-primary/20 active:scale-[0.97]"
         >
           <Plus className="w-4 h-4" />
           New quote

@@ -214,7 +214,7 @@ function CreateTaskDialog({ onClose }: { onClose: () => void }) {
             <button
               type="submit"
               disabled={createTask.isPending || !title.trim()}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]"
             >
               {createTask.isPending ? (
                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</>
@@ -335,7 +335,7 @@ function EditTaskDialog({
           <button
             type="submit"
             disabled={updateTask.isPending || !title.trim()}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]"
           >
             {updateTask.isPending ? (
               <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
@@ -794,7 +794,7 @@ export default function TasksPage() {
         </div>
         <button
           onClick={() => setIsCreateOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-all shadow-md shadow-blue-500/20 active:scale-[0.97]"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-md shadow-primary/20 active:scale-[0.97]"
         >
           <Plus className="w-4 h-4" />
           New Task

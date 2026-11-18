@@ -43,7 +43,7 @@ type RawQuote = QuoteSummary & {
 const fmt = (iso: string | null | undefined) => (iso ? formatDate(iso, "MMM d, yyyy") : null);
 
 const primaryActionCls =
-  "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-[hsl(var(--accent-blue))] text-white hover:bg-[hsl(var(--accent-blue))]/90 transition-colors disabled:opacity-50";
+  "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50";
 
 type Confirm = "void" | "revise" | null;
 
