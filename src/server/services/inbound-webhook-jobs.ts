@@ -33,6 +33,8 @@ export interface EnqueueInboundWebhookJobInput {
   organizationId?: string | null;
   companyId?: string | null;
   maxAttempts?: number;
+  /** Earliest time a worker may claim it (default: now). */
+  runAt?: Date;
 }
 
 /**
@@ -51,6 +53,7 @@ export async function enqueueInboundWebhookJob(
     company_id: input.companyId ?? null,
     max_attempts: input.maxAttempts ?? 5,
     status: "pending",
+    ...(input.runAt ? { run_at: input.runAt.toISOString() } : {}),
   };
   const { error } = await admin
     .from("inbound_webhook_jobs")
