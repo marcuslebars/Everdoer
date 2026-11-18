@@ -677,7 +677,12 @@ DFY number retry as before.)
    `RETELL_MESSAGE_AGENT_ID` (and `RETELL_MESSAGE_LLM_ID`, used to update it later) on the
    web service. Re-run with both set whenever the prompt changes. In the Retell dashboard,
    check the agent: webhook = `{APP_BASE_URL}/api/retell/webhook`, the `alert_owner` tool
-   has the secret header, voice/language as you like (the voice can be changed there).
+   has the secret header. **Model and voice** (since 18 Nov 2026): the same stack as the owner
+   line, `grok-voice-3.0` speech-to-speech with the `xai-Liora` voice at speed 1.1 (it was
+   `gpt-4.1` + `11labs-Adrian`, which misheard names and towns in the launch test). Override with
+   `RETELL_MESSAGE_MODEL` / `RETELL_MESSAGE_VOICE_ID` when running the job; a speech-to-speech
+   model needs one of its own voices (`xai-…`), a text model an ElevenLabs one. The prompt asks
+   callers to spell unclear names and towns and reads name, number and town back.
 3. **Twilio:** nothing per number — catcher numbers keep their Voice URL
    (`/api/twilio/voice/inbound`). Make sure the account can dial SIP URIs (Twilio
    Programmable Voice `<Sip>`; no SIP domain/trunk is needed for outbound `<Dial><Sip>`), and

@@ -24,6 +24,7 @@ import { retellFunctionSecretHeaderForWrite } from "@/server/services/retell/aut
 import type { RetellClient } from "@/server/services/retell/provision";
 import { OWNER_AGENT_DEADLINE_MS } from "@/server/services/owner-channel/agent";
 import { WEB_LOOKUP_DEADLINE_MS } from "@/server/services/voice/owner-web-lookup";
+import { isSpeechToSpeechModel, modelFields } from "@/server/services/voice/retell-models";
 
 export const OWNER_AGENT_NAME = "Owner line (call your AI)";
 export const OWNER_LINE_TOOL_PATH = "/api/retell/functions/owner-line";
@@ -105,20 +106,7 @@ export function buildOwnerAgentTools(input: Pick<OwnerAgentConfigInput, "baseUrl
   ];
 }
 
-/**
- * Retell's speech-to-speech models: one model hears and speaks, so there is no separate text
- * model and the voice must be one of that model's own. PURE.
- */
-export function isSpeechToSpeechModel(model: string | null | undefined): boolean {
-  return /^(gpt-realtime|grok-voice)/i.test(model?.trim() ?? "");
-}
-
-/** How a model name is sent to Retell: speech-to-speech ones go in `model_config`. PURE. */
-export function modelFields(model: string | null | undefined): Json {
-  const name = model?.trim();
-  if (!name) return {};
-  return isSpeechToSpeechModel(name) ? { model_config: { type: "s2s", primary: { model: name } } } : { model: name };
-}
+export { isSpeechToSpeechModel, modelFields } from "@/server/services/voice/retell-models";
 
 /**
  * The exact config. `update: true` is for an agent that already exists: the model and the voice
