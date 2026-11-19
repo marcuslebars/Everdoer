@@ -16,7 +16,7 @@
  * Strictly fail-open: every value is a string, unknown is "", and any failure answers as
  * a new caller. A slow lookup must degrade the greeting, never delay the call.
  */
-import { DEFAULT_VOICE_NAME } from "@/server/agent/profile";
+import { DEFAULT_VOICE_NAME, parsePersona } from "@/server/agent/profile";
 import type { RetellAdminClient } from "./tenant";
 
 export const DEFAULT_AGENT_NAME = DEFAULT_VOICE_NAME;
@@ -258,7 +258,7 @@ export async function loadGreetingContext(
   const db = admin as any;
   try {
     const [{ data: company }, { data: profile }] = await Promise.all([
-      db.from("companies").select("name, timezone").eq("id", companyId).maybeSingle(),
+      db.from("companies").select("name, timezone, agent_persona").eq("id", companyId).maybeSingle(),
       db
         .from("company_voice_profiles")
         .select("brand_label, dynamic_variables")
@@ -273,7 +273,8 @@ export async function loadGreetingContext(
     const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
     return {
       companyName: str(profile?.brand_label) ?? str(company?.name) ?? fallback.companyName,
-      agentName: str(dyn.agent_name) ?? DEFAULT_AGENT_NAME,
+      // The name the owner chose on Your AI wins; then an older per-number greeting name; then the default.
+      agentName: parsePersona(company?.agent_persona).name ?? str(dyn.agent_name) ?? DEFAULT_AGENT_NAME,
       greetingNew: str(dyn.greeting_new),
       greetingReturning: str(dyn.greeting_returning),
       timeZone: str(company?.timezone),
