@@ -1,4 +1,5 @@
 import { runStaffSweeps } from "@/server/services/staff/registry";
+import { processLifecycle } from "@/server/services/lifecycle/service";
 import { processAccountingJobs } from "@/server/services/accounting/engine";
 import { sweepRecurringJobs } from "@/server/services/recurring/sweep";
 import { sweepReviewRequests } from "@/server/services/reviews/send";
@@ -402,6 +403,7 @@ export async function runScheduler(
   );
   // Done-for-you: quick setup → enrichment → switch-on → page → follow-ups.
   await runDoneForYouPasses(admin, nowMs);
+  await guarded("lifecycle", 0, () => processLifecycle(admin, nowMs)); // trial + new-customer emails, operator texts (docs/lifecycle-emails.md)
   await guarded("owner approvals", null, () => sweepOwnerApprovals(admin, nowMs)); // expire + morning sends (docs/front-desk-ai.md)
   await guarded("owner calls", null, () => processDueOwnerCalls(admin, nowMs)); // scheduled "call Dave at 9" (docs/owner-call-requests.md)
   await guarded("sales calls", null, () => processDueSalesCalls(admin)); // speed-to-lead + owner-requested sales calls (docs/sales-calls.md)
