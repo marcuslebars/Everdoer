@@ -1,3 +1,4 @@
+import { parseSiteStyle, type SiteThemeChoice } from "@/lib/site-style";
 import { z } from "zod";
 
 import { toE164 } from "@/server/services/retell/payload";
@@ -93,6 +94,15 @@ export interface SiteEdits {
 
 export interface SiteSettings {
   showPrices: boolean;
+  /** The look ("auto" = by trade) — see src/lib/site-style.ts. */
+  theme: SiteThemeChoice;
+  /** The page's main colour, or null for the brand colour (else the trade's). */
+  color: string | null;
+}
+
+/** Settings for a new page: prices shown, and the look the owner picked before it existed. */
+export function initialSiteSettings(siteStyle: unknown): SiteSettings {
+  return { showPrices: true, ...parseSiteStyle(siteStyle) };
 }
 
 export type CopySource = "ai" | "template" | "mixed";
@@ -878,7 +888,7 @@ export function parseSiteContent(raw: unknown): SiteContent | null {
     copySource: c.copySource ?? "template",
     copyNotes: Array.isArray(c.copyNotes) ? c.copyNotes : [],
     edits: c.edits && typeof c.edits === "object" ? c.edits : {},
-    settings: { showPrices: c.settings?.showPrices !== false },
+    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings) },
     generatedAt: typeof c.generatedAt === "string" ? c.generatedAt : "",
   };
 }

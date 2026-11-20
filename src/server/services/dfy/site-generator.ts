@@ -8,6 +8,7 @@
 // docs/done-for-you.md → "Generated sites".
 // ─────────────────────────────────────────────────────────────────────────────
 import { isDoneForYou } from "@/lib/product-line";
+import { parseSiteStyle, type SiteStyle } from "@/lib/site-style";
 import type { Json, Tables } from "@/server/db/database.types";
 import { writeSiteCopy as defaultWriteSiteCopy, type SiteCopyResult } from "@/server/ai/site-copy";
 import { isAIConfigured } from "@/server/ai/claude";
@@ -31,6 +32,7 @@ import {
   chooseSiteMode,
   copywriterFacts,
   factsUsed,
+  initialSiteSettings,
   parseSiteContent,
   screenSiteCopy,
   siteSlugBase,
@@ -236,7 +238,7 @@ export async function generateSite(admin: AdminClient, companyId: string, option
     copySource,
     copyNotes,
     edits: previous?.edits ?? {},
-    settings: previous?.settings ?? { showPrices: true },
+    settings: previous?.settings ?? initialSiteSettings(company.site_style),
     generatedAt: now,
   };
 
@@ -332,6 +334,46 @@ export async function updateSiteEdits(admin: AdminClient, companyId: string, inp
     .select("*")
     .single();
   if (error) throw new Error(`site edit failed: ${error.message}`);
+  return data as CompanySiteRow;
+}
+
+// ── Look (theme + colour) ────────────────────────────────────────────────────
+
+/**
+ * Save the owner's look. Works before the page exists (kept on companies.site_style, and used
+ * when the page is generated) and after (also written into the page's settings, so the next
+ * view renders in the new look — no regeneration, the copy is unchanged). Returns the page row
+ * when there is one.
+ */
+export async function updateSiteStyle(
+  admin: AdminClient,
+  companyId: string,
+  input: Partial<SiteStyle>,
+  now: Date = new Date(),
+): Promise<CompanySiteRow | null> {
+  const company = await loadCompany(admin, companyId);
+  const style: SiteStyle = parseSiteStyle({ ...parseSiteStyle(company.site_style), ...input });
+  const stamp = now.toISOString();
+  const { error: companyError } = await admin
+    .from("companies")
+    .update({ site_style: style as unknown as Json })
+    .eq("id", companyId)
+    .eq("organization_id", company.organization_id);
+  if (companyError) throw new Error(`site style write failed: ${companyError.message}`);
+
+  const existing = await loadSiteRow(admin, companyId);
+  if (!existing) return null;
+  const content = parseSiteContent(existing.content);
+  if (!content) return existing;
+  const next: SiteContent = { ...content, settings: { ...content.settings, theme: style.theme, color: style.color } };
+  const { data, error } = await admin
+    .from("company_sites")
+    .update({ content: next as unknown as Json, updated_at: stamp })
+    .eq("id", existing.id)
+    .eq("company_id", companyId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`site style update failed: ${error.message}`);
   return data as CompanySiteRow;
 }
 

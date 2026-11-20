@@ -75,7 +75,9 @@ brand name. The hook is wrapped in try/catch: it never fails provisioning.
 **The page** `/setup/:token` (public, no login, `src/screens/SetupIntakePage.tsx`, branded from
 the org): 1) find your business on Google (server proxy), or paste a website, or "No website";
 2) business phone (prefilled from checkout), cell / landline / VoIP, carrier; 3) prices for the
-pack's services (optional; "Skip — we'll ask later"; "Add a service"). Submit → "Done. We're
+pack's services (optional; "Skip — we'll ask later"; "Add a service"); 4) "Your website look"
+(optional; the look picker, defaulting to "Pick for me" — saved to `companies.site_style` on
+submit, see "Looks"). Submit → "Done. We're
 building everything now — we'll text you in a few minutes." Re-opening shows a summary and lets
 them update their answers (re-submit → re-enrich; only owner prices that CHANGED since the
 previous submit are written, so a price edited in the app since isn't overwritten). Once they're
@@ -270,6 +272,28 @@ trade's subtype: `RoofingContractor`, `HVACBusiness`, `GeneralContractor`,
 from structured hours), url and sameAs (website, Google Maps). **No `aggregateRating`** —
 self-served review markup is against Google's guidelines.
 
+### Looks
+
+Every page is drawn in one of three looks (`src/lib/site-style.ts`, CSS layers in `site-render.ts`):
+
+| Look | Feel | "Pick for me" picks it for |
+|---|---|---|
+| `bold` | Wide Archivo lettering (a short headline in capitals), colour band, ruled price sheet | snow / property maintenance, roofing, general contracting |
+| `clean` | Plus Jakarta Sans, light hero with a rounded photo, service cards, pill buttons | HVAC / plumbing, and any trade without a pack |
+| `classic` | Fraunces + Instrument Sans, first photo full-bleed behind the headline, numbered services | landscaping, marine |
+
+- One template: every look has the same sections, quote form, call bar, booking link, JSON-LD and
+  escaping rules; a look only changes fonts, colour use and how sections are laid out. So
+  switching looks never regenerates anything (the copy, edits and facts are unchanged).
+- The owner also picks a **main colour**: one of eight swatches (each 4.5:1 with white text) or
+  `null` = "My brand colours" (`brand_primary_color`, else the trade palette). The owner's colour
+  wins over the brand colour on the page only (quotes and invoices keep the brand colour).
+- **Before the page exists** the choice lives on `companies.site_style` (`{theme, color}`,
+  migration `20261120120000_company_site_style.sql`), set from the quick setup's optional
+  "Your website look" section or Settings → Your website; generation copies it into
+  `content.settings`. **After**, `PATCH .../site` with `{ theme?, color? }` writes both
+  (`updateSiteStyle`). Pages built before looks existed read as `auto`.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,
@@ -290,8 +314,8 @@ template copy, so generation never blocks. `content.copySource` (`ai` / `mixed` 
 ### Data
 
 `company_sites.content` is versioned JSON (`SiteContent`, version 1): `mode`, `facts` (snapshot),
-`factsUsed`, `copy`, `copySource`, `copyNotes`, `edits` (owner overrides), `settings.showPrices`,
-`generatedAt`. Regenerate keeps the slug, mode, status, edits and settings. The form key and
+`factsUsed`, `copy`, `copySource`, `copyNotes`, `edits` (owner overrides), `settings`
+(`showPrices`, `theme`, `color`), `generatedAt`. Regenerate keeps the slug, mode, status, edits and settings. The form key and
 booking link are resolved live at render time.
 
 Slugs: from the company name (accents folded, `inc`/`ltd` dropped, ≤ 48 chars), unique with
@@ -330,7 +354,8 @@ the sweep usually finds nothing to do. Regeneration is otherwise owner/operator-
 ### Owner controls
 
 Settings → **Your website** (`src/components/settings/WebsiteSettings.tsx`): link + status,
-Preview (any status, noindex, form disabled), Publish / Unpublish, Regenerate, edit headline /
+Preview (any status, noindex, form disabled), Publish / Unpublish, Regenerate, **Look** (theme +
+colour, saves on tap; also shown before the page exists, see "Looks"), edit headline /
 subhead / about (clear to revert), Show prices, Kind of page. Routes (members read, owners/admins
 change; the company must belong to the org):
 

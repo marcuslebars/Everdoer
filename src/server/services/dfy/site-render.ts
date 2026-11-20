@@ -1,3 +1,4 @@
+import { resolveSiteTheme, type SiteThemeId } from "@/lib/site-style";
 import { smsConsentText } from "@/server/services/lead-intake/public-form-envelope";
 
 import {
@@ -121,9 +122,9 @@ export interface SiteTheme {
   variant: "bold" | "plain";
 }
 
-export function siteTheme(facts: SiteFacts): SiteTheme {
+export function siteTheme(facts: SiteFacts, ownerColor: string | null = null): SiteTheme {
   const trade = tradeProfile(facts.tradeId);
-  const primary = hexColor(facts.primaryColor) ?? trade.primary;
+  const primary = hexColor(ownerColor) ?? hexColor(facts.primaryColor) ?? trade.primary;
   let accent = hexColor(facts.accentColor) ?? trade.accent;
   if (accent === primary) accent = trade.accent === primary ? "#e07a1f" : trade.accent;
   return {
@@ -458,9 +459,117 @@ input:focus,select:focus,textarea:focus{border-color:var(--p);outline:3px solid 
 }`;
 }
 
+// ── Looks ────────────────────────────────────────────────────────────────────
+// The base CSS above is "Bold" (wide Archivo, the rate sheet, the colour band). "Clean" and
+// "Classic" layer over it: fonts, colour use, the hero, and how services, steps and reviews are
+// laid out. Same markup in every look, so every look keeps the form, call bar and SEO data.
+
+const LOOK_FONTS: Record<SiteThemeId, string> = {
+  bold: "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap",
+  clean: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
+  classic: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Instrument+Sans:wght@400;500;600;700&display=swap",
+};
+
+export function lookCss(look: SiteThemeId): string {
+  if (look === "clean") return CLEAN_CSS;
+  if (look === "classic") return CLASSIC_CSS;
+  return BOLD_CSS;
+}
+
+/** Bold sets a short headline in capitals (truck-door lettering); a long one stays in normal case. */
+const BOLD_CAPS_MAX = 48;
+
+const BOLD_CSS = `
+.look-bold .hero h1.caps{text-transform:uppercase;font-variation-settings:"wdth" 122;letter-spacing:-.005em;line-height:1}
+.look-bold .hero h1:not(.caps){font-size:clamp(2rem,6.6vw,3.4rem);max-width:20ch}
+.look-bold h2{text-transform:uppercase}
+.look-bold .steps li{border-top:6px solid var(--a)}`;
+
+const CLEAN_CSS = `
+.look-clean{--paper:#ffffff;--rule:#e2e8f0;--ink:#0f172a;--ink-2:#475569}
+body.look-clean{font-family:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variation-settings:normal;background:#fff}
+.look-clean h1,.look-clean h2,.look-clean h3,.look-clean .wordmark,.look-clean .foot-name,.look-clean .price,.look-clean .score-num,.look-clean .phone-num,.look-clean .door .big-phone{font-variation-settings:normal}
+.look-clean h2{letter-spacing:-.02em;font-weight:800}
+.look-clean .btn{border-radius:999px}
+.look-clean .btn-accent{background:var(--p);color:var(--on-p)}
+.look-clean .top{border-bottom:1px solid var(--rule)}
+.look-clean .hero.clean{background:var(--p-soft);border-bottom:0}
+.look-clean .hero.clean h1{color:var(--ink);letter-spacing:-.03em;font-weight:800;max-width:18ch}
+.look-clean .hero.clean .sub{color:var(--ink-2);opacity:1}
+.look-clean .hero.clean .btn-ghost{color:var(--ink);border-color:#cbd5e1;background:#fff}
+.look-clean .hero.clean .rating{background:#fff;border:1px solid var(--rule);color:var(--ink)}
+.look-clean .hero-photo{border-radius:24px}
+.look-clean .door{background:#fff;border:1px solid var(--rule);border-radius:20px;color:var(--ink);box-shadow:0 12px 32px rgba(15,23,42,.08)}
+.look-clean .sheet{list-style:none;padding:0;background:none;border:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.look-clean .rate{display:flex;flex-direction:column;justify-content:space-between;gap:14px;background:#fff;border:1px solid var(--rule);border-radius:18px;padding:22px}
+.look-clean .rate:last-child{border-bottom:1px solid var(--rule)}
+.look-clean .rate h3{font-size:1.12rem}
+.look-clean .rate-price{align-items:flex-start;text-align:left}
+.look-clean .price{color:var(--p)}
+.look-clean .steps li{border-radius:18px;background:#f8fafc;border:0;padding:22px 22px 22px 70px}
+.look-clean .steps li::before{border-radius:12px}
+.look-clean .fact{border-radius:18px}
+.look-clean .reviews{background:#f8fafc}
+.look-clean .gallery li{border-radius:18px}
+.look-clean .quote{background:#fff;border-top:0}
+.look-clean .quote-wrap{background:#0f172a;color:#fff;border-radius:28px;padding:32px 24px}
+.look-clean .quote-intro p{color:#cbd5e1}
+.look-clean .quote-intro a{color:#fff}
+.look-clean .form{background:#fff;color:var(--ink);border-radius:20px;padding:22px}
+.look-clean input,.look-clean select,.look-clean textarea{border-radius:12px;border:1px solid #cbd5e1}
+.look-clean .form-done{color:var(--ink)}
+.look-clean .foot{background:#fff;color:var(--ink-2);border-top:1px solid var(--rule)}
+.look-clean .foot a{color:var(--ink)}
+.look-clean .foot-name{color:var(--ink)}
+.look-clean .bar .btn-call{background:#fff;color:var(--ink);border:1px solid #cbd5e1}
+@media (min-width:900px){.look-clean .quote-wrap{padding:48px}}`;
+
+const CLASSIC_CSS = `
+.look-classic{--paper:#f3f1ec;--rule:#cfc9bc;--ink:#1c1f1d;--ink-2:#4a504b}
+body.look-classic{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variation-settings:normal;background:var(--paper)}
+.look-classic h1,.look-classic h2,.look-classic h3,.look-classic .wordmark,.look-classic .foot-name,.look-classic .score-num{font-family:Fraunces,Georgia,serif;font-variation-settings:normal;font-optical-sizing:auto;font-weight:400;letter-spacing:-.015em}
+.look-classic .price,.look-classic .phone-num,.look-classic .door .big-phone{font-variation-settings:normal}
+.look-classic h2{font-size:clamp(1.9rem,5vw,3rem)}
+.look-classic .btn{border-radius:2px;font-weight:600}
+.look-classic .top{background:var(--paper);border-bottom:1px solid var(--rule)}
+.look-classic .hero.classic{position:relative;background:var(--p);color:var(--on-p);overflow:hidden}
+.look-classic .hero.classic.has-photo{min-height:min(78vh,720px);display:flex;align-items:flex-end;color:#fff;padding-top:120px}
+.look-classic .hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.look-classic .hero.classic.has-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,20,17,.05) 30%,rgba(15,20,17,.72))}
+.look-classic .hero.classic .wrap{position:relative;z-index:1}
+.look-classic .hero.classic h1{font-size:clamp(2.4rem,8vw,5rem);line-height:1;max-width:16ch}
+.look-classic .kicker{margin:0 0 16px;font-size:13px;letter-spacing:.18em;text-transform:uppercase;opacity:.85}
+.look-classic .hero.classic .rating{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.35)}
+.look-classic .door{background:rgba(0,0,0,.14);border-color:rgba(255,255,255,.2);border-radius:2px}
+.look-classic .sheet{list-style:none;padding:0;margin:0;background:none;border:0;border-radius:0;counter-reset:svc}
+.look-classic .rate{counter-increment:svc;grid-template-columns:44px 1fr auto;padding:26px 0;border-bottom:0;border-top:1px solid var(--rule)}
+.look-classic .rate:last-child{border-bottom:1px solid var(--rule)}
+.look-classic .rate::before{content:counter(svc,decimal-leading-zero);font-family:Fraunces,Georgia,serif;font-size:1.05rem;color:var(--ink-2)}
+.look-classic .rate h3{font-size:clamp(1.3rem,3vw,1.7rem);font-weight:500}
+.look-classic .steps li{background:none;border:0;border-top:1px solid var(--rule);border-radius:0;padding:22px 0 0}
+.look-classic .steps li::before{position:static;display:block;width:auto;height:auto;background:none;color:var(--ink-2);font-family:Fraunces,Georgia,serif;font-weight:400;font-size:1rem;margin-bottom:10px;content:"0" counter(s)}
+.look-classic .steps h3{font-size:1.35rem}
+.look-classic .fact{background:none;border:0;border-top:1px solid var(--rule);border-radius:0;padding:18px 0}
+.look-classic .fact h3{font-family:"Instrument Sans",system-ui,sans-serif;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.look-classic .gallery{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.look-classic .gallery li{border-radius:0;aspect-ratio:4/5}
+.look-classic .reviews{background:var(--p);color:var(--on-p)}
+.look-classic .reviews .score-num{color:inherit}
+.look-classic .reviews .score p{color:inherit;opacity:.8}
+.look-classic .faq summary{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.2rem}
+.look-classic .quote{background:var(--paper);border-top:1px solid var(--rule)}
+.look-classic input,.look-classic select,.look-classic textarea{border:0;border-bottom:1.5px solid #8b8678;border-radius:0;background:transparent;padding:12px 2px}
+.look-classic .form-done{border-radius:2px}
+.look-classic .foot{background:var(--p);color:var(--on-p)}
+.look-classic .foot a{color:inherit}
+.look-classic .hero .btn-accent,.look-classic .reviews .btn-accent{background:#f3f1ec;color:#1c1f1d}
+.look-classic .form .btn-accent,.look-classic .quote-wrap>.btn-accent,.look-classic .bar .btn-accent{background:var(--p);color:var(--on-p)}
+.look-classic .bar .btn-call{background:transparent;color:var(--ink);border-color:var(--ink)}
+.look-classic .highlights li::before{background:var(--p)}`;
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-function head(content: SiteContent, opts: SiteRenderOptions, theme: SiteTheme): string {
+function head(content: SiteContent, opts: SiteRenderOptions, theme: SiteTheme, look: SiteThemeId): string {
   const f = content.facts;
   const copy = effectiveCopy(content);
   const trade = f.tradeId ? tradeProfile(f.tradeId).noun : null;
@@ -488,15 +597,16 @@ ${image ? `<meta property="og:image" content="${image}">` : ""}
 ${icon ? `<link rel="icon" href="${icon}">\n<link rel="apple-touch-icon" href="${icon}">` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
-<style>${css(theme)}</style>
+<link rel="stylesheet" href="${LOOK_FONTS[look]}">
+<style>${css(theme)}${lookCss(look)}</style>
 <script type="application/ld+json">${jsonForScript(buildJsonLd(content, opts))}</script>`;
 }
 
 export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): string {
   const f = content.facts;
   const copy = effectiveCopy(content);
-  const theme = siteTheme(f);
+  const theme = siteTheme(f, content.settings.color);
+  const look = resolveSiteTheme(content.settings.theme, f.tradeId);
   const isPricePage = content.mode === "price_page";
   const tel = telHref(f.phoneE164);
   const hasForm = Boolean(opts.formKey);
@@ -533,14 +643,27 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
     </aside>`
       : "";
 
-  const hero = `<header class="hero ${theme.variant}">
-  <div class="wrap hero-grid">
-    <div>
-      <h1>${esc(copy.headline)}</h1>
+  const heroText = `<div class="hero-text">
+      ${look === "classic" && f.serviceArea ? `<p class="kicker">${esc(f.serviceArea)}</p>` : ""}
+      <h1${look === "bold" && copy.headline.length <= BOLD_CAPS_MAX ? ' class="caps"' : ""}>${esc(copy.headline)}</h1>
       <p class="sub">${esc(copy.subhead)}</p>
       ${ctas ? `<div class="ctas">${ctas}</div>` : ""}
       ${ratingBadge(f, "rating")}
-    </div>
+    </div>`;
+  // Bold: the colour band (light with a rail for trades that read better plain). Clean: a light
+  // hero with a rounded photo or contact card. Classic: the first photo full-bleed behind the text.
+  const hero =
+    look === "classic"
+      ? `<header class="hero classic${photo ? " has-photo" : ""}">
+  ${photo ? `<img class="hero-bg" src="${photo}" alt="" loading="eager" decoding="async">` : ""}
+  <div class="wrap hero-grid">
+    ${heroText}
+    ${photo ? "" : heroAside}
+  </div>
+</header>`
+      : `<header class="hero ${look === "clean" ? "clean" : theme.variant}">
+  <div class="wrap hero-grid">
+    ${heroText}
     ${heroAside}
   </div>
 </header>`;
@@ -632,9 +755,9 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   return `<!doctype html>
 <html lang="en-CA">
 <head>
-${head(content, opts, theme)}
+${head(content, opts, theme, look)}
 </head>
-<body>
+<body class="look-${look}">
 <a class="skip" href="#main">Skip to content</a>
 ${opts.preview ? '<div class="preview">Preview. Only you can see this until the page is published.</div>' : ""}
 <div class="top"><div class="wrap">

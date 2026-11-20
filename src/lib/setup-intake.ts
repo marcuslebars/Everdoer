@@ -5,6 +5,8 @@
  * what the buyer sees.
  */
 
+import type { SiteStyle } from "@/lib/site-style";
+
 export const BUSINESS_PHONE_KINDS = ["cell", "landline", "voip"] as const;
 export type BusinessPhoneKind = (typeof BUSINESS_PHONE_KINDS)[number];
 
@@ -81,4 +83,6 @@ export interface IntakeAnswers {
   listing: IntakeListingAnswer;
   phone: { number: string; kind: BusinessPhoneKind; carrier: PhoneCarrierKey };
   prices: { skipped: boolean; items: IntakePriceAnswer[] };
+  /** Optional: the website look and colour (absent = "pick for me", brand colour). */
+  site?: SiteStyle;
 }

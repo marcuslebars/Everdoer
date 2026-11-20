@@ -2004,6 +2004,7 @@ export type Database = {
           review_settings: Json
           sales_call_settings: Json
           service_area: string | null
+          site_style: Json
           slug: string
           stage: Database["public"]["Enums"]["company_stage"]
           stripe_account_label: string | null
@@ -2069,6 +2070,7 @@ export type Database = {
           review_settings?: Json
           sales_call_settings?: Json
           service_area?: string | null
+          site_style?: Json
           slug: string
           stage?: Database["public"]["Enums"]["company_stage"]
           stripe_account_label?: string | null
@@ -2133,6 +2135,7 @@ export type Database = {
           review_settings?: Json
           sales_call_settings?: Json
           service_area?: string | null
+          site_style?: Json
           slug?: string
           stage?: Database["public"]["Enums"]["company_stage"]
           stripe_account_label?: string | null

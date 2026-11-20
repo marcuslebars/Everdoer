@@ -1,3 +1,4 @@
+import type { SiteStyle, SiteThemeId } from "@/lib/site-style";
 import { ApiError, resolveApiUrl } from "@/lib/api-client";
 import type { PlatformBrandKey } from "@/lib/platform-brand";
 import type { IntakeAnswers } from "@/lib/setup-intake";
@@ -25,6 +26,8 @@ export interface SetupIntakeView {
   submittedAt: string | null;
   /** They're live: the page shows a read-only summary (changes happen in the app). */
   locked?: boolean;
+  /** The website look: what's saved, and what "Pick for me" means for their trade. */
+  site?: { style: SiteStyle; autoTheme: SiteThemeId };
 }
 
 export interface PlaceResult {

@@ -1,4 +1,5 @@
 /** Settings → Your website: the company's generated page (docs/done-for-you.md → "Generated sites"). */
+import type { SiteStyle, SiteThemeChoice, SiteThemeId } from "@/lib/site-style";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api-client";
@@ -18,6 +19,9 @@ export interface SiteView {
   maxPhotos: number;
   /** Whether connecting a custom domain is set up on the server. */
   domainsEnabled: boolean;
+  /** The look picked before the page exists, and what "Pick for me" means for this trade. */
+  style: SiteStyle;
+  autoTheme: SiteThemeId;
   site: null | {
     slug: string;
     status: SiteStatus;
@@ -33,6 +37,9 @@ export interface SiteView {
     generated: { headline: string; subhead: string; about: string } | null;
     edited: { headline: boolean; subhead: boolean; about: boolean };
     showPrices: boolean;
+    /** The page's look (theme + colour). */
+    theme: SiteThemeChoice;
+    color: string | null;
     servicesCount: number;
     pricedCount: number;
     factsUsed: string[];
@@ -56,6 +63,8 @@ export interface SiteEditInput {
   about?: string | null;
   showPrices?: boolean;
   mode?: SiteMode;
+  theme?: SiteThemeChoice;
+  color?: string | null;
 }
 
 export type SiteAction = "generate" | "regenerate" | "publish" | "unpublish";
