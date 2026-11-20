@@ -2,7 +2,9 @@
  * What Settings → Your website shows (owner routes under .../companies/:companyId/site). Read on
  * the caller's RLS client (members can read company_sites and companies).
  */
+import { autoThemeForTrade, parseSiteStyle } from "@/lib/site-style";
 import type { Tables } from "@/server/db/database.types";
+import { parseAppliedIndustryPack } from "@/server/services/packs/types";
 import { loadOrganizationBrand } from "@/server/services/platform-brand";
 import type { TenantServiceContext } from "@/server/services/shared";
 
@@ -16,11 +18,12 @@ import { siteUrl } from "./site-url";
 export async function siteView(ctx: TenantServiceContext, companyId: string, canManage: boolean) {
   const [{ data: siteData, error }, { data: companyData }] = await Promise.all([
     ctx.supabase.from("company_sites").select("*").eq("organization_id", ctx.organizationId).eq("company_id", companyId).maybeSingle(),
-    ctx.supabase.from("companies").select("id, name, website, brand_logo_url, profile").eq("organization_id", ctx.organizationId).eq("id", companyId).maybeSingle(),
+    ctx.supabase.from("companies").select("id, name, website, brand_logo_url, profile, site_style, industry_pack").eq("organization_id", ctx.organizationId).eq("id", companyId).maybeSingle(),
   ]);
   if (error) throw error;
   const site = siteData as Tables<"company_sites"> | null;
-  const company = companyData as Pick<Tables<"companies">, "id" | "name" | "website" | "brand_logo_url" | "profile"> | null;
+  const company = companyData as Pick<Tables<"companies">, "id" | "name" | "website" | "brand_logo_url" | "profile" | "site_style" | "industry_pack"> | null;
+  const tradeId = parseAppliedIndustryPack(company?.industry_pack)?.id ?? null;
   const base = {
     companyId,
     companyName: company?.name ?? "",
@@ -31,6 +34,9 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
     photos: profilePhotos(company?.profile),
     maxPhotos: MAX_SITE_PHOTOS,
     domainsEnabled: cloudflareConfig() !== null,
+    // The look picked before the page exists ("auto" → autoTheme, by trade).
+    style: parseSiteStyle(company?.site_style),
+    autoTheme: autoThemeForTrade(tradeId),
   };
   if (!site) return { ...base, site: null };
   const brand = await loadOrganizationBrand(ctx.supabase, ctx.organizationId);
@@ -58,6 +64,8 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
         about: Boolean(content?.edits.about),
       },
       showPrices: content?.settings.showPrices ?? true,
+      theme: content?.settings.theme ?? "auto",
+      color: content?.settings.color ?? null,
       servicesCount: content?.facts.services.length ?? 0,
       pricedCount: content?.facts.services.filter((s) => s.priceText).length ?? 0,
       factsUsed: content?.factsUsed ?? [],

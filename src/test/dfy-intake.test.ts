@@ -352,6 +352,20 @@ describe("public page: view + answers", () => {
     await expect(submitSetupAnswers(admin, token, goodAnswers(), NOON_MS + 3_600_000)).rejects.toThrow("You're already live");
   });
 
+  it("the website look: shown with what 'Pick for me' means, saved onto the company on submit", async () => {
+    const before = await getSetupView(admin, token, NOON_MS);
+    expect(before?.site).toEqual({ style: { theme: "auto", color: null }, autoTheme: "clean" });
+    await submitSetupAnswers(admin, token, { ...goodAnswers(), site: { theme: "classic", color: "#1F3A2E" } }, NOON_MS);
+    expect((intakes()[0].answers as { site: unknown }).site).toEqual({ theme: "classic", color: "#1f3a2e" });
+    const company = db.tables.companies.find((c) => c.id === COMPANY) as { site_style: unknown };
+    expect(company.site_style).toEqual({ theme: "classic", color: "#1f3a2e" });
+    expect((await getSetupView(admin, token))?.site?.style).toEqual({ theme: "classic", color: "#1f3a2e" });
+    // Answers without a look leave the company's look alone; a bad look is refused in plain English.
+    await submitSetupAnswers(admin, token, goodAnswers(), NOON_MS + 1000);
+    expect((db.tables.companies.find((c) => c.id === COMPANY) as { site_style: unknown }).site_style).toEqual({ theme: "classic", color: "#1f3a2e" });
+    await expect(submitSetupAnswers(admin, token, { ...goodAnswers(), site: { theme: "neon", color: null } })).rejects.toThrow();
+  });
+
   it("refuses a service id from another company (token scoping)", async () => {
     const answers = goodAnswers();
     answers.prices.items = [{ id: FOREIGN_ITEM, label: "Theirs", priceCents: 100 }];

@@ -183,7 +183,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     id: "your-website",
     title: "Your website page",
     summary: "The page {{product}} builds for your business: what's on it, publishing, and changing the wording.",
-    keywords: ["website", "web page", "site", "page", "landing page", "price page", "publish", "unpublish", "regenerate", "headline", "seo", "google", "domain", "link", "crankleads", "everdoer"],
+    keywords: ["website", "web page", "site", "page", "landing page", "price page", "publish", "unpublish", "regenerate", "headline", "seo", "google", "domain", "link", "look", "style", "theme", "design", "colour", "color", "bold", "clean", "classic", "crankleads", "everdoer"],
     sections: [
       {
         heading: "What it is",
@@ -199,6 +199,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         heading: "Preview, publish and take it down",
         body:
           "Go to Settings → Your website.\n- Preview opens the page as it will look, even before it's published.\n- Publish puts it live at the link shown. Unpublish takes it down; the link then shows a \"not available\" page.\n- Regenerate rebuilds the page from your latest details, services and prices. Wording you've changed yourself is kept.\nIf you bought through {{product}}, we build and publish the page for you after quick setup, and text you the link. Only owners and admins can publish or change the page.",
+      },
+      {
+        heading: "Choosing a look",
+        body:
+          "Your page comes in three looks:\n- Bold: strong colour, big lettering and a price sheet, like your truck door.\n- Clean: bright and friendly, with service cards and online booking up front.\n- Classic: calm and upscale, led by photos of your work.\n\"Pick for me\" chooses the one that suits your trade. You can also pick the main colour, or keep \"My brand colours\" to use the colours from your logo or brand settings.\nYou can choose before your page is built: in quick setup (\"Your website look\"), or in Settings → Your website. After it's built, change it any time in Settings → Your website under Look. The change shows straight away; your wording, photos and prices stay the same.",
       },
       {
         heading: "Changing the wording and prices",

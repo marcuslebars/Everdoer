@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppWindow, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 
 import { toast } from "@/components/ui/sonner";
@@ -10,6 +10,8 @@ import { useSaveSiteEdits, useSite, useSiteAction, type SiteMode, type SiteView 
 import { cn } from "@/lib/utils";
 import { useSettingsCompany } from "@/lib/settings-company";
 import { SiteDomainCard, SiteImagesCard } from "@/components/settings/WebsiteBranding";
+import { SiteLookPicker } from "@/components/website/SiteLookPicker";
+import type { SiteStyle } from "@/lib/site-style";
 
 const inputCls =
   "w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-60";
@@ -39,9 +41,14 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
   const save = useSaveSiteEdits(orgId, companyId);
   const action = useSiteAction(orgId, companyId);
   const [form, setForm] = useState<Form | null>(null);
+  const loaded = useRef<Form | null>(null);
 
   useEffect(() => {
-    if (data?.site) setForm(toForm(data.site));
+    if (!data?.site) return;
+    const fresh = toForm(data.site);
+    // Keep unsaved wording when something else (like the look) refreshes the data.
+    setForm((prev) => (prev && loaded.current && JSON.stringify(prev) !== JSON.stringify(loaded.current) ? prev : fresh));
+    loaded.current = fresh;
   }, [data]);
 
   const site = data?.site ?? null;
@@ -68,6 +75,17 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
   const canManage = data.canManage;
   const busy = save.isPending || action.isPending;
 
+  // The look saves on tap: before the page exists it's used when we build it; after, the page
+  // is redrawn in the new look right away (nothing is regenerated).
+  const saveLook = async (next: SiteStyle) => {
+    try {
+      await save.mutateAsync({ theme: next.theme, color: next.color });
+      toast.success(site ? "Look updated. Open Preview to see it." : "Saved. We'll build your page in this look.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save the look.");
+    }
+  };
+
   const run = async (kind: "generate" | "regenerate" | "publish" | "unpublish", done: string, publish?: boolean) => {
     try {
       await action.mutateAsync({ action: kind, publish });
@@ -80,6 +98,13 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
   if (!site) {
     return (
       <div className="space-y-6">
+        <div className="rounded-xl border border-border p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Choose a look</h3>
+            <p className={hintCls}>Pick how your page should look before we build it. You can change it any time.</p>
+          </div>
+          <SiteLookPicker value={data.style} autoTheme={data.autoTheme} onChange={(next) => void saveLook(next)} disabled={!canManage || busy} />
+        </div>
         <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
           <p className="text-sm text-foreground font-medium">{data.companyName} doesn't have a page yet.</p>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
@@ -167,6 +192,19 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
         <p className={hintCls}>
           Regenerate rebuilds the page from your current business details, services and prices. Your own wording below is kept.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-border p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Look</h3>
+          <p className={hintCls}>Changes apply straight away. Your wording, photos and prices stay the same.</p>
+        </div>
+        <SiteLookPicker
+          value={{ theme: site.theme, color: site.color }}
+          autoTheme={data.autoTheme}
+          onChange={(next) => void saveLook(next)}
+          disabled={!canManage || busy}
+        />
       </div>
 
       <SiteImagesCard orgId={orgId} view={data} />

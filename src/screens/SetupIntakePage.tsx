@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useParams } from "react-router-dom";
 import { AlertCircle, Check, CheckCircle2, Globe, Loader2, MapPin, Pencil, Plus, Search, X } from "lucide-react";
 
+import { SiteLookPicker } from "@/components/website/SiteLookPicker";
 import { useBrandOverride } from "@/lib/brand-context";
 import { PLATFORM_BRANDS } from "@/lib/platform-brand";
 import {
@@ -24,6 +25,7 @@ import {
   type PlaceResult,
   type SetupIntakeView,
 } from "@/lib/setup-intake-api";
+import { DEFAULT_SITE_STYLE, siteThemeLabel, type SiteStyle } from "@/lib/site-style";
 import { useDocumentFavicon } from "@/lib/use-document-favicon";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
@@ -149,6 +151,7 @@ function SetupForm({ token, data, onDone }: { token: string; data: SetupIntakeVi
   const [carrier, setCarrier] = useState<PhoneCarrierKey | "">((data.phone.carrier as PhoneCarrierKey | null) ?? "");
   const [rows, setRows] = useState<ServiceRow[]>(() => initialRows(data));
   const [skipPrices, setSkipPrices] = useState(prior?.prices.skipped ?? false);
+  const [siteStyle, setSiteStyle] = useState<SiteStyle>(() => data.site?.style ?? prior?.site ?? DEFAULT_SITE_STYLE);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
@@ -208,6 +211,7 @@ function SetupForm({ token, data, onDone }: { token: string; data: SetupIntakeVi
             : { kind: "none" },
       phone: { number: phone, kind: kind as BusinessPhoneKind, carrier: carrier as PhoneCarrierKey },
       prices: { skipped: skipPrices, items },
+      ...(data.site ? { site: siteStyle } : {}),
     };
     setSubmitting(true);
     try {
@@ -412,6 +416,17 @@ function SetupForm({ token, data, onDone }: { token: string; data: SetupIntakeVi
           </>
         )}
       </Section>
+
+      {data.site ? (
+        <Section n={4} title="Your website look" optional done={siteStyle.theme !== "auto" || siteStyle.color !== null}>
+          <p className="mb-3 text-sm text-muted-foreground">
+            {mode === "none"
+              ? "We're building your website. Pick a look, or let us choose one that suits your trade."
+              : "We also build you a services and prices page. Pick a look, or let us choose."}
+          </p>
+          <SiteLookPicker value={siteStyle} autoTheme={data.site.autoTheme} onChange={setSiteStyle} size="lg" />
+        </Section>
+      ) : null}
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <div className="mx-auto max-w-[520px]">
@@ -642,6 +657,16 @@ function Summary({ data, onEdit }: { data: SetupIntakeView; onEdit: () => void }
           label="Prices"
           value={answers.prices.skipped || priced === 0 ? "Skipped — we'll ask later" : `${priced} service${priced === 1 ? "" : "s"} priced`}
         />
+        {data.site ? (
+          <SummaryRow
+            label="Website look"
+            value={
+              data.site.style.theme === "auto"
+                ? `Picked for you: ${siteThemeLabel(data.site.autoTheme)}`
+                : siteThemeLabel(data.site.style.theme)
+            }
+          />
+        ) : null}
       </dl>
       {!data.locked && (
         <div className="mt-6 rounded-2xl border border-border bg-card px-4 py-3" data-testid="setup-next">

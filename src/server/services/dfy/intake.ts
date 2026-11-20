@@ -17,6 +17,7 @@ import {
   priceUnitLabel,
   type IntakeAnswers,
 } from "@/lib/setup-intake";
+import { autoThemeForTrade, parseSiteStyle, SITE_THEME_CHOICES, type SiteStyle, type SiteThemeChoice, type SiteThemeId } from "@/lib/site-style";
 import type { Tables } from "@/server/db/database.types";
 import { isBlockedHost, normalizeWebsiteUrl } from "@/server/net/safe-fetch";
 import { ValidationError } from "@/server/organizations/context";
@@ -24,6 +25,8 @@ import type { AdminClient } from "@/server/services/done-for-you/purchases";
 import { inLiveWindow } from "@/server/services/done-for-you/followup-schedule";
 import { loadOwnerTextBlock } from "@/server/services/dfy/eligibility";
 import { isPlaceId, isPlacesConfigured } from "@/server/services/dfy/places";
+import { updateSiteStyle } from "@/server/services/dfy/site-generator";
+import { parseAppliedIndustryPack } from "@/server/services/packs/types";
 import { appBaseUrlFor, loadOrganizationBrand, type PlatformBrand, type PlatformBrandKey } from "@/server/services/platform-brand";
 import { smsPlatformName } from "@/server/services/rebrand/sms-branding";
 import { toE164 } from "@/server/services/retell/payload";
@@ -37,7 +40,7 @@ import {
 export type SetupIntake = Tables<"setup_intakes">;
 type CompanyRow = Pick<
   Tables<"companies">,
-  "id" | "organization_id" | "name" | "owner_email" | "owner_phone_e164" | "timezone" | "business_phone_kind" | "business_phone_carrier"
+  "id" | "organization_id" | "name" | "owner_email" | "owner_phone_e164" | "timezone" | "business_phone_kind" | "business_phone_carrier" | "site_style" | "industry_pack"
 >;
 
 /** Text + email tries before the retry sweep gives up (an operator picks it up from there). */
@@ -189,7 +192,7 @@ export type IntakeSendOutcome =
 async function loadCompany(admin: AdminClient, organizationId: string, companyId: string): Promise<CompanyRow> {
   const { data, error } = await admin
     .from("companies")
-    .select("id, organization_id, name, owner_email, owner_phone_e164, timezone, business_phone_kind, business_phone_carrier")
+    .select("id, organization_id, name, owner_email, owner_phone_e164, timezone, business_phone_kind, business_phone_carrier, site_style, industry_pack")
     .eq("organization_id", organizationId)
     .eq("id", companyId)
     .maybeSingle();
@@ -473,6 +476,8 @@ export interface SetupIntakeView {
   submittedAt: string | null;
   /** The buyer is live: edits are closed (read-only summary; changes happen in the app). */
   locked: boolean;
+  /** The website look: what's saved, and what "Pick for me" means for this trade. */
+  site: { style: SiteStyle; autoTheme: SiteThemeId };
 }
 
 /** "+17055550101" → "(705) 555-0101". */
@@ -527,6 +532,10 @@ async function buildView(admin: AdminClient, intake: SetupIntake, locked = false
     answers,
     submittedAt: answers ? intake.submitted_at : null,
     locked,
+    site: {
+      style: answers?.site ?? parseSiteStyle(company.site_style),
+      autoTheme: autoThemeForTrade(parseAppliedIndustryPack(company.industry_pack)?.id ?? null),
+    },
   };
 }
 
@@ -595,9 +604,21 @@ const priceItemSchema = z.object({
   unit: z.enum(NEW_SERVICE_UNIT_KEYS).optional(),
 });
 
+const siteStyleSchema = z
+  .object({
+    theme: z.enum(SITE_THEME_CHOICES as [SiteThemeChoice, ...SiteThemeChoice[]]).default("auto"),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .nullable()
+      .default(null),
+  })
+  .transform((v) => parseSiteStyle(v));
+
 export const intakeAnswersSchema = z.object({
   listing: listingSchema,
   phone: phoneSchema,
+  site: siteStyleSchema.optional(),
   prices: z
     .object({
       skipped: z.boolean().default(false),
@@ -664,6 +685,9 @@ export async function submitSetupAnswers(
     .eq("id", intake.id)
     .eq("token", token);
   if (error) throw new Error(`setup_intakes answer write failed: ${error.message}`);
+  // The look goes on the company (and the page, if it's already built) right away, so the page
+  // the orchestrator builds next is drawn in it.
+  if (clean.site) await updateSiteStyle(admin, intake.company_id, clean.site, new Date(nowMs));
   console.log(`[dfy/intake] answers ${intake.submitted_at ? "updated" : "received"} for company ${intake.company_id}`);
   const { purchase: _purchase, ...row } = intake;
   return buildView(admin, { ...row, answers: clean as unknown as SetupIntake["answers"], status: "submitted", submitted_at: stamp });
