@@ -18,6 +18,7 @@ import { isValidSlug, parseSiteContent, type SiteContent } from "./site-content"
 import { findSitePage, siteSitemapXml } from "./site-pages";
 import { renderSitePage, renderSiteSubpage, type SiteRenderOptions } from "./site-render";
 import { siteUrl } from "./site-url";
+import { isPlacesConfigured } from "./places";
 import { appBaseUrlFor } from "@/server/services/platform-brand";
 
 /** Default target of the generated sites' "Powered by Everdoer" link. */
@@ -63,14 +64,14 @@ export async function siteRuntime(
       .order("created_at", { ascending: true }),
     admin
       .from("companies")
-      .select("id, online_booking_settings, quote_public_base_url")
+      .select("id, online_booking_settings, quote_public_base_url, google_place_id")
       .eq("organization_id", site.organization_id)
       .eq("id", site.company_id)
       .maybeSingle(),
   ]);
   const keyRows = (keys ?? []) as Array<{ public_key: string; form_type: string }>;
   const formKey = (keyRows.find((k) => k.form_type === "quote") ?? keyRows[0])?.public_key ?? null;
-  const companyRow = company as Pick<Tables<"companies">, "id" | "online_booking_settings" | "quote_public_base_url"> | null;
+  const companyRow = company as Pick<Tables<"companies">, "id" | "online_booking_settings" | "quote_public_base_url" | "google_place_id"> | null;
   const bookingUrl = companyRow && parseOnlineBookingSettings(companyRow.online_booking_settings).enabled ? bookingPageUrl(companyRow) : null;
   return {
     url: sitePublicUrl(site, content.facts.brand),
@@ -82,6 +83,11 @@ export async function siteRuntime(
     embedFormOrigin: options.onCustomDomain ? appBaseUrlFor(content.facts.brand ?? "empirevu") : null,
     // Counted on the app (works from our pages host and the business's own domain alike).
     stats: { endpoint: `${appBaseUrlFor(content.facts.brand ?? "empirevu")}/api/public/sites/hit`, slug: site.slug },
+    // Live Google reviews need a Google listing and the Places key.
+    reviews:
+      companyRow?.google_place_id && isPlacesConfigured()
+        ? { endpoint: `${appBaseUrlFor(content.facts.brand ?? "empirevu")}/api/public/sites/reviews`, slug: site.slug }
+        : null,
   };
 }
 

@@ -110,6 +110,7 @@ export const SERVICE_ROLE_ALLOWLIST = [
   "src/server/services/accounting/connections.ts",
   "src/server/services/accounting/engine.ts",
   "src/server/services/dfy/site-public.ts",
+  "src/server/services/dfy/site-reviews.ts",
   "src/server/services/dfy/site-stats.ts",
   "src/server/services/expenses/receipts.ts",
   "src/server/services/inbox.ts",
