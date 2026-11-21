@@ -55,7 +55,7 @@ function content(): SiteContent {
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true },
+    settings: { showPrices: true, theme: "auto", color: null },
     generatedAt: "2026-10-31T12:00:00.000Z",
   };
 }

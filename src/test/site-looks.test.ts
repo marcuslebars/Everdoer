@@ -61,7 +61,7 @@ function contentFor(input: SiteFactsInput, settings: Partial<SiteContent["settin
 
 const withPhotos: SiteFactsInput = {
   ...snowCompany,
-  company: { ...snowCompany.company, profile: { ...snowCompany.company.profile, photos: ["https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"] } },
+  company: { ...snowCompany.company, profile: { ...(snowCompany.company.profile as Record<string, unknown>), photos: ["https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"] } },
 };
 
 describe("site style helpers", () => {

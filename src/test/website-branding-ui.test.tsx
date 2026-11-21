@@ -31,6 +31,8 @@ function view(over: Partial<SiteView> = {}, site: Partial<NonNullable<SiteView["
     photos: [],
     maxPhotos: 6,
     domainsEnabled: true,
+    style: { theme: "auto", color: null },
+    autoTheme: "clean",
     site: {
       slug: "a1-coatings",
       status: "published",
@@ -47,6 +49,8 @@ function view(over: Partial<SiteView> = {}, site: Partial<NonNullable<SiteView["
       generated: null,
       edited: { headline: false, subhead: false, about: false },
       showPrices: true,
+      theme: "auto",
+      color: null,
       servicesCount: 0,
       pricedCount: 0,
       factsUsed: [],
