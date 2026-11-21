@@ -728,6 +728,7 @@ Code: `src/server/services/weekly-report/metrics.ts` (`computeWeeklyMetrics` is 
 | Things it checked with you first | `owner_approvals` created in the week, except `owner_command` (the owner confirming their own "move Jamie…"). "Approved" counts rows decided in the week with status `approved` or `executed`. |
 | Missed calls caught / texted back, new leads, quotes sent/approved ($), jobs booked, reviews requested | The monthly scorecard's definitions (`fetchScorecardInputs` / `computeScorecardMetrics`) applied to the week. |
 | Deposits & payments collected | Quote deposits paid in the week, plus `invoice_payments` with status `succeeded` received in the week. |
+| Visits to your website | Only for a company with a **published** generated site: the week's `site_stats_daily` rows (business-local Monday–Sunday) — visits, with quote requests and call taps as the note; the text says "N website visits (N quote requests)". Absent otherwise. Website visits alone count as activity. See done-for-you.md → "Site stats". |
 | Time saved (estimate) | See below. Always labelled as an estimate. |
 
 All front-desk reads are tolerant: an empty or not-yet-migrated table counts as zero and never fails the report. New Google reviews are left out. `companies.google_review_count` is written once at enrichment and never refreshed, so a weekly change can't be worked out from it.

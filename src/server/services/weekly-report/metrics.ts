@@ -1,3 +1,4 @@
+import { shiftWeekKey } from "@/server/services/monthly-scorecard/weeks";
 import type { PeriodRange } from "@/server/services/attribution";
 import { bookingHoursFromCompanyHours } from "@/server/services/dfy/hours";
 import {
@@ -112,9 +113,17 @@ export interface WeeklyReportMetrics {
   /** Still owed to the business when the report was made (absent when nothing is owed / older reports). */
   receivable?: { outstandingCents: number; overdueCents: number; overdueCount: number };
   reviewsRequested: number;
+  /** The company's generated website this week (absent when it has no published page). */
+  website?: WeeklyWebsiteStats;
   currency: string;
   hoursSaved: HoursSaved;
   hasActivity: boolean;
+}
+
+export interface WeeklyWebsiteStats {
+  views: number;
+  calls: number;
+  quotes: number;
 }
 
 function inRange(iso: string | null | undefined, fromMs: number, toMs: number): boolean {
@@ -184,6 +193,7 @@ export function computeWeeklyMetrics(input: {
   range: PeriodRange;
   weekStart: string;
   timeZone: string;
+  website?: WeeklyWebsiteStats | null;
 }): WeeklyReportMetrics {
   const { range, frontDesk, timeZone } = input;
   const fromMs = Date.parse(range.from);
@@ -262,6 +272,7 @@ export function computeWeeklyMetrics(input: {
     collected: { cents: collectedCents, deposits: card.quotes.depositsCollected, payments: payments.length },
     ...(outstandingCents > 0 ? { receivable: { outstandingCents, overdueCents, overdueCount } } : {}),
     reviewsRequested: card.reviewsRequested,
+    ...(input.website ? { website: input.website } : {}),
     currency: card.quotes.currency,
     hoursSaved,
     hasActivity: false,
@@ -282,7 +293,8 @@ export function weeklyHasActivity(m: Omit<WeeklyReportMetrics, "hasActivity">): 
     m.quotes.approved > 0 ||
     m.jobsBooked > 0 ||
     m.collected.cents > 0 ||
-    m.reviewsRequested > 0
+    m.reviewsRequested > 0 ||
+    (m.website ? m.website.views + m.website.quotes > 0 : false)
   );
 }
 
@@ -407,11 +419,44 @@ export async function computeWeekForCompany(
   range: PeriodRange,
   timeZone: string,
 ): Promise<WeeklyReportMetrics> {
-  const [scorecard, frontDesk] = await Promise.all([
+  const [scorecard, frontDesk, website] = await Promise.all([
     fetchScorecardInputs(context, companyId, range),
     fetchFrontDeskInputs(context, companyId, range),
+    fetchWebsiteWeek(context, companyId, weekStart),
   ]);
-  return computeWeeklyMetrics({ scorecard, frontDesk, range, weekStart, timeZone });
+  return computeWeeklyMetrics({ scorecard, frontDesk, range, weekStart, timeZone, website });
+}
+
+/**
+ * The generated website's week (site_stats_daily rows are business-local days, and the week key
+ * is the local Monday). Null when the company has no published page; a read failure counts as
+ * no page (the report still goes out).
+ */
+export async function fetchWebsiteWeek(context: TenantServiceContext, companyId: string, weekStart: string): Promise<WeeklyWebsiteStats | null> {
+  try {
+    const { data: site } = await context.supabase
+      .from("company_sites")
+      .select("id, status")
+      .eq("organization_id", context.organizationId)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    const row = site as { id: string; status: string } | null;
+    if (!row || row.status !== "published") return null;
+    const rows = await tolerant<{ views: number; calls: number; quotes: number }>(
+      "site stats",
+      context.supabase
+        .from("site_stats_daily")
+        .select("views, calls, quotes")
+        .eq("organization_id", context.organizationId)
+        .eq("site_id", row.id)
+        .gte("day", weekStart)
+        .lt("day", shiftWeekKey(weekStart, 1))
+        .limit(ROW_LIMIT),
+    );
+    return rows.reduce((t, r) => ({ views: t.views + r.views, calls: t.calls + r.calls, quotes: t.quotes + r.quotes }), { views: 0, calls: 0, quotes: 0 });
+  } catch {
+    return null;
+  }
 }
 
 /**

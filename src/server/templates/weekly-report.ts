@@ -95,6 +95,11 @@ function smsItems(m: WeeklyReportMetrics): string[] {
   }
   if (m.textConversations > 0) items.push(plural(m.textConversations, "text chat", "text chats"));
   if (m.jobsBooked > 0) items.push(`${plural(m.jobsBooked, "job", "jobs")} booked`);
+  if (m.website && m.website.views > 0) {
+    items.push(
+      `${plural(m.website.views, "website visit", "website visits")}${m.website.quotes > 0 ? ` (${plural(m.website.quotes, "quote request", "quote requests")})` : ""}`,
+    );
+  }
   if (m.quotes.sent > 0) items.push(`${plural(m.quotes.sent, "quote", "quotes")} sent`);
   if (m.collected.cents > 0) items.push(`${wholeDollars(m.collected.cents)} collected`);
   if (m.missedCalls.textedBack > 0) items.push(`${plural(m.missedCalls.textedBack, "missed call", "missed calls")} texted back`);
@@ -198,6 +203,15 @@ function buildLines(m: WeeklyReportMetrics): Line[] {
     note: m.quotes.approved > 0 ? wholeDollars(m.quotes.approvedCents) : null,
   });
   lines.push({ label: "Jobs booked", value: String(m.jobsBooked) });
+  if (m.website) {
+    lines.push({
+      label: "Visits to your website",
+      value: String(m.website.views),
+      note: [m.website.quotes > 0 ? plural(m.website.quotes, "quote request", "quote requests") : null, m.website.calls > 0 ? plural(m.website.calls, "call tap", "call taps") : null]
+        .filter(Boolean)
+        .join(" · ") || null,
+    });
+  }
   lines.push({
     label: "Deposits & payments collected",
     value: wholeDollars(m.collected.cents),

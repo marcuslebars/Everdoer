@@ -369,6 +369,8 @@ visits-per-day bar, where visitors came from, and the busiest pages.
   `site_stats_bump` (security definer, service role only); org members can read their rows.
   **Nothing about visitors is stored** — no IP, cookie, user agent or URL beyond the site's own
   page path. `GET .../site/stats` returns the summary.
+- **Weekly report:** the Monday owner report (docs/front-desk-ai.md → "Weekly report") carries a
+  "Visits to your website" line for companies with a published site — one message, not two.
 
 ### Stock photo
 
