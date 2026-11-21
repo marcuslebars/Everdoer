@@ -224,6 +224,8 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         heading: "The photo at the top",
         body:
           "Until you add your own photos, we put a free stock photo that suits your trade at the top of your page, with a small credit to the photographer at the bottom. It's never shown under \"Our work\". In Settings → Your website → Photo at the top you can pick another or turn it off. As soon as you upload a photo of your own, yours goes at the top instead.",
+      },
+      {
         heading: "Your Google reviews on your page",
         body:
           "If your business is on Google, your page shows your star rating and your latest Google reviews, straight from Google, with each reviewer's name. They're shown the way Google lists them (most relevant first), so we can't pick or hide individual reviews. To leave reviews off your page, turn off \"Google reviews\" under Sections in Settings → Your website.",
