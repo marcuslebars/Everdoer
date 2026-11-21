@@ -61,8 +61,9 @@ function content(): SiteContent {
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
+    settings: { showPrices: true, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
     copyNote: null,
+    stockPhoto: null,
     generatedAt: "2026-11-21T12:00:00.000Z",
   };
 }

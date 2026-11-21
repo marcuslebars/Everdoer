@@ -4,7 +4,7 @@
  * saves on its own; sections save on tap. Clearing back to ours is always one click.
  */
 import { useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
@@ -458,5 +458,66 @@ export function SitePagesCard({ site, save, disabled }: EditorProps) {
         </ul>
       )}
     </Card>
+  );
+}
+
+// ── Stock photo at the top ──────────────────────────────────────────────────
+
+/**
+ * Shown while the owner has no photos: the stock photo at the top of their page, a switch, and
+ * "Show another". Their own first photo always replaces it.
+ */
+export function SiteStockPhotoCard({
+  site,
+  hasOwnPhotos,
+  save,
+  onAnother,
+  disabled,
+  pending,
+}: EditorProps & { hasOwnPhotos: boolean; onAnother: () => void; pending: boolean }) {
+  const stock = site.stock;
+  if (!stock || !stock.available || hasOwnPhotos) return null;
+  return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Photo at the top</h3>
+          <p className={hintCls}>Until you add your own photos, we put a free stock photo that suits your trade at the top of your page. It's never shown as your work.</p>
+        </div>
+        <Switch
+          checked={stock.enabled}
+          onCheckedChange={(v) => void save({ stockPhoto: v }, v ? "Stock photo on" : "Stock photo off")}
+          disabled={disabled}
+          aria-label="Use a stock photo at the top"
+        />
+      </div>
+      {stock.enabled && stock.photo ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <img src={stock.photo.url} alt={stock.photo.alt || "Stock photo"} className="h-24 w-40 rounded-lg object-cover border border-border" />
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">
+              Photo by{" "}
+              <a href={stock.photo.photographerUrl} target="_blank" rel="noreferrer" className="underline">
+                {stock.photo.photographer}
+              </a>{" "}
+              on{" "}
+              <a href={stock.photo.pageUrl} target="_blank" rel="noreferrer" className="underline">
+                Unsplash
+              </a>
+            </p>
+            <button type="button" onClick={onAnother} disabled={disabled} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-secondary disabled:opacity-50">
+              <RefreshCw className={cn("w-3.5 h-3.5", pending && "animate-spin")} /> Show another
+            </button>
+          </div>
+        </div>
+      ) : stock.enabled ? (
+        <div>
+          <p className="text-sm text-muted-foreground">No photo picked yet.</p>
+          <button type="button" onClick={onAnother} disabled={disabled} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-secondary disabled:opacity-50">
+            <RefreshCw className={cn("w-3.5 h-3.5", pending && "animate-spin")} /> Pick a photo
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }

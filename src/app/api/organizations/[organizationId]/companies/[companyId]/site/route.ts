@@ -13,7 +13,7 @@ import {
   siteStepEditSchema,
 } from "@/server/services/dfy/site-content";
 import { checkSiteDomain, domainCheckDue } from "@/server/services/dfy/site-domain";
-import { generateSite, setSiteStatus, updateSiteEdits, updateSiteStyle, type SiteEditInput } from "@/server/services/dfy/site-generator";
+import { generateSite, nextStockPhoto, setSiteStatus, updateSiteEdits, updateSiteStyle, type SiteEditInput } from "@/server/services/dfy/site-generator";
 import { siteView } from "@/server/services/dfy/site-view";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 
@@ -68,6 +68,8 @@ const patchSchema = z
       })
       .strict()
       .optional(),
+    /** Use the stock photo at the top while there are no photos of their own. */
+    stockPhoto: z.boolean().optional(),
     showPrices: z.boolean().optional(),
     mode: z.enum(SITE_MODES).optional(),
     /** The look; works before the page exists too (see updateSiteStyle). */
@@ -100,7 +102,8 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Ne
 }
 
 const actionSchema = z.object({
-  action: z.enum(["generate", "regenerate", "publish", "unpublish"]),
+  /** stock-next: show another stock photo at the top ("Show another"). */
+  action: z.enum(["generate", "regenerate", "publish", "unpublish", "stock-next"]),
   /** generate/regenerate only: publish in the same step. */
   publish: z.boolean().optional(),
   /**
@@ -126,6 +129,9 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
         const { data: existing } = await ctx.supabase.from("company_sites").select("id").eq("organization_id", organizationId).eq("company_id", companyId).maybeSingle();
         if (!existing) await generateSite(admin, companyId, { publish: true });
         await setSiteStatus(admin, companyId, "published", { markOwnerNotified: true });
+      } else if (body.action === "stock-next") {
+        const updated = await nextStockPhoto(admin, companyId);
+        if (!updated) return NextResponse.json({ error: "There isn't another photo right now. Try again later, or add your own." }, { status: 409 });
       } else {
         await setSiteStatus(admin, companyId, "unpublished");
       }

@@ -36,8 +36,9 @@ function contentFor(input: SiteFactsInput, patch: Partial<SiteContent> = {}): Si
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
+    settings: { showPrices: true, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
     copyNote: null,
+    stockPhoto: null,
     generatedAt: "2026-10-08T12:00:00.000Z",
     ...patch,
   };
@@ -92,7 +93,7 @@ describe("page content", () => {
     expect(html).toContain("$549");
     expect(html).toContain("$65<span class=\"unit\"> / visit</span>");
     expect((html.match(/data-service=/g) ?? []).length).toBe(2);
-    const hidden = renderSitePage(contentFor(snowCompany, { settings: { showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() } }), opts);
+    const hidden = renderSitePage(contentFor(snowCompany, { settings: { showPrices: false, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() } }), opts);
     expect(hidden).not.toContain("$549");
     expect((hidden.match(/data-service=/g) ?? []).length).toBe(7);
   });

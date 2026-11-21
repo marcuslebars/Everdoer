@@ -19,6 +19,7 @@ import {
   SiteSectionsCard,
   SiteServiceLinesCard,
   SiteStepsCard,
+  SiteStockPhotoCard,
 } from "@/components/website/SiteContentEditor";
 import type { SiteStyle } from "@/lib/site-style";
 
@@ -107,7 +108,7 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
     }
   };
 
-  const run = async (kind: "generate" | "regenerate" | "publish" | "unpublish", done: string, publish?: boolean, note?: string | null) => {
+  const run = async (kind: "generate" | "regenerate" | "publish" | "unpublish" | "stock-next", done: string, publish?: boolean, note?: string | null) => {
     try {
       await action.mutateAsync({ action: kind, publish, note });
       toast.success(done);
@@ -243,6 +244,14 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
       <SitePagesCard key={`pages:${JSON.stringify(site.pages)}`} site={site} save={saveContent} disabled={!canManage || busy} />
 
       <SiteImagesCard orgId={orgId} view={data} />
+      <SiteStockPhotoCard
+        site={site}
+        hasOwnPhotos={data.photos.length > 0}
+        save={saveContent}
+        onAnother={() => void run("stock-next", "Here's another photo. Open Preview to see it.")}
+        disabled={!canManage || busy}
+        pending={action.isPending}
+      />
       <SiteDomainCard orgId={orgId} view={data} />
 
       {form && (

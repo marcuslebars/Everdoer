@@ -49,7 +49,9 @@ import {
   type SiteSection,
   type SiteSettings,
   type SiteStatus,
+  type SiteStockPhoto,
 } from "./site-content";
+import { findStockPhoto, stockQuery } from "./site-stock";
 import { siteUrl } from "./site-url";
 import { loadOwnerTextBlock, newFlowCompanyIds } from "./eligibility";
 
@@ -60,6 +62,8 @@ export interface SiteGeneratorDeps {
   writeCopy: ((facts: Record<string, unknown>) => Promise<SiteCopyResult>) | null;
   deliver: (input: DeliverMessageInput) => Promise<DeliverMessageResult>;
   now: () => Date;
+  /** The stock photo for a page without the owner's photos (null when not configured). */
+  findStock: (input: { tradeId: string | null; seed: string; index?: number }) => Promise<SiteStockPhoto | null>;
 }
 
 function defaultDeps(): SiteGeneratorDeps {
@@ -67,6 +71,7 @@ function defaultDeps(): SiteGeneratorDeps {
     writeCopy: isAIConfigured() ? defaultWriteSiteCopy : null,
     deliver: defaultDeliverMessage,
     now: () => new Date(),
+    findStock: (input) => findStockPhoto(input),
   };
 }
 
@@ -240,6 +245,13 @@ export async function generateSite(admin: AdminClient, companyId: string, option
     copyNotes = ["AI not configured"];
   }
 
+  // A stock photo for the top while the owner has none: keep the one already picked unless the
+  // trade changed (a different search); look one up only when needed.
+  let stockPhoto = previous?.stockPhoto ?? null;
+  if (facts.photos.length === 0 && (!stockPhoto || stockPhoto.query !== stockQuery(facts.tradeId))) {
+    stockPhoto = await deps.findStock({ tradeId: facts.tradeId, seed: companyId }).catch(() => null);
+  }
+
   const now = deps.now().toISOString();
   const content: SiteContent = {
     version: SITE_CONTENT_VERSION,
@@ -252,6 +264,7 @@ export async function generateSite(admin: AdminClient, companyId: string, option
     edits: previous?.edits ?? {},
     settings: previous?.settings ?? initialSiteSettings(company.site_style),
     copyNote,
+    stockPhoto,
     generatedAt: now,
   };
 
@@ -326,6 +339,8 @@ export interface SiteEditInput extends Omit<SiteEdits, "serviceBlurbs"> {
   sections?: SiteSection[];
   /** Service and town pages: on/off, and the owner's town list (null = from the service area). */
   pages?: { services?: boolean; areas?: boolean; towns?: string[] | null };
+  /** Use the stock photo at the top while there are no photos of their own. */
+  stockPhoto?: boolean;
 }
 
 /**
@@ -361,6 +376,7 @@ export async function updateSiteEdits(admin: AdminClient, companyId: string, inp
     ...content.settings,
     ...(input.showPrices !== undefined ? { showPrices: input.showPrices } : {}),
     ...(input.sections !== undefined ? { sections: parseSiteSections(input.sections) } : {}),
+    ...(input.stockPhoto !== undefined ? { stockPhoto: input.stockPhoto } : {}),
     ...(input.pages !== undefined ? { pages: parseSitePagesSettings({ ...content.settings.pages, ...input.pages }) } : {}),
   };
   const mode = input.mode ?? content.mode;
@@ -373,6 +389,31 @@ export async function updateSiteEdits(admin: AdminClient, companyId: string, inp
     .select("*")
     .single();
   if (error) throw new Error(`site edit failed: ${error.message}`);
+  return data as CompanySiteRow;
+}
+
+// ── Stock photo ──────────────────────────────────────────────────────────────
+
+/** "Show another": the next stock photo for this page's trade. Null when none is available. */
+export async function nextStockPhoto(admin: AdminClient, companyId: string, options: { deps?: Partial<SiteGeneratorDeps>; now?: Date } = {}): Promise<CompanySiteRow | null> {
+  const deps = withDeps(options.deps);
+  const existing = await loadSiteRow(admin, companyId);
+  if (!existing) throw new SiteNotFoundError("This company doesn't have a page yet.");
+  const content = parseSiteContent(existing.content);
+  if (!content) throw new Error("This page needs to be regenerated first.");
+  const current = content.stockPhoto;
+  const sameSearch = current && current.query === stockQuery(content.facts.tradeId);
+  const next = await deps.findStock({ tradeId: content.facts.tradeId, seed: companyId, index: sameSearch ? current.index + 1 : 0 });
+  if (!next) return null;
+  const updated: SiteContent = { ...content, stockPhoto: next, settings: { ...content.settings, stockPhoto: true } };
+  const { data, error } = await admin
+    .from("company_sites")
+    .update({ content: updated as unknown as Json, updated_at: (options.now ?? new Date()).toISOString() })
+    .eq("id", existing.id)
+    .eq("company_id", companyId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`stock photo update failed: ${error.message}`);
   return data as CompanySiteRow;
 }
 

@@ -221,6 +221,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
           "If your page is your website, we also make a page for each service (with its price and a quote form) and for each town you work in, so people searching for them on Google can find you. Your main page links to them, and we list them all in a sitemap for Google.\nIn Settings → Your website → Service and town pages you can turn either kind off, change the towns (up to 6, separated by commas; only list towns you really work in), and preview every page. With only one town you won't get a town page, because your main page already covers it. A services and prices page that links to your own website stays a single page.",
       },
       {
+        heading: "The photo at the top",
+        body:
+          "Until you add your own photos, we put a free stock photo that suits your trade at the top of your page, with a small credit to the photographer at the bottom. It's never shown under \"Our work\". In Settings → Your website → Photo at the top you can pick another or turn it off. As soon as you upload a photo of your own, yours goes at the top instead.",
+      },
+      {
         heading: "Seeing how your page is doing",
         body:
           "Once your page is live, your dashboard and Settings → Your website show the last 30 days: visits, call taps (people tapping your number on the page) and quote requests sent from the page, compared with the 30 days before. You can also see where visitors came from (Google, Facebook, ads, a saved link and so on) and which pages they looked at most.\nWe don't use cookies and we don't keep anything about the people who visit.",
