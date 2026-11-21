@@ -49,6 +49,12 @@ export interface SiteView {
     steps: SiteStep[];
     generatedSteps: SiteStep[];
     stepsEdited: boolean;
+    /** The stock photo for the top while the owner has no photos (Pexels). */
+    stock: null | {
+      available: boolean;
+      enabled: boolean;
+      photo: null | { url: string; alt: string; photographer: string; photographerUrl: string; pageUrl: string };
+    };
     /** Service and town pages (full websites only; null before the page is readable). */
     pages: SitePagesView | null;
     /** The page's look (theme + colour). */
@@ -108,13 +114,14 @@ export interface SiteEditInput {
   steps?: SiteStep[] | null;
   sections?: Array<{ id: SiteSectionId; hidden: boolean }>;
   pages?: { services?: boolean; areas?: boolean; towns?: string[] | null };
+  stockPhoto?: boolean;
   showPrices?: boolean;
   mode?: SiteMode;
   theme?: SiteThemeChoice;
   color?: string | null;
 }
 
-export type SiteAction = "generate" | "regenerate" | "publish" | "unpublish";
+export type SiteAction = "generate" | "regenerate" | "publish" | "unpublish" | "stock-next";
 
 export interface SiteStatCounts {
   views: number;

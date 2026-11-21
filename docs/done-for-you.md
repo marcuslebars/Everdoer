@@ -370,6 +370,22 @@ visits-per-day bar, where visitors came from, and the busiest pages.
   **Nothing about visitors is stored** — no IP, cookie, user agent or URL beyond the site's own
   page path. `GET .../site/stats` returns the summary.
 
+### Stock photo
+
+While a business has no photos of its own, the top of its page can show a free stock photo for
+its trade from **Pexels** (`site-stock.ts`; set `PEXELS_API_KEY` [web, workers], unset = no
+stock photos, pages look as before).
+
+- Picked at generation when `facts.photos` is empty: a per-trade search (landscape), seeded by
+  the company id so neighbours in the same trade get different photos; kept on rebuild unless
+  the trade (search) changes. "Show another" (`POST .../site {action: "stock-next"}`) moves to
+  the next result; `PATCH {stockPhoto: false}` turns it off. A Pexels error is just "no photo".
+- **Top of the home page only.** Never in "Our work", never in the JSON-LD, never on the
+  service/town pages; the owner's own first photo always replaces it. Only
+  `https://images.pexels.com/` URLs are stored or rendered.
+- Pexels' API terms ask for a visible link to Pexels and credit to the photographer: the footer
+  says "Top photo by <name> on Pexels" (both linked, `rel="nofollow"`) whenever it shows.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,

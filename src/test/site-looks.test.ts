@@ -55,8 +55,9 @@ function contentFor(input: SiteFactsInput, settings: Partial<SiteContent["settin
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings(), ...settings },
+    settings: { showPrices: true, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings(), ...settings },
     copyNote: null,
+    stockPhoto: null,
     generatedAt: "2026-11-20T12:00:00.000Z",
     ...patch,
   };
@@ -100,9 +101,9 @@ describe("site style helpers", () => {
 
   it("old pages without a look read as 'pick for me'; new pages start from the company's choice", () => {
     const old = { ...contentFor(snowCompany), settings: { showPrices: false } };
-    expect(parseSiteContent(old)?.settings).toEqual({ showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
-    expect(initialSiteSettings({ theme: "classic", color: "#0f766e" })).toEqual({ showPrices: true, theme: "classic", color: "#0f766e", sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
-    expect(initialSiteSettings({})).toEqual({ showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
+    expect(parseSiteContent(old)?.settings).toEqual({ showPrices: false, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
+    expect(initialSiteSettings({ theme: "classic", color: "#0f766e" })).toEqual({ showPrices: true, stockPhoto: true, theme: "classic", color: "#0f766e", sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
+    expect(initialSiteSettings({})).toEqual({ showPrices: true, stockPhoto: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
   });
 });
 

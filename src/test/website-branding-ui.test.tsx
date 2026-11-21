@@ -59,6 +59,7 @@ function view(over: Partial<SiteView> = {}, site: Partial<NonNullable<SiteView["
       generatedSteps: [],
       stepsEdited: false,
     pages: null,
+    stock: null,
       theme: "auto",
       color: null,
       servicesCount: 0,

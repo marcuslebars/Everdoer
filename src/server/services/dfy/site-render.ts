@@ -4,6 +4,7 @@ import { smsConsentText } from "@/server/services/lead-intake/public-form-envelo
 import {
   effectiveCopy,
   effectiveSteps,
+  heroPhoto,
   type SiteSectionId,
   hexColor,
   tradeProfile,
@@ -679,7 +680,9 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   const booking = safeHref(opts.bookingUrl);
   const website = safeHref(f.website);
   const logo = safeHref(f.logoUrl);
-  const photo = safeHref(f.photos[0]);
+  // The owner's first photo, else the stock photo (top of the page only; never in "Our work").
+  const top = heroPhoto(content);
+  const photo = top ? safeHref(top.url) : null;
   const showPrices = content.settings.showPrices;
   const anyPrice = showPrices && f.services.some((s) => s.priceText);
   const servicePaths = new Map(sitePages(content).flatMap((p) => (p.kind === "service" ? [[p.service.key, p.path] as const] : [])));
@@ -836,6 +839,11 @@ function documentHtml(
   const quoteHref = hasForm || tel ? "#quote" : null;
   const credit = opts.creditUrl ? safeHref(opts.creditUrl) : null;
   const areas = areaLinks(content, opts);
+  // Pexels asks for a visible link to them and credit to the photographer when their photo shows.
+  const stock = extra.home ? heroPhoto(content)?.stock ?? null : null;
+  const stockCredit = stock
+    ? `Top photo by <a href="${safeHref(stock.photographerUrl) ?? "https://www.pexels.com/"}" rel="noopener nofollow" target="_blank">${esc(stock.photographer)}</a> on <a href="${safeHref(stock.pageUrl) ?? "https://www.pexels.com/"}" rel="noopener nofollow" target="_blank">Pexels</a>`
+    : "";
   const footer = `<footer class="foot">
   <div class="wrap">
     <div>
@@ -845,6 +853,7 @@ function documentHtml(
       ${website ? `<p><a href="${website}" rel="noopener">${isPricePage ? "Visit our main site" : "Our website"}</a></p>` : ""}
     </div>
     ${areas ? `<nav class="foot-areas" aria-label="Areas we serve"><p class="foot-name">Areas we serve</p><ul>${areas}</ul></nav>` : ""}
+    ${stockCredit ? `<p class="credit photo-credit">${stockCredit}</p>` : ""}
     ${credit ? `<p class="credit"><a href="${credit}" rel="noopener">Powered by Everdoer</a></p>` : ""}
   </div>
 </footer>`;

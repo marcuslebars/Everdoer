@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SiteQuestionsCard, SiteRebuildNote, SiteSectionsCard, SiteServiceLinesCard, SiteStepsCard } from "@/components/website/SiteContentEditor";
+import { SiteQuestionsCard, SiteRebuildNote, SiteSectionsCard, SiteServiceLinesCard, SiteStepsCard, SiteStockPhotoCard } from "@/components/website/SiteContentEditor";
 import type { SiteView } from "@/lib/site-api";
 
 type Site = NonNullable<SiteView["site"]>;
@@ -52,6 +52,7 @@ function site(patch: Partial<Site> = {}): Site {
     ],
     stepsEdited: false,
     pages: null,
+    stock: null,
     theme: "auto",
     color: null,
     servicesCount: 2,
@@ -152,5 +153,32 @@ describe("rewrite with a note", () => {
     expect(screen.getByText("This clears your saved note.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Rewrite the page" }));
     expect(onRebuild).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe("photo at the top", () => {
+  const stock = {
+    available: true,
+    enabled: true,
+    photo: { url: "https://images.pexels.com/p.jpg", alt: "Driveway", photographer: "Pat", photographerUrl: "https://www.pexels.com/@pat", pageUrl: "https://www.pexels.com/photo/1/" },
+  };
+
+  it("shows the photo and its credit; 'Show another' and the switch work; hidden once they have photos or it isn't set up", () => {
+    const save = saver();
+    const onAnother = vi.fn();
+    const { unmount } = render(<SiteStockPhotoCard site={site({ stock })} hasOwnPhotos={false} save={save} onAnother={onAnother} disabled={false} pending={false} />);
+    expect(screen.getByRole("img", { name: "Driveway" })).toHaveAttribute("src", "https://images.pexels.com/p.jpg");
+    expect(screen.getByRole("link", { name: "Pexels" })).toHaveAttribute("href", "https://www.pexels.com/photo/1/");
+    fireEvent.click(screen.getByRole("button", { name: /Show another/ }));
+    expect(onAnother).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("switch", { name: "Use a stock photo at the top" }));
+    expect(save).toHaveBeenCalledWith({ stockPhoto: false }, "Stock photo off");
+    unmount();
+
+    const a = render(<SiteStockPhotoCard site={site({ stock })} hasOwnPhotos save={save} onAnother={onAnother} disabled={false} pending={false} />);
+    expect(a.container).toBeEmptyDOMElement();
+    a.unmount();
+    const b = render(<SiteStockPhotoCard site={site({ stock: { ...stock, available: false } })} hasOwnPhotos={false} save={save} onAnother={onAnother} disabled={false} pending={false} />);
+    expect(b.container).toBeEmptyDOMElement();
   });
 });

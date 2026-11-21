@@ -189,8 +189,44 @@ export function uniqueTowns(list: string[]): string[] {
   return out;
 }
 
+/** A stock photo for the top of the page (site-stock.ts). Only used while the owner has none. */
+export interface SiteStockPhoto {
+  id: number;
+  /** https://images.pexels.com/… */
+  url: string;
+  alt: string;
+  photographer: string;
+  photographerUrl: string;
+  /** The photo's Pexels page. */
+  pageUrl: string;
+  /** The search it came from (a trade change picks a new one). */
+  query: string;
+  /** Position in that search ("Show another" moves it on). */
+  index: number;
+}
+
+function parseStockPhoto(raw: unknown): SiteStockPhoto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+  const pexels = (v: unknown) => typeof v === "string" && /^https:\/\/(www\.)?pexels\.com\//.test(v);
+  if (typeof r.id !== "number" || typeof r.url !== "string" || !/^https:\/\/images\.pexels\.com\//.test(r.url)) return null;
+  return {
+    id: r.id,
+    url: r.url,
+    alt: str(r.alt, 200),
+    photographer: str(r.photographer, 80) || "a Pexels photographer",
+    photographerUrl: pexels(r.photographerUrl) ? (r.photographerUrl as string) : "https://www.pexels.com/",
+    pageUrl: pexels(r.pageUrl) ? (r.pageUrl as string) : "https://www.pexels.com/",
+    query: str(r.query, 120),
+    index: typeof r.index === "number" && r.index >= 0 ? Math.floor(r.index) : 0,
+  };
+}
+
 export interface SiteSettings {
   showPrices: boolean;
+  /** Use the stock photo at the top while the owner has no photos of their own. */
+  stockPhoto: boolean;
   /** The look ("auto" = by trade) — see src/lib/site-style.ts. */
   theme: SiteThemeChoice;
   /** The page's main colour, or null for the brand colour (else the trade's). */
@@ -203,7 +239,7 @@ export interface SiteSettings {
 
 /** Settings for a new page: prices shown, and the look the owner picked before it existed. */
 export function initialSiteSettings(siteStyle: unknown): SiteSettings {
-  return { showPrices: true, ...parseSiteStyle(siteStyle), sections: parseSiteSections(null), pages: defaultSitePagesSettings() };
+  return { showPrices: true, stockPhoto: true, ...parseSiteStyle(siteStyle), sections: parseSiteSections(null), pages: defaultSitePagesSettings() };
 }
 
 /**
@@ -246,6 +282,8 @@ export interface SiteContent {
    * rebuild. What it states counts as the owner's own words when the AI copy is screened.
    */
   copyNote: string | null;
+  /** The stock photo picked for the top of the page (null = none, e.g. no PEXELS_API_KEY). */
+  stockPhoto: SiteStockPhoto | null;
   generatedAt: string;
 }
 
@@ -1056,10 +1094,18 @@ export function parseSiteContent(raw: unknown): SiteContent | null {
     copySource: c.copySource ?? "template",
     copyNotes: Array.isArray(c.copyNotes) ? c.copyNotes : [],
     edits: parseEdits(c.edits),
-    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings), sections: parseSiteSections(c.settings?.sections), pages: parseSitePagesSettings(c.settings?.pages) },
+    settings: { showPrices: c.settings?.showPrices !== false, stockPhoto: c.settings?.stockPhoto !== false, ...parseSiteStyle(c.settings), sections: parseSiteSections(c.settings?.sections), pages: parseSitePagesSettings(c.settings?.pages) },
+    stockPhoto: parseStockPhoto(c.stockPhoto),
     copyNote: typeof c.copyNote === "string" && c.copyNote.trim() ? c.copyNote.trim().slice(0, SITE_COPY_NOTE_MAX) : null,
     generatedAt: typeof c.generatedAt === "string" ? c.generatedAt : "",
   };
+}
+
+/** The photo at the top of the page: the owner's first, else the stock one (if allowed). */
+export function heroPhoto(content: SiteContent): { url: string; stock: SiteStockPhoto | null } | null {
+  if (content.facts.photos[0]) return { url: content.facts.photos[0], stock: null };
+  if (content.settings.stockPhoto !== false && content.stockPhoto) return { url: content.stockPhoto.url, stock: content.stockPhoto };
+  return null;
 }
 
 /** Copy with the owner's edits applied (an empty edit means "use the generated text"). */
