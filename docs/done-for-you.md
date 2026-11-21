@@ -294,6 +294,27 @@ Every page is drawn in one of three looks (`src/lib/site-style.ts`, CSS layers i
   `content.settings`. **After**, `PATCH .../site` with `{ theme?, color? }` writes both
   (`updateSiteStyle`). Pages built before looks existed read as `auto`.
 
+### Owner editing
+
+Settings → Your website lets owners/admins shape the page without touching the facts:
+
+- **Sections** (`content.settings.sections`, `[{id, hidden}]`): the six middle sections
+  (`services`, `steps`, `photos`, `about`, `reviews`, `faqs`) in the owner's order; hidden ones
+  are left out. The hero is always first and the quote form always last (every "Get a quote"
+  points at it). A price page never shows `steps`. `parseSiteSections` keeps every id once, so a
+  section added later appears at the end of an old page. Saves on tap.
+- **Owner wording** (`content.edits`): `headline`/`subhead`/`about` as before, plus
+  `serviceBlurbs` (key → line; unknown keys dropped, empty = ours), `faqs` (≤ 8, replaces ours;
+  `[]` hides the section) and `steps` (2–4, replaces ours). `null` goes back to ours. Owner text
+  is the owner's own claim, so it is **not** fact-screened; it is escaped like everything else.
+  Rebuilds never touch edits. Our steps (`defaultSiteSteps`) follow what the page offers (phone,
+  form, listed prices, booking).
+- **Rewrite with a note** (`content.copyNote`, ≤ 400 chars): `POST .../site
+  {action: "regenerate", note}` — a string sets it, `null` clears it, omitted keeps it. The note
+  goes to the writer as `ownerNote` on every rebuild, and counts as the owner's words when the
+  copy is screened (`screenSiteCopy(..., ownerNote)`): a claim the note states ("24/7 emergency
+  calls") may appear; any other claim is still rejected.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,

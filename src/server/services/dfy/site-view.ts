@@ -8,7 +8,7 @@ import { parseAppliedIndustryPack } from "@/server/services/packs/types";
 import { loadOrganizationBrand } from "@/server/services/platform-brand";
 import type { TenantServiceContext } from "@/server/services/shared";
 
-import { effectiveCopy, parseSiteContent } from "./site-content";
+import { defaultSiteSteps, effectiveCopy, effectiveSteps, parseSiteContent, SITE_SECTION_LABELS, type SiteContent } from "./site-content";
 import { cloudflareConfig, type DomainDns, type DomainStatus } from "./site-domain";
 import { MAX_SITE_PHOTOS, profilePhotos } from "./site-images";
 import { sitePublicUrl } from "./site-public";
@@ -64,6 +64,7 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
         about: Boolean(content?.edits.about),
       },
       showPrices: content?.settings.showPrices ?? true,
+      ...(content ? contentEditing(content) : EMPTY_EDITING),
       theme: content?.settings.theme ?? "auto",
       color: content?.settings.color ?? null,
       servicesCount: content?.facts.services.length ?? 0,
@@ -82,3 +83,50 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
   };
 }
 
+
+const EMPTY_EDITING = {
+  copyNote: null as string | null,
+  sections: [] as Array<{ id: string; label: string; hidden: boolean; available: boolean }>,
+  services: [] as Array<{ key: string; label: string; blurb: string; generated: string; edited: boolean }>,
+  faqs: [] as Array<{ question: string; answer: string }>,
+  generatedFaqs: [] as Array<{ question: string; answer: string }>,
+  faqsEdited: false,
+  steps: [] as Array<{ title: string; text: string }>,
+  generatedSteps: [] as Array<{ title: string; text: string }>,
+  stepsEdited: false,
+};
+
+/** The owner-editable parts: sections, service lines, questions, steps and the writer note. */
+function contentEditing(content: SiteContent): typeof EMPTY_EDITING {
+  const f = content.facts;
+  const copy = effectiveCopy(content);
+  // The page always has the quote form; the steps follow what else it offers.
+  const offers = { phone: Boolean(f.phoneE164), form: true, booking: f.bookingEnabled };
+  const anyPrice = content.settings.showPrices && f.services.some((s) => s.priceText);
+  // Whether a section has anything to show, so the editor can say "nothing to show yet".
+  const available: Record<string, boolean> = {
+    services: f.services.length > 0,
+    steps: content.mode !== "price_page",
+    photos: f.photos.length > 1,
+    about: content.mode !== "price_page" || Boolean(f.serviceArea || f.hoursLines.length),
+    reviews: Boolean(f.rating && f.reviewCount),
+    faqs: copy.faqs.length > 0,
+  };
+  return {
+    copyNote: content.copyNote,
+    sections: content.settings.sections.map((sec) => ({ id: sec.id, label: SITE_SECTION_LABELS[sec.id], hidden: sec.hidden, available: available[sec.id] ?? true })),
+    services: f.services.map((s) => ({
+      key: s.key,
+      label: s.label,
+      blurb: copy.serviceBlurbs[s.key] ?? "",
+      generated: content.copy.serviceBlurbs[s.key] ?? "",
+      edited: Boolean(content.edits.serviceBlurbs?.[s.key]),
+    })),
+    faqs: copy.faqs,
+    generatedFaqs: content.copy.faqs,
+    faqsEdited: Array.isArray(content.edits.faqs),
+    steps: effectiveSteps(content, offers),
+    generatedSteps: defaultSiteSteps({ ...offers, anyPrice }),
+    stepsEdited: Array.isArray(content.edits.steps),
+  };
+}

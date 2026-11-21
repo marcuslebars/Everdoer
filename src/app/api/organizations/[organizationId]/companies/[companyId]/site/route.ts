@@ -3,9 +3,16 @@ import { z } from "zod";
 
 import { SITE_THEME_CHOICES, type SiteThemeChoice } from "@/lib/site-style";
 import { siteRoute } from "@/server/api/site-route";
-import { SITE_MODES } from "@/server/services/dfy/site-content";
+import {
+  MAX_SITE_FAQS,
+  SITE_COPY_NOTE_MAX,
+  SITE_MODES,
+  SITE_SECTION_IDS,
+  siteFaqEditSchema,
+  siteStepEditSchema,
+} from "@/server/services/dfy/site-content";
 import { checkSiteDomain, domainCheckDue } from "@/server/services/dfy/site-domain";
-import { generateSite, setSiteStatus, updateSiteEdits, updateSiteStyle } from "@/server/services/dfy/site-generator";
+import { generateSite, setSiteStatus, updateSiteEdits, updateSiteStyle, type SiteEditInput } from "@/server/services/dfy/site-generator";
 import { siteView } from "@/server/services/dfy/site-view";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 
@@ -40,6 +47,17 @@ const patchSchema = z
     headline: z.string().max(90).nullable().optional(),
     subhead: z.string().max(220).nullable().optional(),
     about: z.string().max(1200).nullable().optional(),
+    /** service key → the owner's line ("" or null = back to ours). */
+    serviceBlurbs: z.record(z.string().min(1).max(80), z.string().max(200).nullable()).refine((r) => Object.keys(r).length <= 60, "Too many services.").optional(),
+    /** The owner's questions (null = back to ours). */
+    faqs: z.array(siteFaqEditSchema).max(MAX_SITE_FAQS, `Keep it to ${MAX_SITE_FAQS} questions.`).nullable().optional(),
+    /** The owner's "How it works" steps (null = back to ours). */
+    steps: z.array(siteStepEditSchema).min(2, "Keep at least two steps.").max(4, "Keep it to four steps.").nullable().optional(),
+    /** Section order and visibility. */
+    sections: z
+      .array(z.object({ id: z.enum(SITE_SECTION_IDS), hidden: z.boolean() }).strict())
+      .max(SITE_SECTION_IDS.length)
+      .optional(),
     showPrices: z.boolean().optional(),
     mode: z.enum(SITE_MODES).optional(),
     /** The look; works before the page exists too (see updateSiteStyle). */
@@ -64,7 +82,7 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Ne
       if (theme !== undefined || color !== undefined) {
         await updateSiteStyle(admin, companyId, { ...(theme !== undefined ? { theme } : {}), ...(color !== undefined ? { color } : {}) });
       }
-      if (Object.keys(edits).length > 0) await updateSiteEdits(admin, companyId, edits);
+      if (Object.keys(edits).length > 0) await updateSiteEdits(admin, companyId, edits as SiteEditInput);
       return NextResponse.json({ data: await siteView(ctx, companyId, canManage) });
     },
     { manage: true },
@@ -75,6 +93,11 @@ const actionSchema = z.object({
   action: z.enum(["generate", "regenerate", "publish", "unpublish"]),
   /** generate/regenerate only: publish in the same step. */
   publish: z.boolean().optional(),
+  /**
+   * generate/regenerate only: the owner's note to the writer ("friendlier", "we do 24/7
+   * emergency calls"). A string sets it, null clears it, omitted keeps the saved one.
+   */
+  note: z.string().max(SITE_COPY_NOTE_MAX, `Keep the note under ${SITE_COPY_NOTE_MAX} characters.`).nullable().optional(),
 });
 
 /** Generate / regenerate / publish / unpublish (owners/admins). */
@@ -87,7 +110,7 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
       const body = actionSchema.parse(await request.json().catch(() => ({})));
       const admin = createSupabaseAdminClient();
       if (body.action === "generate" || body.action === "regenerate") {
-        await generateSite(admin, companyId, { publish: body.publish === true });
+        await generateSite(admin, companyId, { publish: body.publish === true, ...(body.note !== undefined ? { copyNote: body.note } : {}) });
         if (body.publish) await setSiteStatus(admin, companyId, "published", { markOwnerNotified: true });
       } else if (body.action === "publish") {
         const { data: existing } = await ctx.supabase.from("company_sites").select("id").eq("organization_id", organizationId).eq("company_id", companyId).maybeSingle();

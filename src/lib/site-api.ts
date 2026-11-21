@@ -37,6 +37,18 @@ export interface SiteView {
     generated: { headline: string; subhead: string; about: string } | null;
     edited: { headline: boolean; subhead: boolean; about: boolean };
     showPrices: boolean;
+    /** The owner's saved note to the writer (used on every rebuild). */
+    copyNote: string | null;
+    /** Sections between the top and the quote form, in page order. */
+    sections: SiteSectionView[];
+    /** Each service's one-liner (the owner's, else ours) and ours, for "Use ours". */
+    services: Array<{ key: string; label: string; blurb: string; generated: string; edited: boolean }>;
+    faqs: SiteFaq[];
+    generatedFaqs: SiteFaq[];
+    faqsEdited: boolean;
+    steps: SiteStep[];
+    generatedSteps: SiteStep[];
+    stepsEdited: boolean;
     /** The page's look (theme + colour). */
     theme: SiteThemeChoice;
     color: string | null;
@@ -55,12 +67,33 @@ export interface SiteView {
   };
 }
 
+export type SiteSectionId = "services" | "steps" | "photos" | "about" | "reviews" | "faqs";
+export interface SiteSectionView {
+  id: SiteSectionId;
+  label: string;
+  hidden: boolean;
+  /** False when the section has nothing to show yet (it stays off the page either way). */
+  available: boolean;
+}
+export interface SiteFaq {
+  question: string;
+  answer: string;
+}
+export interface SiteStep {
+  title: string;
+  text: string;
+}
+
 export type SiteImageKind = "logo" | "photo" | "favicon";
 
 export interface SiteEditInput {
   headline?: string | null;
   subhead?: string | null;
   about?: string | null;
+  serviceBlurbs?: Record<string, string | null>;
+  faqs?: SiteFaq[] | null;
+  steps?: SiteStep[] | null;
+  sections?: Array<{ id: SiteSectionId; hidden: boolean }>;
   showPrices?: boolean;
   mode?: SiteMode;
   theme?: SiteThemeChoice;
@@ -75,8 +108,11 @@ const KEY = "company-site";
 export const fetchSite = (orgId: string, companyId: string) => apiFetch<SiteView>(path(orgId, companyId));
 export const saveSiteEdits = (orgId: string, companyId: string, body: SiteEditInput) =>
   apiFetch<SiteView>(path(orgId, companyId), { method: "PATCH", body: JSON.stringify(body) });
-export const runSiteAction = (orgId: string, companyId: string, action: SiteAction, publish?: boolean) =>
-  apiFetch<SiteView>(path(orgId, companyId), { method: "POST", body: JSON.stringify({ action, ...(publish !== undefined ? { publish } : {}) }) });
+export const runSiteAction = (orgId: string, companyId: string, action: SiteAction, publish?: boolean, note?: string | null) =>
+  apiFetch<SiteView>(path(orgId, companyId), {
+    method: "POST",
+    body: JSON.stringify({ action, ...(publish !== undefined ? { publish } : {}), ...(note !== undefined ? { note } : {}) }),
+  });
 
 export function useSite(orgId: string, companyId: string | null) {
   return useQuery({ queryKey: [KEY, orgId, companyId], queryFn: () => fetchSite(orgId, companyId!), enabled: Boolean(orgId && companyId) });
@@ -93,7 +129,8 @@ export function useSaveSiteEdits(orgId: string, companyId: string) {
 export function useSiteAction(orgId: string, companyId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { action: SiteAction; publish?: boolean }) => runSiteAction(orgId, companyId, input.action, input.publish),
+    mutationFn: (input: { action: SiteAction; publish?: boolean; note?: string | null }) =>
+      runSiteAction(orgId, companyId, input.action, input.publish, input.note),
     onSuccess: (data) => qc.setQueryData([KEY, orgId, companyId], data),
   });
 }

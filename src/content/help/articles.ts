@@ -210,6 +210,16 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         body:
           "In Settings → Your website you can change the headline, the line under it and the About text, then click \"Save changes\". Clear a box and save to go back to the text we wrote. Turn off \"Show prices\" to show \"Get a quote\" for every service. To change a price, change it in Settings → Industry pack, then click Regenerate. \"Kind of page\" switches between a full website and a services and prices page.",
       },
+      {
+        heading: "Choosing sections, questions and steps",
+        body:
+          "In Settings → Your website:\n- Sections: turn each part of the page on or off, and use the arrows to change the order. The top of the page and the quote form always stay where they are.\n- Service descriptions: change the short line under any service. Clear a box to go back to ours.\n- Questions: edit, reorder, add (up to 8) or remove the questions and answers. \"Use ours\" puts our questions back.\n- How it works: change the two to four steps.\nEach part has its own Save button. What you write yourself is never changed when the page is rebuilt.",
+      },
+      {
+        heading: "Rewriting the page with a note",
+        body:
+          "Tell us how you'd like the page to read, like \"Make it friendlier\", \"Mention we do 24/7 emergency calls\" or \"We mostly work on cottages\", then click \"Rewrite the page\". We rewrite the wording with your note and keep it for every rebuild. Anything your note says about your business can go on the page, and nothing else is made up. Wording you've written yourself stays as it is. Clear the note and rewrite to stop using it.",
+      },
     ],
   },
   {

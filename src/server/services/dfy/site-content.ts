@@ -86,10 +86,60 @@ export interface SiteCopy {
   serviceBlurbs: Record<string, string>;
 }
 
+/** One "How it works" step. */
+export interface SiteStep {
+  title: string;
+  text: string;
+}
+
+/**
+ * The owner's own words. Each field overrides what we generated; missing/null means "use ours".
+ * Owner text is the owner's own claim, so it is NOT fact-screened (the AI copy is).
+ */
 export interface SiteEdits {
   headline?: string | null;
   subhead?: string | null;
   about?: string | null;
+  /** service key → the owner's one-liner (a key we no longer have is ignored). */
+  serviceBlurbs?: Record<string, string>;
+  /** The owner's question list, replacing ours (an empty list shows no questions). */
+  faqs?: SiteFaq[] | null;
+  /** The owner's "How it works" steps, replacing ours. */
+  steps?: SiteStep[] | null;
+}
+
+/** The sections between the hero and the quote form, which owners can reorder or hide. */
+export const SITE_SECTION_IDS = ["services", "steps", "photos", "about", "reviews", "faqs"] as const;
+export type SiteSectionId = (typeof SITE_SECTION_IDS)[number];
+
+export interface SiteSection {
+  id: SiteSectionId;
+  hidden: boolean;
+}
+
+export const SITE_SECTION_LABELS: Record<SiteSectionId, string> = {
+  services: "Services and prices",
+  steps: "How it works",
+  photos: "Our work (photos)",
+  about: "About, area and hours",
+  reviews: "Google reviews",
+  faqs: "Questions",
+};
+
+/** Every section once, in a known order: the saved order first, then any we added since. */
+export function parseSiteSections(raw: unknown): SiteSection[] {
+  const out: SiteSection[] = [];
+  const seen = new Set<SiteSectionId>();
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const id = (item as { id?: unknown } | null)?.id;
+      if (typeof id !== "string" || !(SITE_SECTION_IDS as readonly string[]).includes(id) || seen.has(id as SiteSectionId)) continue;
+      seen.add(id as SiteSectionId);
+      out.push({ id: id as SiteSectionId, hidden: (item as { hidden?: unknown }).hidden === true });
+    }
+  }
+  for (const id of SITE_SECTION_IDS) if (!seen.has(id)) out.push({ id, hidden: false });
+  return out;
 }
 
 export interface SiteSettings {
@@ -98,11 +148,34 @@ export interface SiteSettings {
   theme: SiteThemeChoice;
   /** The page's main colour, or null for the brand colour (else the trade's). */
   color: string | null;
+  /** Section order and visibility (hero first and the quote form last are fixed). */
+  sections: SiteSection[];
 }
 
 /** Settings for a new page: prices shown, and the look the owner picked before it existed. */
 export function initialSiteSettings(siteStyle: unknown): SiteSettings {
-  return { showPrices: true, ...parseSiteStyle(siteStyle) };
+  return { showPrices: true, ...parseSiteStyle(siteStyle), sections: parseSiteSections(null) };
+}
+
+/**
+ * The "How it works" steps we write when the owner hasn't: they follow what the page offers
+ * (phone, quote form, listed prices, online booking), so they never promise a missing route.
+ */
+export function defaultSiteSteps(input: { phone: boolean; form: boolean; anyPrice: boolean; booking: boolean }): SiteStep[] {
+  return [
+    {
+      title: "Tell us about the job",
+      text: input.phone && input.form ? "Call us or send a request with the form below." : input.phone ? "Give us a call." : "Send a request with the form below.",
+    },
+    {
+      title: "Get your price",
+      text: input.anyPrice ? "Regular services are priced above. Anything else, we price for you." : "We look at what you need and give you a price.",
+    },
+    {
+      title: input.booking ? "Book a time" : "Pick a time",
+      text: input.booking ? "Book online, or we'll set a time with you." : "We set a time that works for you.",
+    },
+  ];
 }
 
 export type CopySource = "ai" | "template" | "mixed";
@@ -119,8 +192,15 @@ export interface SiteContent {
   copyNotes: string[];
   edits: SiteEdits;
   settings: SiteSettings;
+  /**
+   * The owner's note to the writer ("friendlier", "we do 24/7 emergency calls"), kept for every
+   * rebuild. What it states counts as the owner's own words when the AI copy is screened.
+   */
+  copyNote: string | null;
   generatedAt: string;
 }
+
+export const SITE_COPY_NOTE_MAX = 400;
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
@@ -506,9 +586,10 @@ export function factsUsed(facts: SiteFacts): string[] {
 }
 
 /** The facts JSON handed to the copywriter. NO prices (it never needs them, so it can't misquote them). */
-export function copywriterFacts(facts: SiteFacts, mode: SiteMode): Record<string, unknown> {
+export function copywriterFacts(facts: SiteFacts, mode: SiteMode, ownerNote: string | null = null): Record<string, unknown> {
   return {
     mode,
+    ...(ownerNote ? { ownerNote } : {}),
     businessName: facts.name,
     trade: facts.tradeLabel,
     phone: facts.phoneDisplay,
@@ -743,8 +824,9 @@ const CLAIM_PATTERNS: RegExp[] = [
   /“|”|"[^"]{12,}"/g,
 ];
 
-export function factsText(facts: SiteFacts): string {
+export function factsText(facts: SiteFacts, ownerNote: string | null = null): string {
   return [
+    ownerNote,
     facts.name,
     facts.phoneDisplay,
     facts.phoneE164,
@@ -806,9 +888,10 @@ export interface ScreenedCopy {
  * missing) keeps the template's version, and the reason is recorded. Service blurbs for keys
  * we don't have are dropped; FAQs that fail are dropped and the template's fill the gap.
  */
-export function screenSiteCopy(model: SiteCopyModelOutput, facts: SiteFacts, mode: SiteMode): ScreenedCopy {
+export function screenSiteCopy(model: SiteCopyModelOutput, facts: SiteFacts, mode: SiteMode, ownerNote: string | null = null): ScreenedCopy {
   const template = templateSiteCopy(facts, mode);
-  const known = factsText(facts);
+  // The owner's note is their own word: a claim it makes ("24/7 emergency calls") may appear.
+  const known = factsText(facts, ownerNote);
   const notes: string[] = [];
   let used = 0;
   let replaced = 0;
@@ -868,11 +951,47 @@ export function screenSiteCopy(model: SiteCopyModelOutput, facts: SiteFacts, mod
 
 // ── Content JSON ─────────────────────────────────────────────────────────────
 
+export const siteFaqEditSchema = z.object({
+  question: z.string().trim().min(1, "Each question needs a question.").max(140),
+  answer: z.string().trim().min(1, "Each question needs an answer.").max(600),
+});
+
+export const siteStepEditSchema = z.object({
+  title: z.string().trim().min(1, "Each step needs a title.").max(60),
+  text: z.string().trim().min(1, "Each step needs a line of text.").max(200),
+});
+
+export const MAX_SITE_FAQS = 8;
+
 export const siteEditsSchema = z.object({
   headline: z.string().trim().max(90).nullable().optional(),
   subhead: z.string().trim().max(220).nullable().optional(),
   about: z.string().trim().max(1200).nullable().optional(),
+  serviceBlurbs: z.record(z.string().min(1).max(80), z.string().max(200).nullable()).optional(),
+  faqs: z.array(siteFaqEditSchema).max(MAX_SITE_FAQS).nullable().optional(),
+  steps: z.array(siteStepEditSchema).min(2, "Keep at least two steps.").max(4).nullable().optional(),
 });
+
+function parseEdits(raw: unknown): SiteEdits {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const e = raw as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === "string" ? v : v === null ? null : undefined);
+  const out: SiteEdits = {};
+  for (const key of ["headline", "subhead", "about"] as const) {
+    const v = text(e[key]);
+    if (v !== undefined) out[key] = v;
+  }
+  if (e.serviceBlurbs && typeof e.serviceBlurbs === "object" && !Array.isArray(e.serviceBlurbs)) {
+    const blurbs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(e.serviceBlurbs as Record<string, unknown>)) if (typeof v === "string" && v.trim()) blurbs[k] = v.trim();
+    out.serviceBlurbs = blurbs;
+  }
+  const faqs = z.array(siteFaqEditSchema).max(MAX_SITE_FAQS).safeParse(e.faqs);
+  if (faqs.success) out.faqs = faqs.data as SiteFaq[];
+  const steps = z.array(siteStepEditSchema).min(2).max(4).safeParse(e.steps);
+  if (steps.success) out.steps = steps.data as SiteStep[];
+  return out;
+}
 
 /** Read company_sites.content defensively. Null when it isn't a v1 document we can render. */
 export function parseSiteContent(raw: unknown): SiteContent | null {
@@ -887,8 +1006,9 @@ export function parseSiteContent(raw: unknown): SiteContent | null {
     copy: { ...c.copy, faqs: Array.isArray(c.copy.faqs) ? c.copy.faqs : [], serviceBlurbs: c.copy.serviceBlurbs ?? {} },
     copySource: c.copySource ?? "template",
     copyNotes: Array.isArray(c.copyNotes) ? c.copyNotes : [],
-    edits: c.edits && typeof c.edits === "object" ? c.edits : {},
-    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings) },
+    edits: parseEdits(c.edits),
+    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings), sections: parseSiteSections(c.settings?.sections) },
+    copyNote: typeof c.copyNote === "string" && c.copyNote.trim() ? c.copyNote.trim().slice(0, SITE_COPY_NOTE_MAX) : null,
     generatedAt: typeof c.generatedAt === "string" ? c.generatedAt : "",
   };
 }
@@ -902,5 +1022,14 @@ export function effectiveCopy(content: SiteContent): SiteCopy {
     headline: pickEdit(e.headline, content.copy.headline),
     subhead: pickEdit(e.subhead, content.copy.subhead),
     about: pickEdit(e.about, content.copy.about),
+    serviceBlurbs: { ...content.copy.serviceBlurbs, ...(e.serviceBlurbs ?? {}) },
+    faqs: Array.isArray(e.faqs) ? e.faqs : content.copy.faqs,
   };
+}
+
+/** The steps the page shows: the owner's, else ours for what the page offers. */
+export function effectiveSteps(content: SiteContent, offers: { phone: boolean; form: boolean; booking: boolean }): SiteStep[] {
+  if (Array.isArray(content.edits.steps) && content.edits.steps.length >= 2) return content.edits.steps;
+  const anyPrice = content.settings.showPrices && content.facts.services.some((s) => s.priceText);
+  return defaultSiteSteps({ ...offers, anyPrice });
 }
