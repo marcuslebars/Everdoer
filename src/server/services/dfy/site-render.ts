@@ -3,6 +3,8 @@ import { smsConsentText } from "@/server/services/lead-intake/public-form-envelo
 
 import {
   effectiveCopy,
+  effectiveSteps,
+  type SiteSectionId,
   hexColor,
   tradeProfile,
   type SiteContent,
@@ -677,13 +679,12 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
 </section>`
     : "";
 
+  const stepList = effectiveSteps(content, { phone: Boolean(tel), form: hasForm, booking: Boolean(booking) });
   const steps = `<section class="section flow" aria-labelledby="how-title">
   <div class="wrap">
     <div class="section-head"><h2 id="how-title">How it works</h2></div>
     <ol class="steps">
-      <li><h3>Tell us about the job</h3><p>${tel && hasForm ? "Call us or send a request with the form below." : tel ? "Give us a call." : "Send a request with the form below."}</p></li>
-      <li><h3>Get your price</h3><p>${anyPrice ? "Regular services are priced above. Anything else, we price for you." : "We look at what you need and give you a price."}</p></li>
-      <li><h3>${booking ? "Book a time" : "Pick a time"}</h3><p>${booking ? "Book online, or we'll set a time with you." : "We set a time that works for you."}</p></li>
+      ${stepList.map((st) => `<li><h3>${esc(st.title)}</h3><p>${esc(st.text)}</p></li>`).join("\n      ")}
     </ol>
   </div>
 </section>`;
@@ -748,9 +749,11 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
     ? `<nav class="bar" aria-label="Quick actions">${tel ? `<a class="btn btn-call" href="${esc(tel)}">${ICON.phone}<span>Call</span></a>` : ""}${quoteHref && hasForm ? `<a class="btn btn-accent" href="#quote">Get a quote</a>` : ""}${!hasForm && booking ? `<a class="btn btn-accent" href="${booking}">Book online</a>` : ""}</nav>`
     : "";
 
-  const body = isPricePage
-    ? [hero, services, gallery, about, reviews, faqs, quoteForm(content, opts)]
-    : [hero, services, steps, gallery, about, reviews, faqs, quoteForm(content, opts)];
+  // Hero first and the quote form last (every "Get a quote" button points at it); the sections
+  // between follow the owner's order, minus the ones they hid. A price page has no steps.
+  const byId: Record<SiteSectionId, string> = { services, steps: isPricePage ? "" : steps, photos: gallery, about, reviews, faqs };
+  const middle = content.settings.sections.filter((sec) => !sec.hidden).map((sec) => byId[sec.id]);
+  const body = [hero, ...middle, quoteForm(content, opts)];
 
   return `<!doctype html>
 <html lang="en-CA">

@@ -6,11 +6,18 @@ import { Switch } from "@/components/ui/switch";
 import { resolveApiUrl } from "@/lib/api-client";
 import { useCompanies } from "@/lib/api-hooks";
 import { useOrg } from "@/lib/org-context";
-import { useSaveSiteEdits, useSite, useSiteAction, type SiteMode, type SiteView } from "@/lib/site-api";
+import { useSaveSiteEdits, useSite, useSiteAction, type SiteEditInput, type SiteMode, type SiteView } from "@/lib/site-api";
 import { cn } from "@/lib/utils";
 import { useSettingsCompany } from "@/lib/settings-company";
 import { SiteDomainCard, SiteImagesCard } from "@/components/settings/WebsiteBranding";
 import { SiteLookPicker } from "@/components/website/SiteLookPicker";
+import {
+  SiteQuestionsCard,
+  SiteRebuildNote,
+  SiteSectionsCard,
+  SiteServiceLinesCard,
+  SiteStepsCard,
+} from "@/components/website/SiteContentEditor";
 import type { SiteStyle } from "@/lib/site-style";
 
 const inputCls =
@@ -86,9 +93,21 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
     }
   };
 
-  const run = async (kind: "generate" | "regenerate" | "publish" | "unpublish", done: string, publish?: boolean) => {
+  // Sections, service lines, questions and steps each save on their own.
+  const saveContent = async (body: SiteEditInput, done: string): Promise<boolean> => {
     try {
-      await action.mutateAsync({ action: kind, publish });
+      await save.mutateAsync(body);
+      toast.success(done);
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save.");
+      return false;
+    }
+  };
+
+  const run = async (kind: "generate" | "regenerate" | "publish" | "unpublish", done: string, publish?: boolean, note?: string | null) => {
+    try {
+      await action.mutateAsync({ action: kind, publish, note });
       toast.success(done);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't do that. Try again.");
@@ -192,6 +211,15 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
         <p className={hintCls}>
           Regenerate rebuilds the page from your current business details, services and prices. Your own wording below is kept.
         </p>
+        {canManage && (
+          <SiteRebuildNote
+            key={site.copyNote ?? ""}
+            savedNote={site.copyNote}
+            disabled={busy}
+            pending={action.isPending}
+            onRebuild={(note) => void run("regenerate", note ? "Page rewritten with your note." : "Note cleared and page rewritten.", undefined, note)}
+          />
+        )}
       </div>
 
       <div className="rounded-xl border border-border p-4 space-y-3">
@@ -206,6 +234,8 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
           disabled={!canManage || busy}
         />
       </div>
+
+      <SiteSectionsCard site={site} save={saveContent} disabled={!canManage || busy} />
 
       <SiteImagesCard orgId={orgId} view={data} />
       <SiteDomainCard orgId={orgId} view={data} />
@@ -270,6 +300,11 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
           {!canManage && <p className="text-xs text-muted-foreground bg-secondary rounded-lg px-3 py-2">Only owners and admins can change the website.</p>}
         </>
       )}
+
+      {/* Keyed on what the server holds, so a save (or a rebuild) refreshes the card's draft. */}
+      <SiteServiceLinesCard key={`blurbs:${JSON.stringify(site.services)}`} site={site} save={saveContent} disabled={!canManage || busy} />
+      <SiteQuestionsCard key={`faqs:${JSON.stringify(site.faqs)}`} site={site} save={saveContent} disabled={!canManage || busy} />
+      <SiteStepsCard key={`steps:${JSON.stringify(site.steps)}`} site={site} save={saveContent} disabled={!canManage || busy} />
     </div>
   );
 }

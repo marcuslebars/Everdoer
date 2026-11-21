@@ -34,7 +34,9 @@ import {
   factsUsed,
   initialSiteSettings,
   parseSiteContent,
+  parseSiteSections,
   screenSiteCopy,
+  SITE_COPY_NOTE_MAX,
   siteSlugBase,
   slugCandidates,
   SITE_CONTENT_VERSION,
@@ -43,6 +45,7 @@ import {
   type SiteContent,
   type SiteEdits,
   type SiteMode,
+  type SiteSection,
   type SiteSettings,
   type SiteStatus,
 } from "./site-content";
@@ -172,6 +175,11 @@ export interface GenerateSiteOptions {
   publish?: boolean;
   /** Override the mode (otherwise: keep the existing site's mode, else chosen from companies.website). */
   mode?: SiteMode;
+  /**
+   * The owner's note to the writer: a string sets it, null clears it, undefined keeps the saved
+   * one. It is kept on the page and used for every later rebuild.
+   */
+  copyNote?: string | null;
   deps?: Partial<SiteGeneratorDeps>;
 }
 
@@ -209,13 +217,16 @@ export async function generateSite(admin: AdminClient, companyId: string, option
     brand,
   });
 
+  const copyNote =
+    options.copyNote === undefined ? (previous?.copyNote ?? null) : options.copyNote?.trim() ? options.copyNote.trim().slice(0, SITE_COPY_NOTE_MAX) : null;
+
   let copy = templateSiteCopy(facts, mode);
   let copySource: SiteContent["copySource"] = "template";
   let copyNotes: string[] = [];
   if (deps.writeCopy) {
     try {
-      const result = await deps.writeCopy(copywriterFacts(facts, mode));
-      const screened = screenSiteCopy(result.copy, facts, mode);
+      const result = await deps.writeCopy(copywriterFacts(facts, mode, copyNote));
+      const screened = screenSiteCopy(result.copy, facts, mode, copyNote);
       copy = screened.copy;
       copySource = screened.source;
       copyNotes = screened.notes;
@@ -239,6 +250,7 @@ export async function generateSite(admin: AdminClient, companyId: string, option
     copyNotes,
     edits: previous?.edits ?? {},
     settings: previous?.settings ?? initialSiteSettings(company.site_style),
+    copyNote,
     generatedAt: now,
   };
 
@@ -305,12 +317,18 @@ export async function setSiteStatus(
   return data as CompanySiteRow;
 }
 
-export interface SiteEditInput extends SiteEdits {
+export interface SiteEditInput extends Omit<SiteEdits, "serviceBlurbs"> {
+  /** key → text; an empty string or null goes back to our line for that service. */
+  serviceBlurbs?: Record<string, string | null>;
   showPrices?: boolean;
   mode?: SiteMode;
+  sections?: SiteSection[];
 }
 
-/** Owner edits: headline/subhead/about overrides (empty string clears), show prices, mode. */
+/**
+ * Owner edits: headline/subhead/about overrides (empty string clears), service lines, the
+ * question list and steps (null goes back to ours), section order/visibility, prices, mode.
+ */
 export async function updateSiteEdits(admin: AdminClient, companyId: string, input: SiteEditInput, now: Date = new Date()): Promise<CompanySiteRow> {
   const existing = await loadSiteRow(admin, companyId);
   if (!existing) throw new SiteNotFoundError("This company doesn't have a page yet.");
@@ -323,7 +341,24 @@ export async function updateSiteEdits(admin: AdminClient, companyId: string, inp
       edits[key] = v ? v : null;
     }
   }
-  const settings: SiteSettings = { ...content.settings, ...(input.showPrices !== undefined ? { showPrices: input.showPrices } : {}) };
+  if (input.serviceBlurbs !== undefined) {
+    const keys = new Set(content.facts.services.map((sv) => sv.key));
+    const blurbs: Record<string, string> = { ...(edits.serviceBlurbs ?? {}) };
+    for (const [key, value] of Object.entries(input.serviceBlurbs)) {
+      if (!keys.has(key)) continue;
+      const v = (value ?? "").trim();
+      if (v) blurbs[key] = v;
+      else delete blurbs[key];
+    }
+    edits.serviceBlurbs = blurbs;
+  }
+  if (input.faqs !== undefined) edits.faqs = input.faqs === null ? null : input.faqs.map((q) => ({ question: q.question.trim(), answer: q.answer.trim() }));
+  if (input.steps !== undefined) edits.steps = input.steps === null ? null : input.steps.map((st) => ({ title: st.title.trim(), text: st.text.trim() }));
+  const settings: SiteSettings = {
+    ...content.settings,
+    ...(input.showPrices !== undefined ? { showPrices: input.showPrices } : {}),
+    ...(input.sections !== undefined ? { sections: parseSiteSections(input.sections) } : {}),
+  };
   const mode = input.mode ?? content.mode;
   const next: SiteContent = { ...content, edits, settings, mode };
   const { data, error } = await admin
