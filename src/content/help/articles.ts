@@ -238,7 +238,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         heading: "Seeing how your page is doing",
         body:
-          "Once your page is live, your dashboard and Settings → Your website show the last 30 days: visits, call taps (people tapping your number on the page) and quote requests sent from the page, compared with the 30 days before. You can also see where visitors came from (Google, Facebook, ads, a saved link and so on) and which pages they looked at most.\nWe don't use cookies and we don't keep anything about the people who visit.",
+          "Once your page is live, your dashboard and Settings → Your website show the last 30 days: visits, call taps (people tapping your number on the page) and quote requests sent from the page, compared with the 30 days before. You can also see where visitors came from (Google, Facebook, ads, a saved link and so on) and which pages they looked at most.\nYour Monday weekly report also says how many people visited your website and how many asked for a quote from it.\nWe don't use cookies and we don't keep anything about the people who visit.",
       },
       {
         heading: "Rewriting the page with a note",
