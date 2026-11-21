@@ -387,6 +387,27 @@ plenty to start); apply for production in the Unsplash dashboard with screenshot
 - Unsplash's API guidelines: images are **hotlinked** (never copied); the footer says "Top photo
   by <name> on Unsplash" with both linked and tagged `utm_source=everdoer&utm_medium=referral`;
   picking a photo calls its `download_location` (server-side) to report the use.
+### Google reviews
+
+The reviews section shows the business's latest Google reviews (up to 5, as Google returns
+them: "most relevant", never filtered by stars) under the rating, when the company has a
+Google listing (`companies.google_place_id`) and `GOOGLE_PLACES_API_KEY` is set.
+
+- **Never stored** (Google's Places terms forbid pre-fetching, caching or storing review text).
+  The page's script asks `GET /api/public/sites/reviews?s=<slug>` when the section scrolls into
+  view (IntersectionObserver); the route asks Google live (`site-reviews.ts`, field mask
+  `reviews,rating,userRatingCount,googleMapsUri`) and answers `Cache-Control: no-store`.
+  Nothing is written anywhere. The existing "we keep the rating and review COUNT" rule stands.
+- **Attribution:** the author's name (linked to their Google profile when given) sits on each
+  review; "Reviews from Google Maps, most relevant first" with links to Google's Privacy Policy
+  and Terms. Text is inserted with `textContent` only; links only to https Google hosts.
+- **Cost:** each fetch is a billed Place Details (Enterprise + Atmosphere) call — 1,000 free a
+  month, then about US$25 per 1,000. Limits run before the call: per IP (20 / 10 min), per site
+  per day `SITE_REVIEWS_DAILY_PER_SITE` (default 50) and a monthly total
+  `SITE_REVIEWS_MONTHLY_CAP` (default 1000 = the free calls; `0` turns live reviews off). Over a
+  cap, unknown site, hidden section or a Google error → `{data: null}` and the page keeps its
+  rating and "Read our Google reviews" link. The owner preview shows a placeholder and calls
+  nobody.
 
 ### Copy
 

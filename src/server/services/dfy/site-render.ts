@@ -60,6 +60,11 @@ export interface SiteRenderOptions {
    * Null/absent (and always in the owner preview) → no counting script.
    */
   stats?: { endpoint: string; slug: string } | null;
+  /**
+   * Live Google reviews (fetched by the visitor's browser when the section scrolls into view;
+   * never stored). Null/absent → the section keeps just the rating and the link.
+   */
+  reviews?: { endpoint: string; slug: string } | null;
 }
 
 // ── Escaping ─────────────────────────────────────────────────────────────────
@@ -259,10 +264,23 @@ function stepsSection(content: SiteContent, opts: SiteRenderOptions): string {
 </section>`;
 }
 
-function reviewsSection(f: SiteFacts): string {
+/**
+ * Google rating + "Read our Google reviews", and (when set up) a block the visitor's browser
+ * fills with the business's latest Google reviews once the section scrolls into view. Google's
+ * terms: review text is never stored, the author's name sits with each review, Google Maps is
+ * credited, and reviews show as Google returns them (most relevant), never filtered by stars.
+ */
+function reviewsSection(f: SiteFacts, opts: SiteRenderOptions): string {
   const reviewHref = safeHref(f.reviewUrl) ?? safeHref(f.mapsUrl);
-  return f.rating && f.reviewCount
-    ? `<section class="section reviews" aria-labelledby="reviews-title">
+  if (!f.rating || !f.reviewCount) return "";
+  const live = opts.reviews && safeHref(opts.reviews.endpoint) ? opts.reviews : null;
+  const liveBlock = !live
+    ? ""
+    : opts.preview
+      ? '<p class="gr-note">Your latest Google reviews show here on the live page.</p>'
+      : `<div class="gr" data-gr hidden><ul class="gr-list"></ul><p class="gr-attr">Reviews from <span class="gr-g">Google Maps</span>, most relevant first. <a href="https://policies.google.com/privacy" rel="noopener nofollow" target="_blank">Google Privacy Policy</a> · <a href="https://policies.google.com/terms" rel="noopener nofollow" target="_blank">Terms</a></p></div>
+<script>${reviewsScript(live)}</script>`;
+  return `<section class="section reviews" aria-labelledby="reviews-title">
   <div class="wrap">
     <div class="score">
       <span class="score-num">${esc(f.rating.toFixed(1))}</span>
@@ -270,8 +288,22 @@ function reviewsSection(f: SiteFacts): string {
     </div>
     ${reviewHref ? `<a class="btn btn-accent" href="${reviewHref}" rel="noopener" target="_blank">Read our Google reviews</a>` : ""}
   </div>
-</section>`
-    : "";
+  ${liveBlock ? `<div class="wrap">${liveBlock}</div>` : ""}
+</section>`;
+}
+
+/** Fetch and draw the live reviews (text only via textContent; links only to https Google). */
+function reviewsScript(cfg: { endpoint: string; slug: string }): string {
+  return `(function(c){var box=document.querySelector("[data-gr]");if(!box||!window.fetch)return;var done=false;
+function go(){if(done)return;done=true;fetch(c.u+"?s="+encodeURIComponent(c.s),{credentials:"omit"}).then(function(r){return r.ok?r.json():null}).then(function(j){var d=j&&j.data;if(!d||!d.reviews||!d.reviews.length)return;var ul=box.querySelector(".gr-list");
+var ok=function(u){if(typeof u!=="string")return false;try{var x=new URL(u),h=x.hostname,p=h.split(".");return x.protocol==="https:"&&(p.indexOf("google")>=0&&p[p.length-1]!=="google"||h==="googleusercontent.com"||h.slice(-22)===".googleusercontent.com")}catch(e){return false}};
+d.reviews.slice(0,5).forEach(function(v){var li=document.createElement("li");li.className="gr-item";var head=document.createElement("div");head.className="gr-head";
+if(ok(v.authorPhoto)){var im=document.createElement("img");im.src=v.authorPhoto;im.alt="";im.width=32;im.height=32;im.loading="lazy";im.referrerPolicy="no-referrer";head.appendChild(im)}
+var who=document.createElement(ok(v.authorUrl)?"a":"span");who.className="gr-who";who.textContent=v.author||"A Google user";if(ok(v.authorUrl)){who.href=v.authorUrl;who.rel="noopener nofollow";who.target="_blank"}head.appendChild(who);
+var st=document.createElement("span");st.className="gr-stars";var n=Math.max(1,Math.min(5,v.rating|0));st.textContent="\u2605\u2605\u2605\u2605\u2605".slice(0,n)+"\u2606\u2606\u2606\u2606\u2606".slice(0,5-n);st.setAttribute("aria-label",n+" out of 5 stars");head.appendChild(st);
+if(v.when){var w=document.createElement("span");w.className="gr-when";w.textContent=v.when;head.appendChild(w)}
+var p=document.createElement("p");p.className="gr-text";p.textContent=v.text;li.appendChild(head);li.appendChild(p);ul.appendChild(li)});box.hidden=false}).catch(function(){})}
+if("IntersectionObserver" in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();go()}})},{rootMargin:"300px"});io.observe(box.closest("section")||box)}else{go()}})(${jsonForScript({ u: cfg.endpoint, s: cfg.slug })});`;
 }
 
 function quoteForm(content: SiteContent, opts: SiteRenderOptions, selected: string | null = null): string {
@@ -474,6 +506,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--p);outline:3px solid 
 .foot-name{font-weight:900;font-size:1.2rem;font-variation-settings:var(--wide)}
 .foot p{margin:0;opacity:.88}
 .credit{font-size:13px;opacity:.7}
+.gr{margin-top:24px}.gr-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.gr-item{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:16px;color:var(--ink)}
+.gr-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:8px;font-size:14px}
+.gr-head img{border-radius:50%}.gr-who{font-weight:700;color:inherit}.gr-stars{color:#f5a623;letter-spacing:1px}.gr-when{color:var(--ink-2);font-size:13px}
+.gr-text{margin:0;font-size:15px;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}
+.gr-attr{margin:12px 0 0;font-size:12px;opacity:.8}.gr-attr a{color:inherit}.gr-g{font-family:Roboto,Arial,sans-serif;font-weight:500}
+.gr-note{margin:16px 0 0;font-size:14px;opacity:.8}
 .foot-areas{grid-column:1/-1}.foot-areas ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px}
 .crumbs{font-size:14px;margin:0 0 12px;opacity:.85}.crumbs a{color:inherit}
 .rate-main h3 a{color:inherit;text-decoration:none}.rate-main h3 a:hover{text-decoration:underline}
@@ -768,7 +807,7 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
 </section>`
     : "";
 
-  const reviews = reviewsSection(f);
+  const reviews = reviewsSection(f, opts);
 
   const faqs = copy.faqs.length
     ? `<section class="section flow" aria-labelledby="faq-title"${reviews ? "" : ''}>
@@ -1052,7 +1091,7 @@ ${hidden.has("about") ? "" : `<section class="section flow" id="about" aria-labe
     hero,
     main,
     hidden.has("steps") ? "" : stepsSection(content, opts),
-    hidden.has("reviews") ? "" : reviewsSection(f),
+    hidden.has("reviews") ? "" : reviewsSection(f, opts),
     moreServices,
     quoteForm(content, opts, service?.label ?? null),
   ];
