@@ -4,6 +4,7 @@ import { z } from "zod";
 import { SITE_THEME_CHOICES, type SiteThemeChoice } from "@/lib/site-style";
 import { siteRoute } from "@/server/api/site-route";
 import {
+  MAX_AREA_PAGES,
   MAX_SITE_FAQS,
   SITE_COPY_NOTE_MAX,
   SITE_MODES,
@@ -57,6 +58,15 @@ const patchSchema = z
     sections: z
       .array(z.object({ id: z.enum(SITE_SECTION_IDS), hidden: z.boolean() }).strict())
       .max(SITE_SECTION_IDS.length)
+      .optional(),
+    /** Service and town pages (full websites): on/off and the town list (null = from the service area). */
+    pages: z
+      .object({
+        services: z.boolean().optional(),
+        areas: z.boolean().optional(),
+        towns: z.array(z.string().trim().min(2).max(40)).max(MAX_AREA_PAGES, `Pick up to ${MAX_AREA_PAGES} towns.`).nullable().optional(),
+      })
+      .strict()
       .optional(),
     showPrices: z.boolean().optional(),
     mode: z.enum(SITE_MODES).optional(),

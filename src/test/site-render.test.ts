@@ -17,6 +17,7 @@ import {
   type SiteContent,
   type SiteFactsInput,
   parseSiteSections,
+  defaultSitePagesSettings,
 } from "@/server/services/dfy/site-content";
 import { pagesRewritePath, requestHost } from "@/server/services/dfy/site-host";
 import { DONE_FOR_YOU_SITE_CREDIT_URL, siteCreditUrl } from "@/server/services/dfy/site-public";
@@ -35,7 +36,7 @@ function contentFor(input: SiteFactsInput, patch: Partial<SiteContent> = {}): Si
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null) },
+    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
     copyNote: null,
     generatedAt: "2026-10-08T12:00:00.000Z",
     ...patch,
@@ -91,7 +92,7 @@ describe("page content", () => {
     expect(html).toContain("$549");
     expect(html).toContain("$65<span class=\"unit\"> / visit</span>");
     expect((html.match(/data-service=/g) ?? []).length).toBe(2);
-    const hidden = renderSitePage(contentFor(snowCompany, { settings: { showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null) } }), opts);
+    const hidden = renderSitePage(contentFor(snowCompany, { settings: { showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() } }), opts);
     expect(hidden).not.toContain("$549");
     expect((hidden.match(/data-service=/g) ?? []).length).toBe(7);
   });
@@ -214,7 +215,11 @@ describe("host-based routing", () => {
     expect(pagesRewritePath("pages.crankleads.com", "/northshore/", base)).toBe("/s/northshore");
     expect(pagesRewritePath("PAGES.crankleads.com", "/northshore", base)).toBe("/s/northshore");
     expect(pagesRewritePath("pages.crankleads.com", "/", base)).toBe("/s/_");
-    expect(pagesRewritePath("pages.crankleads.com", "/settings/billing", base)).toBe("/s/_");
+    // Two segments go to the site's page route, which 404s for anything the site doesn't have.
+    expect(pagesRewritePath("pages.crankleads.com", "/settings/billing", base)).toBe("/s/settings/billing");
+    expect(pagesRewritePath("pages.crankleads.com", "/northshore/roof-snow-removal", base)).toBe("/s/northshore/roof-snow-removal");
+    expect(pagesRewritePath("pages.crankleads.com", "/northshore/sitemap.xml", base)).toBe("/s/northshore/sitemap.xml");
+    expect(pagesRewritePath("pages.crankleads.com", "/northshore/a/b", base)).toBe("/s/_");
     expect(pagesRewritePath("pages.crankleads.com", "/api/organizations/x", base)).toBe("/s/_");
     expect(pagesRewritePath("pages.crankleads.com", "/api/public/forms/evpk_1", base)).toBeNull();
     expect(pagesRewritePath("pages.crankleads.com", "/_next/static/x.js", base)).toBeNull();

@@ -49,6 +49,8 @@ export interface SiteView {
     steps: SiteStep[];
     generatedSteps: SiteStep[];
     stepsEdited: boolean;
+    /** Service and town pages (full websites only; null before the page is readable). */
+    pages: SitePagesView | null;
     /** The page's look (theme + colour). */
     theme: SiteThemeChoice;
     color: string | null;
@@ -84,6 +86,17 @@ export interface SiteStep {
   text: string;
 }
 
+export interface SitePagesView {
+  /** False on a services and prices page (the business has its own website). */
+  enabled: boolean;
+  services: boolean;
+  areas: boolean;
+  /** The owner's town list; null = read from the service area (`areaTowns`). */
+  towns: string[] | null;
+  areaTowns: string[];
+  list: Array<{ kind: "service" | "area"; label: string; url: string; previewUrl: string }>;
+}
+
 export type SiteImageKind = "logo" | "photo" | "favicon";
 
 export interface SiteEditInput {
@@ -94,6 +107,7 @@ export interface SiteEditInput {
   faqs?: SiteFaq[] | null;
   steps?: SiteStep[] | null;
   sections?: Array<{ id: SiteSectionId; hidden: boolean }>;
+  pages?: { services?: boolean; areas?: boolean; towns?: string[] | null };
   showPrices?: boolean;
   mode?: SiteMode;
   theme?: SiteThemeChoice;

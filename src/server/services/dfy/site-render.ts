@@ -11,6 +11,7 @@ import {
   type SiteFacts,
   type SiteService,
 } from "./site-content";
+import { sitePages, sitePageUrl, siteTowns, tradeNoun, type SiteAreaPage, type SitePage, type SiteServicePage } from "./site-pages";
 
 /**
  * Generated sites — the HTML renderer (docs/done-for-you.md → "Generated sites").
@@ -48,6 +49,11 @@ export interface SiteRenderOptions {
    * from this origin), because the bot check only runs on our own hosts. Null → inline form.
    */
   embedFormOrigin?: string | null;
+  /**
+   * Where links to the site's own pages go (null = the home page). Defaults to the public
+   * address; the owner preview points them at the preview instead.
+   */
+  pageHref?: (path: string | null) => string;
 }
 
 // ── Escaping ─────────────────────────────────────────────────────────────────
@@ -203,14 +209,14 @@ function priceHtml(text: string): string {
   return i > 0 ? `${esc(text.slice(0, i))}<span class="unit"> / ${esc(text.slice(i + 3))}</span>` : esc(text);
 }
 
-function serviceRow(s: SiteService, blurb: string | undefined, showPrices: boolean, hasForm: boolean): string {
+function serviceRow(s: SiteService, blurb: string | undefined, showPrices: boolean, hasForm: boolean, href: string | null = null): string {
   const price = showPrices && s.priceText
     ? `<span class="price">${priceHtml(s.priceText)}</span>${s.priceNote ? `<span class="price-note">${esc(s.priceNote)}</span>` : ""}`
     : hasForm
       ? `<a class="quote-link" href="#quote" data-service="${esc(s.label)}">Get a quote</a>`
       : `<span class="quote-text">Call for a price</span>`;
   return `<li class="rate">
-  <div class="rate-main"><h3>${esc(s.label)}</h3>${blurb ? `<p>${esc(blurb)}</p>` : ""}</div>
+  <div class="rate-main"><h3>${href ? `<a href="${esc(href)}">${esc(s.label)}</a>` : esc(s.label)}</h3>${blurb ? `<p>${esc(blurb)}</p>` : ""}</div>
   <div class="rate-price">${price}</div>
 </li>`;
 }
@@ -234,7 +240,35 @@ function areaBlock(f: SiteFacts): string {
 </div>`;
 }
 
-function quoteForm(content: SiteContent, opts: SiteRenderOptions): string {
+function stepsSection(content: SiteContent, opts: SiteRenderOptions): string {
+  const tel = telHref(content.facts.phoneE164);
+  const stepList = effectiveSteps(content, { phone: Boolean(tel), form: Boolean(opts.formKey), booking: Boolean(safeHref(opts.bookingUrl)) });
+  return `<section class="section flow" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="section-head"><h2 id="how-title">How it works</h2></div>
+    <ol class="steps">
+      ${stepList.map((st) => `<li><h3>${esc(st.title)}</h3><p>${esc(st.text)}</p></li>`).join("\n      ")}
+    </ol>
+  </div>
+</section>`;
+}
+
+function reviewsSection(f: SiteFacts): string {
+  const reviewHref = safeHref(f.reviewUrl) ?? safeHref(f.mapsUrl);
+  return f.rating && f.reviewCount
+    ? `<section class="section reviews" aria-labelledby="reviews-title">
+  <div class="wrap">
+    <div class="score">
+      <span class="score-num">${esc(f.rating.toFixed(1))}</span>
+      <div><div class="score-stars">${ICON.star.repeat(5)}</div><h2 id="reviews-title" style="font-size:1.1rem;font-variation-settings:'wdth' 100">${esc(f.reviewCount)} Google review${f.reviewCount === 1 ? "" : "s"}</h2><p>See what customers wrote, in their own words.</p></div>
+    </div>
+    ${reviewHref ? `<a class="btn btn-accent" href="${reviewHref}" rel="noopener" target="_blank">Read our Google reviews</a>` : ""}
+  </div>
+</section>`
+    : "";
+}
+
+function quoteForm(content: SiteContent, opts: SiteRenderOptions, selected: string | null = null): string {
   const f = content.facts;
   const tel = telHref(f.phoneE164);
   if (!opts.formKey) {
@@ -260,7 +294,7 @@ function quoteForm(content: SiteContent, opts: SiteRenderOptions): string {
 </section>`;
   }
   const options = f.services
-    .map((s) => `<option value="${esc(s.label)}">${esc(s.label)}</option>`)
+    .map((s) => `<option value="${esc(s.label)}"${s.label === selected ? " selected" : ""}>${esc(s.label)}</option>`)
     .join("");
   const endpoint = `/api/public/forms/${encodeURIComponent(opts.formKey)}`;
   const turnstile = opts.turnstileSiteKey
@@ -434,6 +468,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--p);outline:3px solid 
 .foot-name{font-weight:900;font-size:1.2rem;font-variation-settings:var(--wide)}
 .foot p{margin:0;opacity:.88}
 .credit{font-size:13px;opacity:.7}
+.foot-areas{grid-column:1/-1}.foot-areas ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px}
+.crumbs{font-size:14px;margin:0 0 12px;opacity:.85}.crumbs a{color:inherit}
+.rate-main h3 a{color:inherit;text-decoration:none}.rate-main h3 a:hover{text-decoration:underline}
+.links{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.links a{display:block;background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;font-weight:600;text-decoration:none;color:var(--ink)}
+.links a:hover{border-color:var(--p)}
 /* sticky mobile bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.96);border-top:1px solid var(--rule);box-shadow:0 -6px 20px rgba(16,24,32,.08)}
 .bar .btn{flex:1;min-height:50px;font-size:16px;padding:0 12px}
@@ -571,15 +611,33 @@ body.look-classic{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe U
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-function head(content: SiteContent, opts: SiteRenderOptions, theme: SiteTheme, look: SiteThemeId): string {
+interface PageMeta {
+  title: string;
+  description: string;
+  /** This page's own address (canonical + og:url). */
+  url: string;
+  /** JSON-LD blocks for this page. */
+  jsonLd: unknown[];
+}
+
+function homeMeta(content: SiteContent, opts: SiteRenderOptions): PageMeta {
   const f = content.facts;
   const copy = effectiveCopy(content);
   const trade = f.tradeId ? tradeProfile(f.tradeId).noun : null;
   const titleBits = [f.name, content.mode === "price_page" ? "Services and prices" : trade && f.serviceArea ? `${trade} in ${f.serviceArea}` : trade ?? f.serviceArea];
-  const title = titleBits.filter(Boolean).join(" | ").slice(0, 120);
-  const description = (copy.subhead.length >= 60 ? copy.subhead : `${copy.subhead} ${copy.about}`).slice(0, 300);
+  return {
+    title: titleBits.filter(Boolean).join(" | ").slice(0, 120),
+    description: (copy.subhead.length >= 60 ? copy.subhead : `${copy.subhead} ${copy.about}`).slice(0, 300),
+    url: opts.url,
+    jsonLd: [buildJsonLd(content, opts)],
+  };
+}
+
+function head(content: SiteContent, opts: SiteRenderOptions, theme: SiteTheme, look: SiteThemeId, meta: PageMeta = homeMeta(content, opts)): string {
+  const f = content.facts;
+  const { title, description } = meta;
   const image = safeHref(f.photos[0]) ?? safeHref(f.logoUrl);
-  const canonical = safeHref(opts.url);
+  const canonical = safeHref(meta.url);
   const icon = safeHref(opts.faviconUrl) ?? safeHref(f.logoUrl);
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -601,7 +659,7 @@ ${icon ? `<link rel="icon" href="${icon}">\n<link rel="apple-touch-icon" href="$
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${LOOK_FONTS[look]}">
 <style>${css(theme)}${lookCss(look)}</style>
-<script type="application/ld+json">${jsonForScript(buildJsonLd(content, opts))}</script>`;
+${meta.jsonLd.map((ld) => `<script type="application/ld+json">${jsonForScript(ld)}</script>`).join("\n")}`;
 }
 
 export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): string {
@@ -619,7 +677,7 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   const photo = safeHref(f.photos[0]);
   const showPrices = content.settings.showPrices;
   const anyPrice = showPrices && f.services.some((s) => s.priceText);
-  const quoteHref = hasForm || tel ? "#quote" : null;
+  const servicePaths = new Map(sitePages(content).flatMap((p) => (p.kind === "service" ? [[p.service.key, p.path] as const] : [])));
 
   const topLinks = [
     website && isPricePage ? `<a href="${website}" rel="noopener">Visit our main site</a>` : "",
@@ -674,20 +732,12 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
     ? `<section class="section flow" id="services" aria-labelledby="services-title">
   <div class="wrap">
     <div class="section-head"><h2 id="services-title">${anyPrice ? "Services and prices" : "Services"}</h2>${anyPrice && hasForm ? `<p>Don't see your job? <a href="#quote">Ask for a quote</a>.</p>` : ""}</div>
-    <ul class="sheet">${f.services.map((s) => serviceRow(s, copy.serviceBlurbs[s.key], showPrices, hasForm)).join("")}</ul>
+    <ul class="sheet">${f.services.map((s) => serviceRow(s, copy.serviceBlurbs[s.key], showPrices, hasForm, servicePaths.has(s.key) ? pageHref(opts, servicePaths.get(s.key)!) : null)).join("")}</ul>
   </div>
 </section>`
     : "";
 
-  const stepList = effectiveSteps(content, { phone: Boolean(tel), form: hasForm, booking: Boolean(booking) });
-  const steps = `<section class="section flow" aria-labelledby="how-title">
-  <div class="wrap">
-    <div class="section-head"><h2 id="how-title">How it works</h2></div>
-    <ol class="steps">
-      ${stepList.map((st) => `<li><h3>${esc(st.title)}</h3><p>${esc(st.text)}</p></li>`).join("\n      ")}
-    </ol>
-  </div>
-</section>`;
+  const steps = stepsSection(content, opts);
 
   // The first photo is the big one at the top; the rest are a small gallery.
   const more = f.photos.slice(1, 6).map((p) => safeHref(p)).filter((p): p is string => Boolean(p));
@@ -710,18 +760,7 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
 </section>`
     : "";
 
-  const reviewHref = safeHref(f.reviewUrl) ?? safeHref(f.mapsUrl);
-  const reviews = f.rating && f.reviewCount
-    ? `<section class="section reviews" aria-labelledby="reviews-title">
-  <div class="wrap">
-    <div class="score">
-      <span class="score-num">${esc(f.rating.toFixed(1))}</span>
-      <div><div class="score-stars">${ICON.star.repeat(5)}</div><h2 id="reviews-title" style="font-size:1.1rem;font-variation-settings:'wdth' 100">${esc(f.reviewCount)} Google review${f.reviewCount === 1 ? "" : "s"}</h2><p>See what customers wrote, in their own words.</p></div>
-    </div>
-    ${reviewHref ? `<a class="btn btn-accent" href="${reviewHref}" rel="noopener" target="_blank">Read our Google reviews</a>` : ""}
-  </div>
-</section>`
-    : "";
+  const reviews = reviewsSection(f);
 
   const faqs = copy.faqs.length
     ? `<section class="section flow" aria-labelledby="faq-title"${reviews ? "" : ''}>
@@ -732,7 +771,48 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
 </section>`
     : "";
 
+  // Hero first and the quote form last (every "Get a quote" button points at it); the sections
+  // between follow the owner's order, minus the ones they hid. A price page has no steps.
+  const byId: Record<SiteSectionId, string> = { services, steps: isPricePage ? "" : steps, photos: gallery, about, reviews, faqs };
+  const middle = content.settings.sections.filter((sec) => !sec.hidden).map((sec) => byId[sec.id]);
+  return documentHtml(content, opts, theme, look, homeMeta(content, opts), [hero, ...middle, quoteForm(content, opts)], { topLinks, home: true });
+}
+
+/** Where a link to one of the site's pages goes (null = the home page). */
+function pageHref(opts: SiteRenderOptions, path: string | null): string {
+  return opts.pageHref ? opts.pageHref(path) : sitePageUrl(opts.url, path);
+}
+
+/** The town pages, for "Areas we serve" links (the footer and the service pages). */
+function areaLinks(content: SiteContent, opts: SiteRenderOptions, except: string | null = null): string {
+  const areas = sitePages(content).filter((p): p is SiteAreaPage => p.kind === "area" && p.path !== except);
+  return areas.map((p) => `<li><a href="${esc(pageHref(opts, p.path))}">${esc(p.label)}</a></li>`).join("");
+}
+
+/**
+ * The whole document around a page's sections: head, top bar, footer (with the town pages),
+ * the phone call bar and the form script. Shared by the home page and the extra pages.
+ */
+function documentHtml(
+  content: SiteContent,
+  opts: SiteRenderOptions,
+  theme: SiteTheme,
+  look: SiteThemeId,
+  meta: PageMeta,
+  parts: string[],
+  extra: { topLinks?: string; home: boolean },
+): string {
+  const f = content.facts;
+  const isPricePage = content.mode === "price_page";
+  const tel = telHref(f.phoneE164);
+  const hasForm = Boolean(opts.formKey);
+  const embedForm = Boolean(safeHref(opts.embedFormOrigin)) && !opts.preview;
+  const booking = safeHref(opts.bookingUrl);
+  const website = safeHref(f.website);
+  const logo = safeHref(f.logoUrl);
+  const quoteHref = hasForm || tel ? "#quote" : null;
   const credit = opts.creditUrl ? safeHref(opts.creditUrl) : null;
+  const areas = areaLinks(content, opts);
   const footer = `<footer class="foot">
   <div class="wrap">
     <div>
@@ -741,6 +821,7 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
       ${f.serviceArea ? `<p>${esc(f.serviceArea)}</p>` : ""}
       ${website ? `<p><a href="${website}" rel="noopener">${isPricePage ? "Visit our main site" : "Our website"}</a></p>` : ""}
     </div>
+    ${areas ? `<nav class="foot-areas" aria-label="Areas we serve"><p class="foot-name">Areas we serve</p><ul>${areas}</ul></nav>` : ""}
     ${credit ? `<p class="credit"><a href="${credit}" rel="noopener">Powered by Everdoer</a></p>` : ""}
   </div>
 </footer>`;
@@ -749,26 +830,21 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
     ? `<nav class="bar" aria-label="Quick actions">${tel ? `<a class="btn btn-call" href="${esc(tel)}">${ICON.phone}<span>Call</span></a>` : ""}${quoteHref && hasForm ? `<a class="btn btn-accent" href="#quote">Get a quote</a>` : ""}${!hasForm && booking ? `<a class="btn btn-accent" href="${booking}">Book online</a>` : ""}</nav>`
     : "";
 
-  // Hero first and the quote form last (every "Get a quote" button points at it); the sections
-  // between follow the owner's order, minus the ones they hid. A price page has no steps.
-  const byId: Record<SiteSectionId, string> = { services, steps: isPricePage ? "" : steps, photos: gallery, about, reviews, faqs };
-  const middle = content.settings.sections.filter((sec) => !sec.hidden).map((sec) => byId[sec.id]);
-  const body = [hero, ...middle, quoteForm(content, opts)];
-
+  const homeLink = extra.home ? "#main" : esc(pageHref(opts, null));
   return `<!doctype html>
 <html lang="en-CA">
 <head>
-${head(content, opts, theme, look)}
+${head(content, opts, theme, look, meta)}
 </head>
 <body class="look-${look}">
 <a class="skip" href="#main">Skip to content</a>
 ${opts.preview ? '<div class="preview">Preview. Only you can see this until the page is published.</div>' : ""}
 <div class="top"><div class="wrap">
-  <a class="brand" href="#main" aria-label="${esc(f.name)}">${logo ? `<img src="${logo}" alt="${esc(f.name)} logo">` : `<span class="wordmark">${esc(f.name)}</span>`}</a>
-  ${topLinks ? `<div class="top-links">${topLinks}</div>` : ""}
+  <a class="brand" href="${homeLink}" aria-label="${esc(f.name)}${extra.home ? "" : " home page"}">${logo ? `<img src="${logo}" alt="${esc(f.name)} logo">` : `<span class="wordmark">${esc(f.name)}</span>`}</a>
+  ${extra.topLinks ? `<div class="top-links">${extra.topLinks}</div>` : ""}
 </div></div>
 <main id="main">
-${body.filter(Boolean).join("\n")}
+${parts.filter(Boolean).join("\n")}
 </main>
 ${footer}
 ${bar}
@@ -776,6 +852,178 @@ ${hasForm && !embedForm && opts.turnstileSiteKey ? '<script src="https://challen
 ${hasForm && !embedForm ? `<script>${FORM_JS}</script>` : ""}
 </body>
 </html>`;
+}
+
+// ── Service and town pages ───────────────────────────────────────────────────
+
+function breadcrumbLd(opts: SiteRenderOptions, name: string, page: SitePage): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name, item: opts.url },
+      { "@type": "ListItem", position: 2, name: page.label, item: sitePageUrl(opts.url, page.path) },
+    ],
+  };
+}
+
+function towns(content: SiteContent): string[] {
+  return content.mode === "full" ? siteTowns(content) : [];
+}
+
+function subpageMeta(content: SiteContent, opts: SiteRenderOptions, page: SitePage): PageMeta {
+  const f = content.facts;
+  const copy = effectiveCopy(content);
+  const url = sitePageUrl(opts.url, page.path);
+  const reach = f.phoneDisplay ? `Call ${f.phoneDisplay} or ask for a quote online.` : "Ask for a quote online.";
+  if (page.kind === "service") {
+    const s = page.service;
+    const where = f.serviceArea ? ` in ${f.serviceArea}` : "";
+    const price = content.settings.showPrices && s.priceText ? ` ${s.priceText}.` : "";
+    const line = copy.serviceBlurbs[s.key] || s.description || "";
+    const provider: Record<string, unknown> = { "@type": tradeProfile(f.tradeId).schemaType, name: f.name, url: opts.url };
+    if (f.phoneE164) provider.telephone = f.phoneE164;
+    const service: Record<string, unknown> = {
+      "@context": "https://schema.org",
+      "@type": "Service",
+      name: s.label,
+      serviceType: s.label,
+      url,
+      provider,
+    };
+    if (line) service.description = line;
+    const t = towns(content);
+    if (t.length) service.areaServed = t.map((name) => ({ "@type": "City", name }));
+    else if (f.serviceArea) service.areaServed = f.serviceArea;
+    return {
+      title: `${s.label}${where} | ${f.name}`.slice(0, 120),
+      description: `${line ? `${line.replace(/[.\s]+$/, "")}. ` : ""}${s.label} from ${f.name}${where}.${price} ${reach}`.replace(/\s+/g, " ").trim().slice(0, 300),
+      url,
+      jsonLd: [service, breadcrumbLd(opts, f.name, page)],
+    };
+  }
+  const services = f.services.slice(0, 4).map((s) => s.label.toLowerCase());
+  const business = { ...buildJsonLd(content, opts), areaServed: { "@type": "City", name: page.town } };
+  return {
+    title: `${page.label} | ${f.name}`.slice(0, 120),
+    description: `${f.name} works in ${page.town}${services.length ? `: ${services.join(", ")}` : ""}. ${reach}`.slice(0, 300),
+    url,
+    jsonLd: [business, breadcrumbLd(opts, f.name, page)],
+  };
+}
+
+function linkList(id: string, title: string, items: Array<{ href: string; label: string }>): string {
+  if (!items.length) return "";
+  return `<section class="section flow" aria-labelledby="${id}">
+  <div class="wrap">
+    <div class="section-head"><h2 id="${id}">${esc(title)}</h2></div>
+    <ul class="links">${items.map((i) => `<li><a href="${esc(i.href)}">${esc(i.label)}</a></li>`).join("")}</ul>
+  </div>
+</section>`;
+}
+
+/**
+ * One of the site's extra pages: a service ("Roof snow removal in Barrie") or a town ("Snow
+ * removal in Innisfil"). Same look, top bar, footer, call bar and quote form as the home page,
+ * built only from the same facts. No questions section (it would repeat the home page word for
+ * word); the owner's hidden sections stay hidden here too.
+ */
+export function renderSiteSubpage(content: SiteContent, opts: SiteRenderOptions, page: SitePage): string {
+  const f = content.facts;
+  const copy = effectiveCopy(content);
+  const theme = siteTheme(f, content.settings.color);
+  const look = resolveSiteTheme(content.settings.theme, f.tradeId);
+  const tel = telHref(f.phoneE164);
+  const hasForm = Boolean(opts.formKey);
+  const booking = safeHref(opts.bookingUrl);
+  const showPrices = content.settings.showPrices;
+  const hidden = new Set(content.settings.sections.filter((sec) => sec.hidden).map((sec) => sec.id));
+  const all = sitePages(content);
+  const servicePaths = new Map(all.flatMap((p) => (p.kind === "service" ? [[p.service.key, p.path] as const] : [])));
+  const home = pageHref(opts, null);
+
+  const isService = page.kind === "service";
+  const service = isService ? (page as SiteServicePage).service : null;
+  const area = isService ? f.serviceArea : (page as SiteAreaPage).town;
+  const others = towns(content).filter((t) => t !== area);
+  const h1 = isService ? `${service!.label}${area ? ` in ${area}` : ""}` : page.label;
+  const sub = isService
+    ? copy.serviceBlurbs[service!.key] || `${f.name} does ${service!.label.toLowerCase()}${area ? ` in ${area}` : ""}.`
+    : `${f.name} works in ${area}${others.length ? ` and nearby in ${others.slice(0, 3).join(", ")}` : ""}.`;
+
+  const ctas = [
+    tel ? `<a class="btn btn-accent btn-big" href="${esc(tel)}">${ICON.phone}<span>Call <span class="phone-num">${esc(f.phoneDisplay)}</span></span></a>` : "",
+    hasForm ? `<a class="btn ${tel ? "btn-ghost" : "btn-accent"} btn-big" href="#quote">Get a quote</a>` : "",
+    booking ? `<a class="btn btn-ghost btn-big" href="${booking}">${ICON.calendar}<span>Book online</span></a>` : "",
+  ].join("");
+  const doorItems = [
+    f.serviceArea ? `<li>${ICON.pin}<span>${esc(f.serviceArea)}</span></li>` : "",
+    f.hoursLines.length ? `<li>${ICON.clock}<span>${f.hoursLines.map(esc).join("<br>")}</span></li>` : "",
+  ].join("");
+  const door = tel || doorItems
+    ? `<aside class="door" aria-label="Contact">
+      ${tel ? `<h2>Call or text</h2><a class="big-phone" href="${esc(tel)}">${esc(f.phoneDisplay)}</a>` : `<h2>${esc(f.name)}</h2>`}
+      ${doorItems ? `<ul>${doorItems}</ul>` : ""}
+    </aside>`
+    : "";
+  const heroClass = look === "classic" ? "classic" : look === "clean" ? "clean" : theme.variant;
+  const hero = `<header class="hero ${heroClass}">
+  <div class="wrap hero-grid">
+    <div class="hero-text">
+      <nav class="crumbs" aria-label="Breadcrumb"><a href="${esc(home)}">${esc(f.name)}</a><span aria-hidden="true"> / </span><span aria-current="page">${esc(page.label)}</span></nav>
+      <h1${look === "bold" && h1.length <= BOLD_CAPS_MAX ? ' class="caps"' : ""}>${esc(h1)}</h1>
+      <p class="sub">${esc(sub)}</p>
+      ${ctas ? `<div class="ctas">${ctas}</div>` : ""}
+      ${ratingBadge(f, "rating")}
+    </div>
+    ${door}
+  </div>
+</header>`;
+
+  const facts = [areaBlock(f), hoursBlock(f)].filter(Boolean).join("");
+  let main: string;
+  if (isService) {
+    const s = service!;
+    const blurb = copy.serviceBlurbs[s.key];
+    const long = s.description && s.description !== blurb ? s.description : null;
+    main = `<section class="section flow" id="services" aria-labelledby="services-title">
+  <div class="wrap">
+    <div class="section-head"><h2 id="services-title">${showPrices && s.priceText ? "Price" : "Get a price"}</h2></div>
+    <ul class="sheet">${serviceRow(s, long ?? undefined, showPrices, hasForm)}</ul>
+    ${facts ? `<div class="about about-facts" style="margin-top:28px"><div class="facts">${facts}</div></div>` : ""}
+  </div>
+</section>`;
+  } else {
+    main = `<section class="section flow" id="services" aria-labelledby="services-title">
+  <div class="wrap">
+    <div class="section-head"><h2 id="services-title">${showPrices && f.services.some((s) => s.priceText) ? `Services and prices in ${esc(area)}` : `Services in ${esc(area)}`}</h2></div>
+    <ul class="sheet">${f.services.map((s) => serviceRow(s, copy.serviceBlurbs[s.key], showPrices, hasForm, servicePaths.has(s.key) ? pageHref(opts, servicePaths.get(s.key)!) : null)).join("")}</ul>
+  </div>
+</section>
+${hidden.has("about") ? "" : `<section class="section flow" id="about" aria-labelledby="about-title">
+  <div class="wrap about">
+    <div class="about-copy"><h2 id="about-title">About ${esc(f.name)}</h2><p>${esc(copy.about)}</p></div>
+    ${facts ? `<div class="facts">${facts}</div>` : ""}
+  </div>
+</section>`}`;
+  }
+
+  const moreServices = isService
+    ? linkList(
+        "more-title",
+        "Other services",
+        all.filter((p): p is SiteServicePage => p.kind === "service" && p.path !== page.path).map((p) => ({ href: pageHref(opts, p.path), label: p.label })),
+      )
+    : "";
+  const parts = [
+    hero,
+    main,
+    hidden.has("steps") ? "" : stepsSection(content, opts),
+    hidden.has("reviews") ? "" : reviewsSection(f),
+    moreServices,
+    quoteForm(content, opts, service?.label ?? null),
+  ];
+  return documentHtml(content, opts, theme, look, subpageMeta(content, opts, page), parts, { home: false });
 }
 
 /** Neutral not-found page (unknown, draft and unpublished slugs all look the same). */

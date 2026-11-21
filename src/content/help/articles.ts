@@ -216,6 +216,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
           "In Settings → Your website:\n- Sections: turn each part of the page on or off, and use the arrows to change the order. The top of the page and the quote form always stay where they are.\n- Service descriptions: change the short line under any service. Clear a box to go back to ours.\n- Questions: edit, reorder, add (up to 8) or remove the questions and answers. \"Use ours\" puts our questions back.\n- How it works: change the two to four steps.\nEach part has its own Save button. What you write yourself is never changed when the page is rebuilt.",
       },
       {
+        heading: "Service and town pages",
+        body:
+          "If your page is your website, we also make a page for each service (with its price and a quote form) and for each town you work in, so people searching for them on Google can find you. Your main page links to them, and we list them all in a sitemap for Google.\nIn Settings → Your website → Service and town pages you can turn either kind off, change the towns (up to 6, separated by commas; only list towns you really work in), and preview every page. With only one town you won't get a town page, because your main page already covers it. A services and prices page that links to your own website stays a single page.",
+      },
+      {
         heading: "Rewriting the page with a note",
         body:
           "Tell us how you'd like the page to read, like \"Make it friendlier\", \"Mention we do 24/7 emergency calls\" or \"We mostly work on cottages\", then click \"Rewrite the page\". We rewrite the wording with your note and keep it for every rebuild. Anything your note says about your business can go on the page, and nothing else is made up. Wording you've written yourself stays as it is. Clear the note and rewrite to stop using it.",

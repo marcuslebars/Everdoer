@@ -83,7 +83,9 @@ const PASSTHROUGH = [/^\/api\/public\/forms\//, /^\/_next\//, /^\/favicon\.ico$/
  *   pages host + "/"           → "/s/_"  (the route's neutral 404 — no slug can be "_")
  *   pages host + "/acme-snow/jobs" (+ "/<job id>") → "/s/acme-snow/jobs…" (the Recruiter's jobs pages)
  *   pages host + "/acme-snow/plans" (+ "/<plan id>" | "/renew/<token>") → "/s/acme-snow/plans…" (Service plans)
- *   pages host + "/a/b"        → "/s/_"
+ *   pages host + "/acme-snow/roof-snow-removal" → "/s/acme-snow/roof-snow-removal" (a service or town page)
+ *   pages host + "/acme-snow/sitemap.xml"       → "/s/acme-snow/sitemap.xml"
+ *   pages host + "/a/b/c"      → "/s/_"
  *   any other host             → null
  * A host in PAGES_LEGACY_HOSTS is served exactly like the PAGES_BASE_URL host.
  */
@@ -104,7 +106,9 @@ export function pagesRewritePath(
   const plans = pathname.match(/^\/([a-z0-9-]{1,62})\/plans(\/[0-9a-f-]{36}|\/renew\/[a-f0-9]{32})?\/?$/);
   if (plans) return `/s/${plans[1]}/plans${plans[2] ?? ""}`;
   const jobs = pathname.match(/^\/([a-z0-9-]{1,62})\/jobs(\/[0-9a-f-]{36})?\/?$/);
-  return jobs ? `/s/${jobs[1]}/jobs${jobs[2] ?? ""}` : "/s/_";
+  if (jobs) return `/s/${jobs[1]}/jobs${jobs[2] ?? ""}`;
+  const page = pathname.match(/^\/([a-z0-9-]{1,62})\/([a-z0-9-]{1,64}|sitemap\.xml)\/?$/);
+  return page ? `/s/${page[1]}/${page[2]}` : "/s/_";
 }
 
 /** The site route's slug for a business's own domain (no real slug has an underscore). */

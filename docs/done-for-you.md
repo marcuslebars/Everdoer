@@ -315,6 +315,37 @@ Settings → Your website lets owners/admins shape the page without touching the
   copy is screened (`screenSiteCopy(..., ownerNote)`): a claim the note states ("24/7 emergency
   calls") may appear; any other claim is still rejected.
 
+### Service and town pages
+
+A **full website** (not a price page — that would compete with the business's own site) also
+gets (`site-pages.ts`, rendered by `renderSiteSubpage`):
+
+- **A page per service** (`/<slug>/<service>`, e.g. `/northshore/roof-snow-removal`, ≤ 20):
+  "<Service> in <area>", the price (if shown), the owner's catalog description, where/hours,
+  steps, the Google rating, "Other services" links, and the quote form with that service
+  picked. JSON-LD `Service` + `BreadcrumbList`.
+- **A page per town** (`/<slug>/<trade>-<town>`, e.g. `/northshore/snow-removal-innisfil`, ≤ 6):
+  "<Trade> in <town>", every service (linked), about/area/hours, steps, rating, quote form.
+  JSON-LD LocalBusiness with `areaServed: City` + `BreadcrumbList`. Towns come from the service
+  area (`parseServiceTowns`: regions, counties and distances are skipped, never guessed) or the
+  owner's list; fewer than two towns → no town pages.
+- **No service × town grid**: near-identical pages per town and service are doorway pages to
+  search engines. Town pages share most wording too, so they're capped and owner-switchable.
+- Everything is built from the same facts and copy as the home page (nothing new is invented);
+  the FAQ section is left off the extra pages (it would repeat the home page word for word);
+  sections the owner hid stay hidden. The home page links each service to its page and lists
+  the town pages in the footer ("Areas we serve").
+- **Sitemap**: `/<slug>/sitemap.xml` (and `/sitemap.xml` on a business domain, which the
+  Worker's robots.txt points at).
+- **Settings** (`content.settings.pages`: `{services, areas, towns}`), `PATCH .../site
+  {pages}`; Settings → Your website → "Service and town pages" lists every page with a preview.
+  The owner preview takes `?page=<path>` and keeps links inside the preview.
+- **Serving**: `/s/<slug>/<page>` (`src/app/s/[slug]/[page]/route.ts`, shared `serveSite`); the
+  pages host rewrites `/<slug>/<page>` there; a business domain's `/<page>` is forwarded by the
+  sites-edge Worker as `/s/_domain/<page>`. A page the site doesn't have is the neutral 404 —
+  on a business domain the Worker turns that into a 301 to the home page, as before (old sites'
+  links keep working). **The Worker change needs a redeploy**: `npm run job:cloudflare-sites-setup`.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,

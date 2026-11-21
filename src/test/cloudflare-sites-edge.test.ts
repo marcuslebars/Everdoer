@@ -30,6 +30,21 @@ describe("sites-edge Worker", () => {
     expect(res.headers.get("cache-control")).toBe("private, no-cache");
   });
 
+  it("service and town pages and the sitemap go to the app's /s/_domain/<page>", async () => {
+    const upstream = vi.fn(async (_url: URL | string, _init?: RequestInit) => new Response("<html>roofs</html>", { status: 200 }));
+    vi.stubGlobal("fetch", upstream);
+    const res = await w.fetch(new Request("https://www.acme.ca/roof-snow-removal/"), env);
+    expect(res.status).toBe(200);
+    expect(String(upstream.mock.calls[0][0])).toBe("https://app.everdoer.com/s/_domain/roof-snow-removal");
+    expect(new Headers(upstream.mock.calls[0][1]?.headers).get("x-everdoer-site-host")).toBe("www.acme.ca");
+    upstream.mockResolvedValueOnce(new Response("<urlset/>", { status: 200 }));
+    await w.fetch(new Request("https://www.acme.ca/sitemap.xml"), env);
+    expect(String(upstream.mock.calls[1][0])).toBe("https://app.everdoer.com/s/_domain/sitemap.xml");
+    // A missing sitemap stays a 404 (it isn't a page to send home).
+    upstream.mockResolvedValueOnce(new Response("nope", { status: 404 }));
+    expect((await w.fetch(new Request("https://www.acme.ca/sitemap.xml"), env)).status).toBe(404);
+  });
+
   it("passes the app's own caching rule through untouched", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>page</html>", { status: 200, headers: { "cache-control": "private, no-cache", etag: '"abc"' } })));
     const res = await w.fetch(new Request("https://www.acme.ca/"), env);
@@ -37,13 +52,20 @@ describe("sites-edge Worker", () => {
     expect(res.headers.get("etag")).toBe('"abc"');
   });
 
-  it("any other path on a business domain → its page (the app is never served there); robots.txt allowed", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it("any path the site doesn't have → its home page (the app is never served there); robots.txt allowed, with the sitemap", async () => {
+    const upstream = vi.fn(async () => new Response("not found", { status: 404 }));
+    vi.stubGlobal("fetch", upstream);
     const login = await w.fetch(new Request("https://www.acme.ca/login"), env);
     expect(login.status).toBe(301);
     expect(login.headers.get("location")).toBe("https://www.acme.ca/");
+    // Deep links (an old site's) never reach the app.
+    const deep = await w.fetch(new Request("https://www.acme.ca/services/old-page.html"), env);
+    expect(deep.status).toBe(301);
+    expect(upstream).toHaveBeenCalledTimes(1);
     const robots = await w.fetch(new Request("https://www.acme.ca/robots.txt"), env);
-    expect(await robots.text()).toContain("Allow: /");
+    const text = await robots.text();
+    expect(text).toContain("Allow: /");
+    expect(text).toContain("Sitemap: https://www.acme.ca/sitemap.xml");
     expect((await w.fetch(new Request("https://www.acme.ca/", { method: "POST" }), env)).status).toBe(405);
   });
 
