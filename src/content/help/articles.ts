@@ -221,6 +221,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
           "If your page is your website, we also make a page for each service (with its price and a quote form) and for each town you work in, so people searching for them on Google can find you. Your main page links to them, and we list them all in a sitemap for Google.\nIn Settings → Your website → Service and town pages you can turn either kind off, change the towns (up to 6, separated by commas; only list towns you really work in), and preview every page. With only one town you won't get a town page, because your main page already covers it. A services and prices page that links to your own website stays a single page.",
       },
       {
+        heading: "Seeing how your page is doing",
+        body:
+          "Once your page is live, your dashboard and Settings → Your website show the last 30 days: visits, call taps (people tapping your number on the page) and quote requests sent from the page, compared with the 30 days before. You can also see where visitors came from (Google, Facebook, ads, a saved link and so on) and which pages they looked at most.\nWe don't use cookies and we don't keep anything about the people who visit.",
+      },
+      {
         heading: "Rewriting the page with a note",
         body:
           "Tell us how you'd like the page to read, like \"Make it friendlier\", \"Mention we do 24/7 emergency calls\" or \"We mostly work on cottages\", then click \"Rewrite the page\". We rewrite the wording with your note and keep it for every rebuild. Anything your note says about your business can go on the page, and nothing else is made up. Wording you've written yourself stays as it is. Clear the note and rewrite to stop using it.",

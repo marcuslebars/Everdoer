@@ -54,6 +54,11 @@ export interface SiteRenderOptions {
    * address; the owner preview points them at the preview instead.
    */
   pageHref?: (path: string | null) => string;
+  /**
+   * Visit and call-tap counting (site stats): the beacon URL on the app and the site's slug.
+   * Null/absent (and always in the owner preview) → no counting script.
+   */
+  stats?: { endpoint: string; slug: string } | null;
 }
 
 // ── Escaping ─────────────────────────────────────────────────────────────────
@@ -778,6 +783,24 @@ export function renderSitePage(content: SiteContent, opts: SiteRenderOptions): s
   return documentHtml(content, opts, theme, look, homeMeta(content, opts), [hero, ...middle, quoteForm(content, opts)], { topLinks, home: true });
 }
 
+/**
+ * Site stats: one "view" per page per browsing session, and every tap on a call link. The
+ * landing referrer and campaign tags are kept for the session so a visitor who arrived from
+ * Google still counts as Google on the second page. Nothing else about the visitor is sent.
+ */
+function statsScript(opts: SiteRenderOptions, path: string): string {
+  const stats = opts.stats;
+  const endpoint = stats ? safeHref(stats.endpoint) : null;
+  if (!stats || !endpoint || opts.preview) return "";
+  const cfg = jsonForScript({ u: stats.endpoint, s: stats.slug, p: path });
+  return `<script>(function(c){var ss;try{ss=window.sessionStorage}catch(e){}function g(k){try{return ss?ss.getItem(k):null}catch(e){return null}}function st(k,v){try{ss&&ss.setItem(k,v)}catch(e){}}
+var q=new URLSearchParams(location.search),r=g("evd-ref");if(r===null){r=document.referrer||"";st("evd-ref",r);st("evd-us",q.get("utm_source")||"");st("evd-um",q.get("utm_medium")||"");st("evd-ad",q.has("gclid")||q.has("fbclid")?"1":"")}
+function send(k){var b=JSON.stringify({s:c.s,p:c.p,k:k,r:r.slice(0,500),us:(g("evd-us")||"").slice(0,100)||null,um:(g("evd-um")||"").slice(0,100)||null,ad:g("evd-ad")==="1"});
+try{if(navigator.sendBeacon&&navigator.sendBeacon(c.u,new Blob([b],{type:"text/plain"})))return}catch(e){}try{fetch(c.u,{method:"POST",body:b,keepalive:true,mode:"no-cors",headers:{"Content-Type":"text/plain"}})}catch(e){}}
+var vk="evd-v:"+c.s+":"+c.p;if(!g(vk)){st(vk,"1");send("view")}
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest('a[href^="tel:"]'):null;if(a)send("call")},true)})(${cfg});</script>`;
+}
+
 /** Where a link to one of the site's pages goes (null = the home page). */
 function pageHref(opts: SiteRenderOptions, path: string | null): string {
   return opts.pageHref ? opts.pageHref(path) : sitePageUrl(opts.url, path);
@@ -800,7 +823,7 @@ function documentHtml(
   look: SiteThemeId,
   meta: PageMeta,
   parts: string[],
-  extra: { topLinks?: string; home: boolean },
+  extra: { topLinks?: string; home: boolean; path?: string },
 ): string {
   const f = content.facts;
   const isPricePage = content.mode === "price_page";
@@ -850,6 +873,7 @@ ${footer}
 ${bar}
 ${hasForm && !embedForm && opts.turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ""}
 ${hasForm && !embedForm ? `<script>${FORM_JS}</script>` : ""}
+${statsScript(opts, extra.path ?? "")}
 </body>
 </html>`;
 }
@@ -1023,7 +1047,7 @@ ${hidden.has("about") ? "" : `<section class="section flow" id="about" aria-labe
     moreServices,
     quoteForm(content, opts, service?.label ?? null),
   ];
-  return documentHtml(content, opts, theme, look, subpageMeta(content, opts, page), parts, { home: false });
+  return documentHtml(content, opts, theme, look, subpageMeta(content, opts, page), parts, { home: false, path: page.path });
 }
 
 /** Neutral not-found page (unknown, draft and unpublished slugs all look the same). */

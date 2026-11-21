@@ -11331,6 +11331,45 @@ export type Database = {
           },
         ]
       }
+      site_stats_daily: {
+        Row: {
+          calls: number
+          company_id: string
+          day: string
+          organization_id: string
+          path: string
+          quotes: number
+          site_id: string
+          source: string
+          updated_at: string
+          views: number
+        }
+        Insert: {
+          calls?: number
+          company_id: string
+          day: string
+          organization_id: string
+          path?: string
+          quotes?: number
+          site_id: string
+          source: string
+          updated_at?: string
+          views?: number
+        }
+        Update: {
+          calls?: number
+          company_id?: string
+          day?: string
+          organization_id?: string
+          path?: string
+          quotes?: number
+          site_id?: string
+          source?: string
+          updated_at?: string
+          views?: number
+        }
+        Relationships: []
+      }
       sms_conversations: {
         Row: {
           ai_turns: number
@@ -13589,6 +13628,18 @@ export type Database = {
       }
       show_limit: { Args: Record<PropertyKey, never>; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      site_stats_bump: {
+        Args: {
+          p_calls: number
+          p_day: string
+          p_path: string
+          p_quotes: number
+          p_site: string
+          p_source: string
+          p_views: number
+        }
+        Returns: undefined
+      }
       time_entry_in_locked_period: {
         Args: { p_company: string; p_org: string; p_started_at: string }
         Returns: boolean

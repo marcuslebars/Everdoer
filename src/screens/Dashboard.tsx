@@ -45,6 +45,7 @@ import { SetupProgressCard } from "@/components/onboarding/SetupProgress";
 import { ApprovalsCard } from "@/components/approvals/ApprovalsCard";
 import { WeeklyFrontDeskCard } from "@/components/reports/WeeklyFrontDeskCard";
 import { YourNumbersCard } from "@/components/front-desk/YourNumbersCard";
+import { SiteStatsDashboardCard } from "@/components/website/SiteStatsCard";
 
 /**
  * Done-for-you orgs: the done-for-you "We're setting you up" card (what we've done + the one
@@ -411,6 +412,8 @@ export default function Dashboard() {
       <OnboardingChecklistCard orgId={organizationId} />
 
       <YourNumbersCard orgId={organizationId} companyId={companyId ?? null} />
+
+      <SiteStatsDashboardCard orgId={organizationId} companyId={companyId ?? companies?.[0]?.id ?? null} />
 
       <ApprovalsCard orgId={organizationId} companyId={companyId ?? null} />
 

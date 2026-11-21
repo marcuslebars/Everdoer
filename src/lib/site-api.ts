@@ -116,6 +116,23 @@ export interface SiteEditInput {
 
 export type SiteAction = "generate" | "regenerate" | "publish" | "unpublish";
 
+export interface SiteStatCounts {
+  views: number;
+  calls: number;
+  quotes: number;
+}
+
+/** The last 30 days of the company's site (null when it has no site). */
+export interface SiteStats {
+  published: boolean;
+  days: number;
+  totals: SiteStatCounts;
+  previous: SiteStatCounts;
+  daily: Array<SiteStatCounts & { day: string }>;
+  sources: Array<{ source: string; label: string; views: number }>;
+  pages: Array<SiteStatCounts & { path: string; label: string }>;
+}
+
 const path = (orgId: string, companyId: string) => `/api/organizations/${orgId}/companies/${companyId}/site`;
 const KEY = "company-site";
 
@@ -137,6 +154,17 @@ export function useSaveSiteEdits(orgId: string, companyId: string) {
   return useMutation({
     mutationFn: (body: SiteEditInput) => saveSiteEdits(orgId, companyId, body),
     onSuccess: (data) => qc.setQueryData([KEY, orgId, companyId], data),
+  });
+}
+
+export const fetchSiteStats = (orgId: string, companyId: string) => apiFetch<SiteStats | null>(`${path(orgId, companyId)}/stats`);
+
+export function useSiteStats(orgId: string, companyId: string | null) {
+  return useQuery({
+    queryKey: ["company-site-stats", orgId, companyId],
+    queryFn: () => fetchSiteStats(orgId, companyId!),
+    enabled: Boolean(orgId && companyId),
+    staleTime: 5 * 60_000,
   });
 }
 
