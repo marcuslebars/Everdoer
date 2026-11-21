@@ -160,15 +160,15 @@ describe("photo at the top", () => {
   const stock = {
     available: true,
     enabled: true,
-    photo: { url: "https://images.pexels.com/p.jpg", alt: "Driveway", photographer: "Pat", photographerUrl: "https://www.pexels.com/@pat", pageUrl: "https://www.pexels.com/photo/1/" },
+    photo: { url: "https://images.unsplash.com/photo-1", alt: "Driveway", photographer: "Pat", photographerUrl: "https://unsplash.com/@pat", pageUrl: "https://unsplash.com/photos/1" },
   };
 
   it("shows the photo and its credit; 'Show another' and the switch work; hidden once they have photos or it isn't set up", () => {
     const save = saver();
     const onAnother = vi.fn();
     const { unmount } = render(<SiteStockPhotoCard site={site({ stock })} hasOwnPhotos={false} save={save} onAnother={onAnother} disabled={false} pending={false} />);
-    expect(screen.getByRole("img", { name: "Driveway" })).toHaveAttribute("src", "https://images.pexels.com/p.jpg");
-    expect(screen.getByRole("link", { name: "Pexels" })).toHaveAttribute("href", "https://www.pexels.com/photo/1/");
+    expect(screen.getByRole("img", { name: "Driveway" })).toHaveAttribute("src", "https://images.unsplash.com/photo-1");
+    expect(screen.getByRole("link", { name: "Unsplash" })).toHaveAttribute("href", "https://unsplash.com/photos/1");
     fireEvent.click(screen.getByRole("button", { name: /Show another/ }));
     expect(onAnother).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("switch", { name: "Use a stock photo at the top" }));

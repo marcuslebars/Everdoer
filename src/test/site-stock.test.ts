@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeDb, type FakeDb } from "@/test/helpers/fake-supabase";
 
 /**
- * Stock photo at the top of a page without the owner's photos (Pexels): the lookup, when the
+ * Stock photo at the top of a page without the owner's photos (Unsplash): the lookup, when the
  * generator picks one, how the page uses and credits it, and the owner's controls.
  */
 let db: FakeDb;
@@ -50,27 +50,26 @@ import { findStockPhoto, stockQuery, toStockPhoto, type StockFetch } from "@/ser
 const ORG = "org-1";
 const CO = "c1";
 
-function pexelsPhoto(id: number, patch: Record<string, unknown> = {}) {
+function unsplashPhoto(id: string, patch: Record<string, unknown> = {}) {
   return {
     id,
     width: 6000,
     height: 4000,
-    url: `https://www.pexels.com/photo/plow-${id}/`,
-    alt: `Plow ${id}`,
-    photographer: `Pat ${id}`,
-    photographer_url: `https://www.pexels.com/@pat${id}`,
-    src: { large2x: `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940` },
+    alt_description: `Plow ${id}`,
+    urls: { raw: `https://images.unsplash.com/photo-${id}?ixid=abc` },
+    links: { html: `https://unsplash.com/photos/${id}`, download_location: `https://api.unsplash.com/photos/${id}/download?ixid=abc` },
+    user: { name: `Pat ${id}`, username: `pat${id}`, links: { html: `https://unsplash.com/@pat${id}` } },
     ...patch,
   };
 }
 
 const STOCK: SiteStockPhoto = {
-  id: 7,
-  url: "https://images.pexels.com/photos/7/pexels-photo-7.jpeg",
+  id: "seven",
+  url: "https://images.unsplash.com/photo-seven?ixid=abc&w=1920&q=80&fm=jpg&fit=crop",
   alt: "Snowy driveway",
   photographer: "Pat <Seven>",
-  photographerUrl: "https://www.pexels.com/@pat7",
-  pageUrl: "https://www.pexels.com/photo/plow-7/",
+  photographerUrl: "https://unsplash.com/@pat7?utm_source=everdoer&utm_medium=referral",
+  pageUrl: "https://unsplash.com/photos/seven?utm_source=everdoer&utm_medium=referral",
   query: stockQuery("property-maintenance-snow"),
   index: 0,
 };
@@ -101,72 +100,91 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("Pexels lookup", () => {
+describe("Unsplash lookup", () => {
   it("a search per trade, with a fallback", () => {
     expect(stockQuery("property-maintenance-snow")).toContain("snow");
     expect(stockQuery("roofing")).toContain("roof");
     expect(stockQuery(null)).toBe(stockQuery("not-a-trade"));
   });
 
-  it("only usable landscape photos from Pexels' own hosts", () => {
-    expect(toStockPhoto(pexelsPhoto(1), "q", 0)).toMatchObject({ id: 1, photographer: "Pat 1", url: expect.stringMatching(/^https:\/\/images\.pexels\.com\//) });
-    expect(toStockPhoto(pexelsPhoto(2, { src: { large2x: "https://evil.example/x.jpg" } }), "q", 0)).toBeNull();
-    expect(toStockPhoto(pexelsPhoto(3, { width: 1000, height: 3000 }), "q", 0)).toBeNull();
-    expect(toStockPhoto(pexelsPhoto(4, { photographer_url: "javascript:alert(1)" }), "q", 0)?.photographerUrl).toBe("https://www.pexels.com/photo/plow-4/");
+  it("only usable landscape photos from Unsplash's own hosts, hotlinked at hero size, links tagged", () => {
+    const p = toStockPhoto(unsplashPhoto("a1"), "q", 0)!;
+    expect(p).toMatchObject({ id: "a1", photographer: "Pat a1", alt: "Plow a1" });
+    expect(p.url).toBe("https://images.unsplash.com/photo-a1?ixid=abc&w=1920&q=80&fm=jpg&fit=crop");
+    expect(p.photographerUrl).toBe("https://unsplash.com/@pata1?utm_source=everdoer&utm_medium=referral");
+    expect(p.pageUrl).toBe("https://unsplash.com/photos/a1?utm_source=everdoer&utm_medium=referral");
+    expect(p.downloadLocation).toBe("https://api.unsplash.com/photos/a1/download?ixid=abc");
+    expect(toStockPhoto(unsplashPhoto("a2", { urls: { raw: "https://evil.example/x.jpg" } }), "q", 0)).toBeNull();
+    expect(toStockPhoto(unsplashPhoto("a3", { width: 1000, height: 3000 }), "q", 0)).toBeNull();
+    expect(toStockPhoto(unsplashPhoto("a4", { user: { name: "X", links: { html: "javascript:alert(1)" } } }), "q", 0)?.photographerUrl).toBe("https://unsplash.com/photos/a4?utm_source=everdoer&utm_medium=referral");
+    expect(toStockPhoto(unsplashPhoto("a5", { links: { html: "https://unsplash.com/photos/a5", download_location: "https://evil.example/ping" } }), "q", 0)?.downloadLocation).toBeNull();
+    expect(toStockPhoto(unsplashPhoto("bad id!"), "q", 0)).toBeNull();
   });
 
-  it("no key → no request; with a key: authorised search, a seeded pick, 'another' moves on and wraps", async () => {
-    const fetch = vi.fn<StockFetch>(async () => ({ ok: true, status: 200, json: async () => ({ photos: [pexelsPhoto(1), pexelsPhoto(2), pexelsPhoto(3)] }) }));
+  it("no key → no request; with a key: authorised search, a seeded pick reported as used, 'another' moves on and wraps", async () => {
+    const fetch = vi.fn<StockFetch>(async (url) =>
+      url.includes("/download") ? { ok: true, status: 200, json: async () => ({}) } : { ok: true, status: 200, json: async () => ({ results: [unsplashPhoto("p1"), unsplashPhoto("p2"), unsplashPhoto("p3")] }) },
+    );
     expect(await findStockPhoto({ tradeId: "roofing", seed: "c1", apiKey: null, fetch })).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
 
     const first = await findStockPhoto({ tradeId: "roofing", seed: "c1", apiKey: "k", fetch });
     const [url, init] = fetch.mock.calls[0];
-    expect(url).toContain("https://api.pexels.com/v1/search?");
+    expect(url).toContain("https://api.unsplash.com/search/photos?");
     expect(url).toContain("orientation=landscape");
+    expect(url).toContain("content_filter=high");
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(stockQuery("roofing"));
-    expect(init.headers.authorization).toBe("k");
+    expect(init.headers.authorization).toBe("Client-ID k");
+    // The picked photo is reported to its download_location.
+    expect(fetch.mock.calls[1][0]).toBe(`https://api.unsplash.com/photos/${first!.id}/download?ixid=abc`);
+    expect(first).not.toHaveProperty("downloadLocation");
     const ids = [first!.id];
     for (const index of [1, 2, 3]) ids.push((await findStockPhoto({ tradeId: "roofing", seed: "c1", index, apiKey: "k", fetch }))!.id);
     expect(new Set(ids.slice(0, 3)).size).toBe(3);
     expect(ids[3]).toBe(ids[0]);
   });
 
-  it("a Pexels failure is just 'no photo'", async () => {
+  it("an Unsplash failure is just 'no photo'; a failed download report still keeps the photo", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: async () => ({ ok: false, status: 429, json: async () => ({}) }) })).toBeNull();
+    expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }) })).toBeNull();
     expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: async () => { throw new Error("offline"); } })).toBeNull();
-    expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: async () => ({ ok: true, status: 200, json: async () => ({ photos: [] }) }) })).toBeNull();
+    expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) }) })).toBeNull();
+    const flaky: StockFetch = async (url) => {
+      if (url.includes("/download")) throw new Error("timeout");
+      return { ok: true, status: 200, json: async () => ({ results: [unsplashPhoto("z1")] }) };
+    };
+    expect(await findStockPhoto({ tradeId: null, seed: "x", apiKey: "k", fetch: flaky })).toMatchObject({ id: "z1" });
   });
 });
 
 describe("on the page", () => {
-  it("fills the top of the page and credits the photographer and Pexels", () => {
+  it("fills the top of the page and credits the photographer and Unsplash", () => {
     const html = renderSitePage(content(), opts);
-    expect(heroPhoto(content())).toMatchObject({ stock: { id: 7 } });
-    expect(html).toContain(`src="${STOCK.url}"`);
+    expect(heroPhoto(content())).toMatchObject({ stock: { id: "seven" } });
+    expect(html).toContain(`src="${STOCK.url.replace(/&/g, "&amp;")}"`);
     expect(html).toContain("Top photo by");
     expect(html).toContain("Pat &lt;Seven&gt;");
-    expect(html).toContain('href="https://www.pexels.com/photo/plow-7/"');
+    expect(html).toContain('href="https://unsplash.com/photos/seven?utm_source=everdoer&amp;utm_medium=referral"');
+    expect(html).toContain(">Unsplash</a>");
   });
 
   it("is never 'Our work', never in the business data, and never on the extra pages", () => {
     const html = renderSitePage(content(), opts);
     expect(html).not.toContain('id="photos-title"');
-    expect(JSON.stringify(buildJsonLd(content(), opts))).not.toContain("pexels");
+    expect(JSON.stringify(buildJsonLd(content(), opts))).not.toContain("unsplash");
     const sub = renderSiteSubpage(content(), opts, sitePages(content())[0]);
-    expect(sub).not.toContain("pexels");
+    expect(sub).not.toContain("unsplash");
   });
 
   it("the owner's photo wins, and the owner can switch it off", () => {
     const own = renderSitePage(content({}, ["https://cdn.example/own.jpg"]), opts);
     expect(own).toContain("https://cdn.example/own.jpg");
-    expect(own).not.toContain("pexels");
+    expect(own).not.toContain("unsplash");
     const off = renderSitePage(content({ settings: { ...content().settings, stockPhoto: false } }), opts);
-    expect(off).not.toContain("pexels");
+    expect(off).not.toContain("unsplash");
   });
 
-  it("a stored photo off Pexels' hosts is dropped when read", () => {
+  it("a stored photo off Unsplash's hosts is dropped when read", () => {
     expect(parseSiteContent({ ...content(), stockPhoto: { ...STOCK, url: "https://evil.example/x.jpg" } })!.stockPhoto).toBeNull();
     expect(parseSiteContent({ ...content(), stockPhoto: undefined })!.stockPhoto).toBeNull();
   });
@@ -210,7 +228,7 @@ describe("generateSite", () => {
     const findStock = vi.fn(async () => STOCK);
     await generateSite(db.client, CO, { deps: deps(findStock) });
     expect(findStock).toHaveBeenCalledWith({ tradeId: "property-maintenance-snow", seed: CO });
-    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: 7 });
+    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: "seven" });
     await generateSite(db.client, CO, { deps: deps(findStock) });
     expect(findStock).toHaveBeenCalledTimes(1);
 
@@ -220,7 +238,7 @@ describe("generateSite", () => {
     expect(unused).not.toHaveBeenCalled();
   });
 
-  it("a Pexels outage never blocks the page", async () => {
+  it("an Unsplash outage never blocks the page", async () => {
     seed({ profile: { photos: [] } });
     const out = await generateSite(db.client, CO, { deps: deps(async () => { throw new Error("down"); }) });
     expect(parseSiteContent(out.site.content)!.stockPhoto).toBeNull();
@@ -233,16 +251,16 @@ describe("owner controls", () => {
 
   it("'Show another' moves to the next photo; the switch turns it off; the view says whether it's set up", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("PEXELS_API_KEY", "k");
+    vi.stubEnv("UNSPLASH_ACCESS_KEY", "k");
     seed({ profile: { photos: [] } });
-    stockMock.fn = async (input) => ({ ...STOCK, id: 100 + (input.index ?? 0), index: input.index ?? 0 });
+    stockMock.fn = async (input) => ({ ...STOCK, id: `p${100 + (input.index ?? 0)}`, index: input.index ?? 0 });
     await POST(req("POST", { action: "generate" }), ctx);
-    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: 100 });
+    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: "p100" });
 
     let res = await POST(req("POST", { action: "stock-next" }), ctx);
     let site = (await res.json()).data.site;
     expect(site.stock).toMatchObject({ available: true, enabled: true, photo: { photographer: "Pat <Seven>" } });
-    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: 101, index: 1 });
+    expect(parseSiteContent(db.tables.company_sites[0].content)!.stockPhoto).toMatchObject({ id: "p101", index: 1 });
 
     res = await PATCH(req("PATCH", { stockPhoto: false }), ctx);
     site = (await res.json()).data.site;
@@ -251,7 +269,7 @@ describe("owner controls", () => {
     stockMock.fn = async () => null;
     expect((await POST(req("POST", { action: "stock-next" }), ctx)).status).toBe(409);
 
-    vi.stubEnv("PEXELS_API_KEY", "");
+    vi.stubEnv("UNSPLASH_ACCESS_KEY", "");
     res = await PATCH(req("PATCH", { stockPhoto: true }), ctx);
     expect((await res.json()).data.site.stock.available).toBe(false);
   });

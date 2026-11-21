@@ -11,7 +11,7 @@ import type { TenantServiceContext } from "@/server/services/shared";
 import { defaultSiteSteps, effectiveCopy, effectiveSteps, parseSiteContent, SITE_SECTION_LABELS, type SiteContent } from "./site-content";
 import { cloudflareConfig, type DomainDns, type DomainStatus } from "./site-domain";
 import { parseServiceTowns, sitePages, sitePageUrl } from "./site-pages";
-import { pexelsApiKey } from "./site-stock";
+import { unsplashAccessKey } from "./site-stock";
 import { MAX_SITE_PHOTOS, profilePhotos } from "./site-images";
 import { sitePublicUrl } from "./site-public";
 import { siteUrl } from "./site-url";
@@ -69,8 +69,8 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
       ...(content ? contentEditing(content) : EMPTY_EDITING),
       stock: content
         ? {
-            /** Stock photos are set up on the server (PEXELS_API_KEY). */
-            available: Boolean(pexelsApiKey()),
+            /** Stock photos are set up on the server (UNSPLASH_ACCESS_KEY). */
+            available: Boolean(unsplashAccessKey()),
             enabled: content.settings.stockPhoto,
             photo: content.stockPhoto
               ? { url: content.stockPhoto.url, alt: content.stockPhoto.alt, photographer: content.stockPhoto.photographer, photographerUrl: content.stockPhoto.photographerUrl, pageUrl: content.stockPhoto.pageUrl }

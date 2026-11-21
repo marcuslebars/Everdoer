@@ -191,13 +191,14 @@ export function uniqueTowns(list: string[]): string[] {
 
 /** A stock photo for the top of the page (site-stock.ts). Only used while the owner has none. */
 export interface SiteStockPhoto {
-  id: number;
-  /** https://images.pexels.com/… */
+  /** Unsplash photo id. */
+  id: string;
+  /** https://images.unsplash.com/… (hotlinked, as Unsplash requires) */
   url: string;
   alt: string;
   photographer: string;
   photographerUrl: string;
-  /** The photo's Pexels page. */
+  /** The photo's Unsplash page (with our referral tags). */
   pageUrl: string;
   /** The search it came from (a trade change picks a new one). */
   query: string;
@@ -209,15 +210,15 @@ function parseStockPhoto(raw: unknown): SiteStockPhoto | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
-  const pexels = (v: unknown) => typeof v === "string" && /^https:\/\/(www\.)?pexels\.com\//.test(v);
-  if (typeof r.id !== "number" || typeof r.url !== "string" || !/^https:\/\/images\.pexels\.com\//.test(r.url)) return null;
+  const unsplash = (v: unknown) => typeof v === "string" && /^https:\/\/unsplash\.com\//.test(v);
+  if (typeof r.id !== "string" || typeof r.url !== "string" || !/^https:\/\/images\.unsplash\.com\//.test(r.url)) return null;
   return {
     id: r.id,
     url: r.url,
     alt: str(r.alt, 200),
-    photographer: str(r.photographer, 80) || "a Pexels photographer",
-    photographerUrl: pexels(r.photographerUrl) ? (r.photographerUrl as string) : "https://www.pexels.com/",
-    pageUrl: pexels(r.pageUrl) ? (r.pageUrl as string) : "https://www.pexels.com/",
+    photographer: str(r.photographer, 80) || "an Unsplash photographer",
+    photographerUrl: unsplash(r.photographerUrl) ? (r.photographerUrl as string) : "https://unsplash.com/?utm_source=everdoer&utm_medium=referral",
+    pageUrl: unsplash(r.pageUrl) ? (r.pageUrl as string) : "https://unsplash.com/?utm_source=everdoer&utm_medium=referral",
     query: str(r.query, 120),
     index: typeof r.index === "number" && r.index >= 0 ? Math.floor(r.index) : 0,
   };
@@ -282,7 +283,7 @@ export interface SiteContent {
    * rebuild. What it states counts as the owner's own words when the AI copy is screened.
    */
   copyNote: string | null;
-  /** The stock photo picked for the top of the page (null = none, e.g. no PEXELS_API_KEY). */
+  /** The stock photo picked for the top of the page (null = none, e.g. no UNSPLASH_ACCESS_KEY). */
   stockPhoto: SiteStockPhoto | null;
   generatedAt: string;
 }

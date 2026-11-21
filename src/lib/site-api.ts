@@ -49,7 +49,7 @@ export interface SiteView {
     steps: SiteStep[];
     generatedSteps: SiteStep[];
     stepsEdited: boolean;
-    /** The stock photo for the top while the owner has no photos (Pexels). */
+    /** The stock photo for the top while the owner has no photos (Unsplash). */
     stock: null | {
       available: boolean;
       enabled: boolean;

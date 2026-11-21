@@ -839,10 +839,10 @@ function documentHtml(
   const quoteHref = hasForm || tel ? "#quote" : null;
   const credit = opts.creditUrl ? safeHref(opts.creditUrl) : null;
   const areas = areaLinks(content, opts);
-  // Pexels asks for a visible link to them and credit to the photographer when their photo shows.
+  // Unsplash asks for credit to the photographer and Unsplash, with referral links, wherever it shows.
   const stock = extra.home ? heroPhoto(content)?.stock ?? null : null;
   const stockCredit = stock
-    ? `Top photo by <a href="${safeHref(stock.photographerUrl) ?? "https://www.pexels.com/"}" rel="noopener nofollow" target="_blank">${esc(stock.photographer)}</a> on <a href="${safeHref(stock.pageUrl) ?? "https://www.pexels.com/"}" rel="noopener nofollow" target="_blank">Pexels</a>`
+    ? `Top photo by <a href="${safeHref(stock.photographerUrl) ?? "https://unsplash.com/"}" rel="noopener nofollow" target="_blank">${esc(stock.photographer)}</a> on <a href="${safeHref(stock.pageUrl) ?? "https://unsplash.com/"}" rel="noopener nofollow" target="_blank">Unsplash</a>`
     : "";
   const footer = `<footer class="foot">
   <div class="wrap">

@@ -373,18 +373,20 @@ visits-per-day bar, where visitors came from, and the busiest pages.
 ### Stock photo
 
 While a business has no photos of its own, the top of its page can show a free stock photo for
-its trade from **Pexels** (`site-stock.ts`; set `PEXELS_API_KEY` [web, workers], unset = no
-stock photos, pages look as before).
+its trade from **Unsplash** (`site-stock.ts`; set `UNSPLASH_ACCESS_KEY` [web, workers], unset =
+no stock photos, pages look as before). Demo apps get 50 requests/hour (one search per pick is
+plenty to start); apply for production in the Unsplash dashboard with screenshots of the credit.
 
 - Picked at generation when `facts.photos` is empty: a per-trade search (landscape), seeded by
   the company id so neighbours in the same trade get different photos; kept on rebuild unless
   the trade (search) changes. "Show another" (`POST .../site {action: "stock-next"}`) moves to
-  the next result; `PATCH {stockPhoto: false}` turns it off. A Pexels error is just "no photo".
+  the next result; `PATCH {stockPhoto: false}` turns it off. An Unsplash error is just "no photo".
 - **Top of the home page only.** Never in "Our work", never in the JSON-LD, never on the
   service/town pages; the owner's own first photo always replaces it. Only
-  `https://images.pexels.com/` URLs are stored or rendered.
-- Pexels' API terms ask for a visible link to Pexels and credit to the photographer: the footer
-  says "Top photo by <name> on Pexels" (both linked, `rel="nofollow"`) whenever it shows.
+  `https://images.unsplash.com/` URLs are stored or rendered.
+- Unsplash's API guidelines: images are **hotlinked** (never copied); the footer says "Top photo
+  by <name> on Unsplash" with both linked and tagged `utm_source=everdoer&utm_medium=referral`;
+  picking a photo calls its `download_location` (server-side) to report the use.
 
 ### Copy
 
