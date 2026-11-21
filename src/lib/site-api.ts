@@ -279,3 +279,36 @@ export function useSiteDomain(orgId: string, companyId: string) {
   });
   return { connect, check, remove };
 }
+
+// ── Job photos → "Our work" ──────────────────────────────────────────────────
+
+export interface SiteJobPhotos {
+  hasSite: boolean;
+  /** Free photo slots on the page. */
+  room: number;
+  photos: Array<{ id: string; url: string | null; takenAt: string; jobTitle: string | null; onSite: boolean }>;
+}
+
+const JOB_PHOTOS_KEY = "company-site-job-photos";
+
+/** The company's latest job photos (or one job's) for "Add to my website". */
+export function useSiteJobPhotos(orgId: string, companyId: string | null, bookingId?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: [JOB_PHOTOS_KEY, orgId, companyId, bookingId ?? null],
+    queryFn: () => apiFetch<SiteJobPhotos>(`${path(orgId, companyId!)}/job-photos${bookingId ? `?booking=${encodeURIComponent(bookingId)}` : ""}`),
+    enabled: Boolean(orgId && companyId && enabled),
+    staleTime: 30_000,
+  });
+}
+
+export function useAddJobPhotoToSite(orgId: string, companyId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobPhotoId: string) =>
+      apiFetch<SiteView>(`${path(orgId, companyId!)}/images`, { method: "PATCH", body: JSON.stringify({ action: "from-job", jobPhotoId }) }),
+    onSuccess: (data) => {
+      qc.setQueryData([KEY, orgId, companyId], data);
+      void qc.invalidateQueries({ queryKey: [JOB_PHOTOS_KEY, orgId, companyId] });
+    },
+  });
+}

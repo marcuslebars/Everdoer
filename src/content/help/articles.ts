@@ -231,6 +231,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
           "If your business is on Google, your page shows your star rating and your latest Google reviews, straight from Google, with each reviewer's name. They're shown the way Google lists them (most relevant first), so we can't pick or hide individual reviews. To leave reviews off your page, turn off \"Google reviews\" under Sections in Settings → Your website.",
       },
       {
+        heading: "Adding photos from your jobs",
+        body:
+          "When you finish a job that has photos, the job shows \"Show this job off on your website?\". Tap \"Add to website\" on any photo to put it under \"Our work\". You can also pick from all your recent job photos in Settings → Your website → Add photos from your jobs. Your page holds up to 6 photos. Only add photos the customer would be happy to see online.",
+      },
+      {
         heading: "Seeing how your page is doing",
         body:
           "Once your page is live, your dashboard and Settings → Your website show the last 30 days: visits, call taps (people tapping your number on the page) and quote requests sent from the page, compared with the 30 days before. You can also see where visitors came from (Google, Facebook, ads, a saved link and so on) and which pages they looked at most.\nWe don't use cookies and we don't keep anything about the people who visit.",
