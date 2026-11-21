@@ -16,6 +16,7 @@ import {
   toPublicFormConfig,
   touchPublicFormKey,
 } from "@/server/services/lead-intake/public-forms";
+import { recordSiteQuote } from "@/server/services/dfy/site-stats";
 import { enforceRateLimit, trustedClientIp } from "@/server/services/rate-limit";
 import { assessFormSignals, verifyTurnstile } from "@/server/services/turnstile";
 
@@ -249,8 +250,15 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
     return json({ error: "Couldn't send right now. Please try again or call us." }, 500, cors);
   }
 
-  // (10) After the durable write: telemetry only, never fatal.
+  // (10) After the durable write: telemetry only, never fatal. A request sent from the
+  //      company's generated site counts toward its site stats (recordSiteQuote never throws).
   await touchPublicFormKey(form.id);
+  await recordSiteQuote({
+    organizationId: form.organizationId,
+    companyId: form.companyId,
+    pageUrl: parsed.data.page,
+    utm: parsed.data.utm ?? null,
+  });
 
   return json({ data: { ok: true, leadId: result.leadId } }, 200, cors);
 }

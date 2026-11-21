@@ -80,6 +80,8 @@ export async function siteRuntime(
     creditUrl: isDoneForYou(content.facts.brand) ? siteCreditUrl() : null,
     faviconUrl: site.favicon_url ?? null,
     embedFormOrigin: options.onCustomDomain ? appBaseUrlFor(content.facts.brand ?? "empirevu") : null,
+    // Counted on the app (works from our pages host and the business's own domain alike).
+    stats: { endpoint: `${appBaseUrlFor(content.facts.brand ?? "empirevu")}/api/public/sites/hit`, slug: site.slug },
   };
 }
 

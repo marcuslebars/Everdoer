@@ -346,6 +346,30 @@ gets (`site-pages.ts`, rendered by `renderSiteSubpage`):
   on a business domain the Worker turns that into a 301 to the home page, as before (old sites'
   links keep working). **The Worker change needs a redeploy**: `npm run job:cloudflare-sites-setup`.
 
+### Site stats
+
+The owner sees the last 30 days of their site (vs the 30 before) on the dashboard (once it's
+published) and in Settings → Your website: **visits**, **call taps** and **quote requests**, a
+visits-per-day bar, where visitors came from, and the busiest pages.
+
+- **Visits / call taps:** a small inline script on published pages (never the preview) sends
+  `navigator.sendBeacon` to `POST /api/public/sites/hit` on the app (text/plain JSON — no CORS
+  preflight; always 204). One view per page per browsing session (sessionStorage), every tap on
+  a `tel:` link. The landing referrer and utm tags are kept for the session, so a visitor from
+  Google is still Google on page two. Bots/previewers are dropped by user agent; per-IP limits
+  (60 / 10 min, 30 per site / hour) stop loops and inflation; only published sites and their own
+  pages count.
+- **Quote requests:** counted server-side by the public form route after the lead is saved
+  (`recordSiteQuote`, never fatal), when the reported page URL is the site (our pages host,
+  `/s/<slug>`, or the live business domain — which also covers the embedded form there).
+- **Sources:** google, bing, facebook, instagram, ads (gclid/fbclid or a paid utm_medium),
+  direct (no referrer or the site itself), other; quotes without utm tags are `unknown`.
+- **Storage:** `site_stats_daily` (migration `20261121100000_site_stats_daily.sql`): one row per
+  site, business-local day, page path and source with three counters, written only through
+  `site_stats_bump` (security definer, service role only); org members can read their rows.
+  **Nothing about visitors is stored** — no IP, cookie, user agent or URL beyond the site's own
+  page path. `GET .../site/stats` returns the summary.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,

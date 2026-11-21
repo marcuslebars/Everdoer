@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useSettingsCompany } from "@/lib/settings-company";
 import { SiteDomainCard, SiteImagesCard } from "@/components/settings/WebsiteBranding";
 import { SiteLookPicker } from "@/components/website/SiteLookPicker";
+import { SiteStatsSettingsCard } from "@/components/website/SiteStatsCard";
 import {
   SitePagesCard,
   SiteQuestionsCard,
@@ -222,6 +223,8 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
           />
         )}
       </div>
+
+      <SiteStatsSettingsCard orgId={orgId} companyId={companyId} />
 
       <div className="rounded-xl border border-border p-4 space-y-3">
         <div>
