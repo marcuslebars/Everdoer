@@ -31,7 +31,8 @@ async function reconcile(): Promise<number> {
   let mismatches = 0;
   const seenStripeIds = new Set<string>();
 
-  for (const status of ["active", "past_due"] as const) {
+  // `trialing` too: a trial is a live subscription (leaving it out flagged every trial as stale).
+  for (const status of ["active", "trialing", "past_due"] as const) {
     for await (const sub of stripe.subscriptions.list({ limit: 100, status })) {
       checked += 1;
       seenStripeIds.add(sub.id);
@@ -70,7 +71,7 @@ async function reconcile(): Promise<number> {
   // Local rows that claim active/past_due but Stripe didn't return (likely canceled
   // in Stripe without the webhook landing).
   for (const [id, local] of localById) {
-    if ((local.status === "active" || local.status === "past_due") && !seenStripeIds.has(id)) {
+    if ((local.status === "active" || local.status === "trialing" || local.status === "past_due") && !seenStripeIds.has(id)) {
       mismatches += 1;
       console.error(
         `[reconcile] STALE LOCAL: subscription ${id} is '${local.status}' locally but was not ` +
