@@ -224,9 +224,16 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         heading: "The photo at the top",
         body:
           "Until you add your own photos, we put a free stock photo that suits your trade at the top of your page, with a small credit to the photographer at the bottom. It's never shown under \"Our work\". In Settings → Your website → Photo at the top you can pick another or turn it off. As soon as you upload a photo of your own, yours goes at the top instead.",
+      },
+      {
         heading: "Your Google reviews on your page",
         body:
           "If your business is on Google, your page shows your star rating and your latest Google reviews, straight from Google, with each reviewer's name. They're shown the way Google lists them (most relevant first), so we can't pick or hide individual reviews. To leave reviews off your page, turn off \"Google reviews\" under Sections in Settings → Your website.",
+      },
+      {
+        heading: "Adding photos from your jobs",
+        body:
+          "When you finish a job that has photos, the job shows \"Show this job off on your website?\". Tap \"Add to website\" on any photo to put it under \"Our work\". You can also pick from all your recent job photos in Settings → Your website → Add photos from your jobs. Your page holds up to 6 photos. Only add photos the customer would be happy to see online.",
       },
       {
         heading: "Seeing how your page is doing",

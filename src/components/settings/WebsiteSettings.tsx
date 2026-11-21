@@ -12,6 +12,7 @@ import { useSettingsCompany } from "@/lib/settings-company";
 import { SiteDomainCard, SiteImagesCard } from "@/components/settings/WebsiteBranding";
 import { SiteLookPicker } from "@/components/website/SiteLookPicker";
 import { SiteStatsSettingsCard } from "@/components/website/SiteStatsCard";
+import { SiteJobPhotoPicker } from "@/components/website/SiteJobPhotoPicker";
 import {
   SitePagesCard,
   SiteQuestionsCard,
@@ -244,6 +245,7 @@ export function WebsiteSitePanel({ orgId, companyId }: { orgId: string; companyI
       <SitePagesCard key={`pages:${JSON.stringify(site.pages)}`} site={site} save={saveContent} disabled={!canManage || busy} />
 
       <SiteImagesCard orgId={orgId} view={data} />
+      {canManage && <SiteJobPhotoPicker orgId={orgId} companyId={companyId} />}
       <SiteStockPhotoCard
         site={site}
         hasOwnPhotos={data.photos.length > 0}

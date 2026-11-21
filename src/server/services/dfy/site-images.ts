@@ -11,6 +11,8 @@ import type { Json, Tables } from "@/server/db/database.types";
 import { UserFacingError } from "@/server/errors";
 import type { AdminClient } from "@/server/services/done-for-you/purchases";
 
+import { JOB_PHOTOS_BUCKET } from "@/server/services/job-photos";
+
 import { parseSiteContent, type SiteContent } from "./site-content";
 
 export const SITE_IMAGES_BUCKET = "site-images";
@@ -222,4 +224,98 @@ export async function makeCoverPhoto(admin: AdminClient, scope: Scope, url: stri
     return [url, ...photos.filter((p) => p !== url)];
   });
   await syncSiteImages(admin, scope);
+}
+
+// ── Job photos → "Our work" ──────────────────────────────────────────────────
+
+/**
+ * A job photo's copy on the website is named after the job photo (photo-<job photo id>.jpg), so
+ * the same photo can't be added twice and the app can tell which job photos are on the page.
+ */
+export function sitePathForJobPhoto(scope: Scope, jobPhotoId: string): string {
+  return `${siteImagePrefix(scope)}photo-${jobPhotoId}.jpg`;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Which job photos are already on the page (from the photo URLs). PURE. */
+export function jobPhotoIdsOnSite(photos: string[]): Set<string> {
+  const ids = new Set<string>();
+  for (const url of photos) {
+    const m = url.match(/\/photo-([0-9a-f-]{36})\.jpg(?:\?|$)/);
+    if (m && UUID.test(m[1])) ids.add(m[1]);
+  }
+  return ids;
+}
+
+/**
+ * Put one of the company's job photos on its website ("Our work"): copy the file from the private
+ * job-photos bucket to the public site-images bucket, then save it like an upload (the 6-photo
+ * limit and the page refresh are saveSiteImage's). The job photo must belong to this company.
+ * The owner chooses each photo: job photos can show a customer's home.
+ */
+export async function addJobPhotoToSite(admin: AdminClient, scope: Scope, jobPhotoId: string): Promise<void> {
+  if (!UUID.test(jobPhotoId)) throw new UserFacingError("That photo wasn't found.");
+  const { data, error } = await admin
+    .from("job_photos")
+    .select("id, storage_path")
+    .eq("id", jobPhotoId)
+    .eq("organization_id", scope.organizationId)
+    .eq("company_id", scope.companyId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as Pick<Tables<"job_photos">, "id" | "storage_path"> | null;
+  if (!row) throw new UserFacingError("That photo wasn't found.");
+  const target = sitePathForJobPhoto(scope, row.id);
+  const company = await loadCompanyImages(admin, scope);
+  const photos = profilePhotos(company.profile);
+  if (jobPhotoIdsOnSite(photos).has(row.id)) return;
+  if (photos.length >= MAX_SITE_PHOTOS) throw new UserFacingError(`You can have up to ${MAX_SITE_PHOTOS} photos. Remove one first.`);
+
+  const { data: file, error: downloadError } = await admin.storage.from(JOB_PHOTOS_BUCKET).download(row.storage_path);
+  if (downloadError || !file) throw new UserFacingError("Couldn't read that photo. Try again.");
+  const { error: uploadError } = await admin.storage
+    .from(SITE_IMAGES_BUCKET)
+    .upload(target, file, { contentType: "image/jpeg", upsert: true, cacheControl: "31536000" });
+  if (uploadError) throw new UserFacingError("Couldn't copy that photo to your website. Try again.");
+  await saveSiteImage(admin, scope, "photo", target);
+}
+
+export interface JobPhotoChoice {
+  id: string;
+  /** Short-lived signed URL (job photos are private). */
+  url: string | null;
+  takenAt: string;
+  jobTitle: string | null;
+  onSite: boolean;
+}
+
+/** The company's latest job photos (or one job's) for "Add to my website". */
+export async function recentJobPhotosForSite(admin: AdminClient, scope: Scope, options: { bookingId?: string | null; limit?: number } = {}): Promise<JobPhotoChoice[]> {
+  let query = admin
+    .from("job_photos")
+    .select("id, storage_path, taken_at, booking_id")
+    .eq("organization_id", scope.organizationId)
+    .eq("company_id", scope.companyId);
+  if (options.bookingId) query = query.eq("booking_id", options.bookingId);
+  const { data, error } = await query.order("taken_at", { ascending: false }).limit(options.limit ?? 30);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Pick<Tables<"job_photos">, "id" | "storage_path" | "taken_at" | "booking_id">>;
+  if (!rows.length) return [];
+  const bookingIds = [...new Set(rows.map((r) => r.booking_id))];
+  const [{ data: signed }, { data: bookings }, company] = await Promise.all([
+    admin.storage.from(JOB_PHOTOS_BUCKET).createSignedUrls(rows.map((r) => r.storage_path), 3600),
+    admin.from("bookings").select("id, title").eq("organization_id", scope.organizationId).in("id", bookingIds),
+    loadCompanyImages(admin, scope),
+  ]);
+  const urlByPath = new Map((signed ?? []).map((e: { path: string | null; signedUrl: string }) => [e.path, e.signedUrl]));
+  const titleById = new Map(((bookings ?? []) as Array<{ id: string; title: string | null }>).map((b) => [b.id, b.title]));
+  const onSite = jobPhotoIdsOnSite(profilePhotos(company.profile));
+  return rows.map((r) => ({
+    id: r.id,
+    url: urlByPath.get(r.storage_path) ?? null,
+    takenAt: r.taken_at,
+    jobTitle: titleById.get(r.booking_id) ?? null,
+    onSite: onSite.has(r.id),
+  }));
 }

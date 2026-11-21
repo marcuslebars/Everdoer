@@ -7,7 +7,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { siteRoute } from "@/server/api/site-route";
-import { SITE_IMAGE_KINDS, createSiteImageUpload, makeCoverPhoto, removeSiteImage, saveSiteImage } from "@/server/services/dfy/site-images";
+import {
+  SITE_IMAGE_KINDS,
+  addJobPhotoToSite,
+  createSiteImageUpload,
+  makeCoverPhoto,
+  removeSiteImage,
+  saveSiteImage,
+} from "@/server/services/dfy/site-images";
 import { siteView } from "@/server/services/dfy/site-view";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 
@@ -34,16 +41,20 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
   );
 }
 
-const changeSchema = z
-  .object({
-    action: z.enum(["save", "remove", "cover"]),
-    kind: z.enum(SITE_IMAGE_KINDS),
-    path: z.string().max(300).optional(),
-    url: z.string().url().max(2000).optional(),
-  })
-  .strict();
+const changeSchema = z.union([
+  z
+    .object({
+      action: z.enum(["save", "remove", "cover"]),
+      kind: z.enum(SITE_IMAGE_KINDS),
+      path: z.string().max(300).optional(),
+      url: z.string().url().max(2000).optional(),
+    })
+    .strict(),
+  /** Put one of the company's job photos on the page ("Our work"). */
+  z.object({ action: z.literal("from-job"), jobPhotoId: z.string().uuid() }).strict(),
+]);
 
-/** save (after the upload), remove, or make a photo the cover. Returns the refreshed view. */
+/** save (after the upload), remove, make a photo the cover, or add a job photo. Returns the refreshed view. */
 export async function PATCH(request: Request, context: RouteContext): Promise<NextResponse> {
   const { organizationId, companyId } = context.params;
   return siteRoute(
@@ -53,7 +64,8 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Ne
       const body = changeSchema.parse(await request.json().catch(() => ({})));
       const admin = createSupabaseAdminClient();
       const scope = { organizationId, companyId };
-      if (body.action === "save") await saveSiteImage(admin, scope, body.kind, body.path ?? "");
+      if (body.action === "from-job") await addJobPhotoToSite(admin, scope, body.jobPhotoId);
+      else if (body.action === "save") await saveSiteImage(admin, scope, body.kind, body.path ?? "");
       else if (body.action === "remove") await removeSiteImage(admin, scope, body.kind, body.url);
       else await makeCoverPhoto(admin, scope, body.url ?? "");
       return NextResponse.json({ data: await siteView(ctx, companyId, canManage) });

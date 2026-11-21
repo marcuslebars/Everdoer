@@ -37,6 +37,7 @@ import { useAuth } from "@/lib/auth-context";
 import { CrewPicker } from "./CrewPicker";
 import { JobChecklist } from "./JobChecklist";
 import { JobPhotos } from "./JobPhotos";
+import { JobPhotosToWebsite } from "@/components/website/SiteJobPhotoPicker";
 import { VisitLinkRow } from "./VisitLinkRow";
 import { JobExpenses } from "@/components/expenses/JobExpenses";
 import { JobMaterials, JobProfitCard, JobTime } from "./JobTimeAndCost";
@@ -264,6 +265,7 @@ export function JobSheetView({ orgId, job }: { orgId: string; job: JobSheet }) {
 
       <Section>
         <JobPhotos orgId={orgId} bookingId={job.id} canAdd={job.stage !== "cancelled"} />
+        {job.stage === "done" && canSeeCosts && job.companyId && <JobPhotosToWebsite orgId={orgId} companyId={job.companyId} bookingId={job.id} />}
       </Section>
 
       <Section>

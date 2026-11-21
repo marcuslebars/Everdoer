@@ -409,6 +409,22 @@ Google listing (`companies.google_place_id`) and `GOOGLE_PLACES_API_KEY` is set.
   rating and "Read our Google reviews" link. The owner preview shows a placeholder and calls
   nobody.
 
+### Job photos → "Our work"
+
+Owners/admins can put photos from their jobs on the page: on a finished job's sheet ("Show this
+job off on your website?", once the company has a page) and in Settings → Your website → "Add
+photos from your jobs" (the latest 30).
+
+- `addJobPhotoToSite` (`site-images.ts`) checks the job photo belongs to the company, copies the
+  file from the private `job-photos` bucket to the public `site-images` bucket as
+  `photo-<job photo id>.jpg` (so it can't be added twice and the app knows what's on the page),
+  then saves it like an upload (`saveSiteImage`: the 6-photo limit, page refresh). Job photos are
+  already resized and EXIF-stripped by the app.
+- `GET .../site/job-photos[?booking=<id>]` lists them with short-lived signed URLs, the job's
+  title and `onSite`; `PATCH .../site/images {action: "from-job", jobPhotoId}` adds one.
+- Nothing is automatic: the owner picks each photo (job photos can show a customer's home), and
+  the UI says to add only ones the customer would be happy to see online.
+
 ### Copy
 
 `src/server/ai/site-copy.ts` asks Claude (`AI_MODEL_DRAFTS`) for headline, subhead, about,
