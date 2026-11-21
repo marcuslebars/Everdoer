@@ -35,6 +35,7 @@ import {
   initialSiteSettings,
   parseSiteContent,
   parseSiteSections,
+  parseSitePagesSettings,
   screenSiteCopy,
   SITE_COPY_NOTE_MAX,
   siteSlugBase,
@@ -323,6 +324,8 @@ export interface SiteEditInput extends Omit<SiteEdits, "serviceBlurbs"> {
   showPrices?: boolean;
   mode?: SiteMode;
   sections?: SiteSection[];
+  /** Service and town pages: on/off, and the owner's town list (null = from the service area). */
+  pages?: { services?: boolean; areas?: boolean; towns?: string[] | null };
 }
 
 /**
@@ -358,6 +361,7 @@ export async function updateSiteEdits(admin: AdminClient, companyId: string, inp
     ...content.settings,
     ...(input.showPrices !== undefined ? { showPrices: input.showPrices } : {}),
     ...(input.sections !== undefined ? { sections: parseSiteSections(input.sections) } : {}),
+    ...(input.pages !== undefined ? { pages: parseSitePagesSettings({ ...content.settings.pages, ...input.pages }) } : {}),
   };
   const mode = input.mode ?? content.mode;
   const next: SiteContent = { ...content, edits, settings, mode };

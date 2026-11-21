@@ -142,6 +142,53 @@ export function parseSiteSections(raw: unknown): SiteSection[] {
   return out;
 }
 
+// ── Extra pages (service + town pages; the builder lives in site-pages.ts) ──────
+
+export const MAX_AREA_PAGES = 6;
+
+export interface SitePagesSettings {
+  /** A page per service. */
+  services: boolean;
+  /** A page per town. */
+  areas: boolean;
+  /** The owner's town list; null = read from the service area. */
+  towns: string[] | null;
+}
+
+export function defaultSitePagesSettings(): SitePagesSettings {
+  return { services: true, areas: true, towns: null };
+}
+
+const TOWN_MAX = 40;
+
+function cleanTown(raw: string): string | null {
+  const t = raw.replace(/\s+/g, " ").replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, "").trim();
+  if (t.length < 2 || t.length > TOWN_MAX) return null;
+  if (!/^[\p{L}][\p{L} .'’-]*$/u.test(t)) return null;
+  return t;
+}
+
+export function parseSitePagesSettings(raw: unknown): SitePagesSettings {
+  const d = defaultSitePagesSettings();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
+  const r = raw as Record<string, unknown>;
+  const towns = Array.isArray(r.towns) ? uniqueTowns(r.towns.filter((t): t is string => typeof t === "string")) : null;
+  return { services: r.services !== false, areas: r.areas !== false, towns };
+}
+
+export function uniqueTowns(list: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list) {
+    const t = cleanTown(raw);
+    if (!t || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    out.push(t);
+    if (out.length >= MAX_AREA_PAGES) break;
+  }
+  return out;
+}
+
 export interface SiteSettings {
   showPrices: boolean;
   /** The look ("auto" = by trade) — see src/lib/site-style.ts. */
@@ -150,11 +197,13 @@ export interface SiteSettings {
   color: string | null;
   /** Section order and visibility (hero first and the quote form last are fixed). */
   sections: SiteSection[];
+  /** Service and town pages (full websites only). */
+  pages: SitePagesSettings;
 }
 
 /** Settings for a new page: prices shown, and the look the owner picked before it existed. */
 export function initialSiteSettings(siteStyle: unknown): SiteSettings {
-  return { showPrices: true, ...parseSiteStyle(siteStyle), sections: parseSiteSections(null) };
+  return { showPrices: true, ...parseSiteStyle(siteStyle), sections: parseSiteSections(null), pages: defaultSitePagesSettings() };
 }
 
 /**
@@ -1007,7 +1056,7 @@ export function parseSiteContent(raw: unknown): SiteContent | null {
     copySource: c.copySource ?? "template",
     copyNotes: Array.isArray(c.copyNotes) ? c.copyNotes : [],
     edits: parseEdits(c.edits),
-    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings), sections: parseSiteSections(c.settings?.sections) },
+    settings: { showPrices: c.settings?.showPrices !== false, ...parseSiteStyle(c.settings), sections: parseSiteSections(c.settings?.sections), pages: parseSitePagesSettings(c.settings?.pages) },
     copyNote: typeof c.copyNote === "string" && c.copyNote.trim() ? c.copyNote.trim().slice(0, SITE_COPY_NOTE_MAX) : null,
     generatedAt: typeof c.generatedAt === "string" ? c.generatedAt : "",
   };

@@ -10,6 +10,7 @@ import type { TenantServiceContext } from "@/server/services/shared";
 
 import { defaultSiteSteps, effectiveCopy, effectiveSteps, parseSiteContent, SITE_SECTION_LABELS, type SiteContent } from "./site-content";
 import { cloudflareConfig, type DomainDns, type DomainStatus } from "./site-domain";
+import { parseServiceTowns, sitePages, sitePageUrl } from "./site-pages";
 import { MAX_SITE_PHOTOS, profilePhotos } from "./site-images";
 import { sitePublicUrl } from "./site-public";
 import { siteUrl } from "./site-url";
@@ -65,6 +66,7 @@ export async function siteView(ctx: TenantServiceContext, companyId: string, can
       },
       showPrices: content?.settings.showPrices ?? true,
       ...(content ? contentEditing(content) : EMPTY_EDITING),
+      pages: content ? pagesView(content, sitePublicUrl(site, brand.key), `/api/organizations/${ctx.organizationId}/companies/${companyId}/site/preview`) : null,
       theme: content?.settings.theme ?? "auto",
       color: content?.settings.color ?? null,
       servicesCount: content?.facts.services.length ?? 0,
@@ -128,5 +130,22 @@ function contentEditing(content: SiteContent): typeof EMPTY_EDITING {
     steps: effectiveSteps(content, offers),
     generatedSteps: defaultSiteSteps({ ...offers, anyPrice }),
     stepsEdited: Array.isArray(content.edits.steps),
+  };
+}
+
+/** Service and town pages: the settings, the towns read from the service area, and every page. */
+function pagesView(content: SiteContent, homeUrl: string, previewBase: string) {
+  return {
+    enabled: content.mode === "full",
+    services: content.settings.pages.services,
+    areas: content.settings.pages.areas,
+    towns: content.settings.pages.towns,
+    areaTowns: parseServiceTowns(content.facts.serviceArea),
+    list: sitePages(content).map((p) => ({
+      kind: p.kind,
+      label: p.label,
+      url: sitePageUrl(homeUrl, p.path),
+      previewUrl: `${previewBase}?page=${encodeURIComponent(p.path)}`,
+    })),
   };
 }

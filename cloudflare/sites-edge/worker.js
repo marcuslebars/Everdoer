@@ -31,17 +31,21 @@ export default {
       return Response.redirect(`https://${host}${url.pathname}${url.search}`, 301);
     }
     if (url.pathname === "/robots.txt") {
-      return new Response(`User-agent: *\nAllow: /\n`, { headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" } });
+      return new Response(`User-agent: *\nAllow: /\nSitemap: https://${host}/sitemap.xml\n`, {
+        headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" },
+      });
     }
-    // The business's page is a single page: anything else goes to it (the app is never served here).
-    if (url.pathname !== "/") {
+    // The home page, its service and town pages (one path segment), and its sitemap. Anything
+    // else (an old site's deep links, /login…) goes to the home page; the app is never served here.
+    const page = url.pathname === "/" ? "" : (url.pathname.match(/^\/([a-z0-9-]{1,64}|sitemap\.xml)\/?$/) || [])[1];
+    if (page === undefined) {
       return Response.redirect(`https://${host}/${url.search}`, 301);
     }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
     }
 
-    const upstream = new URL("/s/_domain", env.ORIGIN);
+    const upstream = new URL(page ? `/s/_domain/${page}` : "/s/_domain", env.ORIGIN);
     upstream.search = url.search;
     const headers = new Headers({
       "x-everdoer-site-host": host,
@@ -58,6 +62,10 @@ export default {
     // did NOT: it cached the page as already stale, revalidated it on every visit, and swapped the
     // app's "private, no-cache" for the zone's 4-hour browser cache.)
     const res = await fetch(upstream, { method: request.method, headers, redirect: "manual", cache: "no-store" });
+    // A path the site doesn't have (often an old site's page): send it home, as before.
+    if (page && page !== "sitemap.xml" && res.status === 404) {
+      return Response.redirect(`https://${host}/${url.search}`, 301);
+    }
     const out = new Response(res.body, res);
     // The app's own caching rule, or "always check" if a response ever arrives without one.
     out.headers.set("cache-control", res.headers.get("cache-control") || "private, no-cache");

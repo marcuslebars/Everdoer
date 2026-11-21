@@ -37,6 +37,7 @@ import {
   type SiteContent,
   type SiteFactsInput,
   parseSiteSections,
+  defaultSitePagesSettings,
 } from "@/server/services/dfy/site-content";
 import { updateSiteStyle } from "@/server/services/dfy/site-generator";
 import { renderSitePage } from "@/server/services/dfy/site-render";
@@ -54,7 +55,7 @@ function contentFor(input: SiteFactsInput, settings: Partial<SiteContent["settin
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), ...settings },
+    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings(), ...settings },
     copyNote: null,
     generatedAt: "2026-11-20T12:00:00.000Z",
     ...patch,
@@ -99,9 +100,9 @@ describe("site style helpers", () => {
 
   it("old pages without a look read as 'pick for me'; new pages start from the company's choice", () => {
     const old = { ...contentFor(snowCompany), settings: { showPrices: false } };
-    expect(parseSiteContent(old)?.settings).toEqual({ showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null) });
-    expect(initialSiteSettings({ theme: "classic", color: "#0f766e" })).toEqual({ showPrices: true, theme: "classic", color: "#0f766e", sections: parseSiteSections(null) });
-    expect(initialSiteSettings({})).toEqual({ showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null) });
+    expect(parseSiteContent(old)?.settings).toEqual({ showPrices: false, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
+    expect(initialSiteSettings({ theme: "classic", color: "#0f766e" })).toEqual({ showPrices: true, theme: "classic", color: "#0f766e", sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
+    expect(initialSiteSettings({})).toEqual({ showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() });
   });
 });
 

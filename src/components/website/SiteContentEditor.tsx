@@ -4,10 +4,11 @@
  * saves on its own; sections save on tap. Clearing back to ours is always one click.
  */
 import { useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Plus, Trash2 } from "lucide-react";
 
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
+import { resolveApiUrl } from "@/lib/api-client";
 import type { SiteEditInput, SiteFaq, SiteStep, SiteView } from "@/lib/site-api";
 import { cn } from "@/lib/utils";
 
@@ -341,5 +342,121 @@ export function SiteRebuildNote({
         {savedNote && !trimmed && <span className="text-xs text-muted-foreground">This clears your saved note.</span>}
       </div>
     </div>
+  );
+}
+
+// ── Service and town pages ──────────────────────────────────────────────────
+
+const MAX_TOWNS = 6;
+
+function splitTowns(text: string): string[] {
+  return text
+    .split(/,|\n/)
+    .map((t) => t.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+export function SitePagesCard({ site, save, disabled }: EditorProps) {
+  const pages = site.pages;
+  const [towns, setTowns] = useState((pages?.towns ?? pages?.areaTowns ?? []).join(", "));
+  if (!pages) return null;
+  if (!pages.enabled) {
+    return (
+      <Card title="Service and town pages" hint="Extra pages that help people find you on Google.">
+        <p className="text-sm text-muted-foreground">
+          These are for full websites. Your page is a services and prices page that links back to your own website, so it stays a single page.
+        </p>
+      </Card>
+    );
+  }
+
+  const current = pages.towns ?? pages.areaTowns;
+  const typed = splitTowns(towns);
+  const townsDirty = typed.join("|").toLowerCase() !== current.join("|").toLowerCase();
+  const serviceCount = pages.list.filter((p) => p.kind === "service").length;
+  const areaCount = pages.list.filter((p) => p.kind === "area").length;
+
+  const saveTowns = () => {
+    if (typed.length > MAX_TOWNS) {
+      toast.error(`Pick up to ${MAX_TOWNS} towns.`);
+      return;
+    }
+    if (typed.some((t) => t.length < 2 || t.length > 40)) {
+      toast.error("Each town needs 2 to 40 letters.");
+      return;
+    }
+    void save({ pages: { towns: typed } }, "Towns saved");
+  };
+
+  return (
+    <Card
+      title="Service and town pages"
+      hint="A page for each service and each town you work in, so people searching for them on Google can find you."
+      badge={pages.list.length ? `${pages.list.length} page${pages.list.length === 1 ? "" : "s"}` : undefined}
+    >
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">A page for each service</p>
+          <p className={hintCls}>{pages.services ? `${serviceCount} service page${serviceCount === 1 ? "" : "s"}, with the price and a quote form.` : "Off."}</p>
+        </div>
+        <Switch checked={pages.services} onCheckedChange={(v) => void save({ pages: { services: v } }, v ? "Service pages on" : "Service pages off")} disabled={disabled} aria-label="A page for each service" />
+      </div>
+      <div className="rounded-lg border border-border p-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">A page for each town</p>
+            <p className={hintCls}>
+              {!pages.areas
+                ? "Off."
+                : areaCount
+                  ? `${areaCount} town page${areaCount === 1 ? "" : "s"}.`
+                  : "Add at least two towns to get town pages. With one town, your main page already covers it."}
+            </p>
+          </div>
+          <Switch checked={pages.areas} onCheckedChange={(v) => void save({ pages: { areas: v } }, v ? "Town pages on" : "Town pages off")} disabled={disabled} aria-label="A page for each town" />
+        </div>
+        {pages.areas && (
+          <div>
+            <label htmlFor="site-towns" className="text-sm font-medium text-foreground">
+              Towns
+            </label>
+            <input
+              id="site-towns"
+              value={towns}
+              onChange={(e) => setTowns(e.target.value)}
+              placeholder="Midland, Penetanguishene, Tiny"
+              disabled={disabled}
+              className={cn(inputCls, "mt-1.5")}
+            />
+            <p className={hintCls}>
+              Up to {MAX_TOWNS}, separated by commas. Only list towns you really work in.
+              {pages.towns === null && pages.areaTowns.length > 0 && " We filled these in from your service area."}
+            </p>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button type="button" onClick={saveTowns} disabled={!townsDirty || disabled} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+                Save towns
+              </button>
+              {pages.towns !== null && (
+                <button type="button" onClick={() => void save({ pages: { towns: null } }, "Using your service area")} disabled={disabled} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2">
+                  Use my service area
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      {pages.list.length > 0 && (
+        <ul className="space-y-1">
+          {pages.list.map((p) => (
+            <li key={p.url} className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate text-foreground">{p.label}</span>
+              <a href={resolveApiUrl(p.previewUrl)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <ExternalLink className="w-3 h-3" /> Preview
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

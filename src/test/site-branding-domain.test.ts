@@ -12,7 +12,7 @@ vi.mock("@/server/supabase/admin", () => ({ createSupabaseAdminClient: () => db.
 
 import { GET as siteGET } from "@/app/s/[slug]/route";
 import { snowCompany } from "@/server/services/dfy/__fixtures__/sample-sites";
-import { buildSiteFacts, chooseSiteMode, factsUsed, parseSiteSections, templateSiteCopy, SITE_CONTENT_VERSION, type SiteContent } from "@/server/services/dfy/site-content";
+import { buildSiteFacts, chooseSiteMode, factsUsed, parseSiteSections, defaultSitePagesSettings, templateSiteCopy, SITE_CONTENT_VERSION, type SiteContent } from "@/server/services/dfy/site-content";
 import {
   checkSiteDomain,
   connectSiteDomain,
@@ -55,7 +55,7 @@ function content(): SiteContent {
     copySource: "template",
     copyNotes: [],
     edits: {},
-    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null) },
+    settings: { showPrices: true, theme: "auto", color: null, sections: parseSiteSections(null), pages: defaultSitePagesSettings() },
     copyNote: null,
     generatedAt: "2026-10-31T12:00:00.000Z",
   };

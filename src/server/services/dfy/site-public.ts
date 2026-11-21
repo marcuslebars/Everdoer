@@ -15,7 +15,8 @@ import { parseOnlineBookingSettings } from "@/server/services/scheduling/rules";
 import { createSupabaseAdminClient } from "@/server/supabase/admin";
 
 import { isValidSlug, parseSiteContent, type SiteContent } from "./site-content";
-import { renderSitePage, type SiteRenderOptions } from "./site-render";
+import { findSitePage, siteSitemapXml } from "./site-pages";
+import { renderSitePage, renderSiteSubpage, type SiteRenderOptions } from "./site-render";
 import { siteUrl } from "./site-url";
 import { appBaseUrlFor } from "@/server/services/platform-brand";
 
@@ -83,38 +84,65 @@ export async function siteRuntime(
 }
 
 const SITE_COLUMNS = "id, organization_id, company_id, slug, status, content, updated_at, favicon_url, custom_domain, custom_domain_status";
+
+/** What to render for a site: the home page, one of its extra pages, or its sitemap. */
+export type SiteRequest = { kind: "home" } | { kind: "page"; path: string } | { kind: "sitemap" };
+const HOME: SiteRequest = { kind: "home" };
 type PublicSiteRow = Pick<
   Tables<"company_sites">,
   "id" | "organization_id" | "company_id" | "slug" | "status" | "content" | "updated_at" | "favicon_url" | "custom_domain" | "custom_domain_status"
 >;
 
-async function renderSite(admin: AdminClient, site: PublicSiteRow | null, options: { onCustomDomain?: boolean } = {}): Promise<RenderedSite | null> {
+async function renderSite(
+  admin: AdminClient,
+  site: PublicSiteRow | null,
+  options: { onCustomDomain?: boolean } = {},
+  request: SiteRequest = HOME,
+): Promise<RenderedSite | null> {
   if (!site || site.status !== "published") return null;
   const content = parseSiteContent(site.content);
   if (!content) return null;
+  // An unknown page is a 404 before any further reads.
+  const page = request.kind === "page" ? findSitePage(content, request.path) : null;
+  if (request.kind === "page" && !page) return null;
+  if (request.kind === "sitemap") {
+    const xml = siteSitemapXml(content, sitePublicUrl(site, content.facts.brand), site.updated_at);
+    return { html: xml, etag: etagOf(xml) };
+  }
   const runtime = await siteRuntime(admin, site, content, options);
-  const html = renderSitePage(content, runtime);
-  const etag = `"${createHash("sha1").update(html).digest("base64url").slice(0, 27)}"`;
-  return { html, etag };
+  const html = page ? renderSiteSubpage(content, runtime, page) : renderSitePage(content, runtime);
+  return { html, etag: etagOf(html) };
+}
+
+function etagOf(body: string): string {
+  return `"${createHash("sha1").update(body).digest("base64url").slice(0, 27)}"`;
 }
 
 /** The published page for a slug, or null (unknown, draft, unpublished, unreadable content → 404). */
-export async function loadPublishedSitePage(slug: string, admin: AdminClient = createSupabaseAdminClient()): Promise<RenderedSite | null> {
+export async function loadPublishedSitePage(
+  slug: string,
+  admin: AdminClient = createSupabaseAdminClient(),
+  request: SiteRequest = HOME,
+): Promise<RenderedSite | null> {
   const s = (slug ?? "").trim().toLowerCase();
   if (!isValidSlug(s)) return null;
   const { data, error } = await admin.from("company_sites").select(SITE_COLUMNS).eq("slug", s).maybeSingle();
   if (error) throw new Error(`site read failed: ${error.message}`);
-  return renderSite(admin, data as PublicSiteRow | null);
+  return renderSite(admin, data as PublicSiteRow | null, {}, request);
 }
 
 /**
  * The published page for a business's own domain (the Host header), or null when the host
  * isn't a connected, live domain (the caller then serves the app as before).
  */
-export async function loadPublishedSiteForDomain(host: string | null, admin: AdminClient = createSupabaseAdminClient()): Promise<RenderedSite | null> {
+export async function loadPublishedSiteForDomain(
+  host: string | null,
+  admin: AdminClient = createSupabaseAdminClient(),
+  request: SiteRequest = HOME,
+): Promise<RenderedSite | null> {
   const h = (host ?? "").trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
   if (!h || h.length > 253) return null;
   const { data, error } = await admin.from("company_sites").select(SITE_COLUMNS).eq("custom_domain", h).eq("custom_domain_status", "active").maybeSingle();
   if (error) throw new Error(`site read failed: ${error.message}`);
-  return renderSite(admin, data as PublicSiteRow | null, { onCustomDomain: true });
+  return renderSite(admin, data as PublicSiteRow | null, { onCustomDomain: true }, request);
 }

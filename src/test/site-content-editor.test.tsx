@@ -51,6 +51,7 @@ function site(patch: Partial<Site> = {}): Site {
       { title: "Pick a time", text: "We set it." },
     ],
     stepsEdited: false,
+    pages: null,
     theme: "auto",
     color: null,
     servicesCount: 2,
