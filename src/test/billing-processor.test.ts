@@ -158,6 +158,62 @@ describe("billing processor — state transitions", () => {
     expect(fake.store.subscriptions[0].current_period_end).toBeTruthy();
   });
 
+  it("checkout.session.completed with a trial -> trialing, leftover in-app trial date cleared", async () => {
+    const fake = seedFor(
+      "checkout.session.completed",
+      { customer: CUSTOMER, metadata: { organizationId: "org-1", plan: "operate", trialDays: "14" }, subscription: SUB },
+      { subscription_status: "trialing", trial_ends_at: "2026-11-01T00:00:00.000Z" },
+    );
+
+    await processBillingEventJob(fake.client, fake.store.billing_event_jobs[0] as any);
+
+    expect(fake.store.organizations[0].subscription_status).toBe("trialing");
+    expect(fake.store.organizations[0].trial_ends_at).toBeNull();
+    expect(fake.store.subscriptions[0].status).toBe("trialing");
+  });
+
+  it("invoice.paid for a trial's first invoice keeps it trialing; the post-trial invoice makes it active", async () => {
+    const first = seedFor("invoice.paid", {
+      billing_reason: "subscription_create",
+      customer: CUSTOMER,
+      parent: { subscription_details: { metadata: { trialDays: "14" }, subscription: SUB } },
+      subscription: SUB,
+    });
+    await processBillingEventJob(first.client, first.store.billing_event_jobs[0] as any);
+    expect(first.store.organizations[0].subscription_status).toBe("trialing");
+    expect(first.store.subscriptions[0].status).toBe("trialing");
+
+    const cycle = seedFor(
+      "invoice.paid",
+      {
+        billing_reason: "subscription_cycle",
+        customer: CUSTOMER,
+        subscription: SUB,
+        subscription_details: { metadata: { trialDays: "14" } },
+      },
+      { subscription_status: "trialing" },
+    );
+    await processBillingEventJob(cycle.client, cycle.store.billing_event_jobs[0] as any);
+    expect(cycle.store.organizations[0].subscription_status).toBe("active");
+  });
+
+  it("customer.subscription.updated while trialing mirrors Stripe's trial end", async () => {
+    const fake = seedFor("customer.subscription.updated", {
+      customer: CUSTOMER,
+      id: SUB,
+      items: { data: [{ current_period_end: 1796048481, price: { id: "price_launch" } }] },
+      status: "trialing",
+      trial_end: 1796048481,
+    });
+
+    await processBillingEventJob(fake.client, fake.store.billing_event_jobs[0] as any);
+
+    const end = new Date(1796048481 * 1000).toISOString();
+    expect(fake.store.organizations[0].subscription_status).toBe("trialing");
+    expect(fake.store.organizations[0].trial_ends_at).toBe(end);
+    expect(fake.store.subscriptions[0].current_period_end).toBe(end);
+  });
+
   it("invoice.payment_failed -> org past_due", async () => {
     const fake = seedFor("invoice.payment_failed", { customer: CUSTOMER, subscription: SUB });
 

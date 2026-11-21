@@ -113,6 +113,29 @@ function invoiceSubscriptionId(object: StripeEventObject): string | null {
   return typeof nested === "string" ? nested : null;
 }
 
+/**
+ * The Stripe-side trial a Checkout Session or its first invoice belongs to: our checkout stamps
+ * `metadata.trialDays` on the session and the subscription (done-for-you/checkout.ts). Read from
+ * the object itself, an invoice's subscription details, or the newer `parent.subscription_details`.
+ */
+function trialDaysOf(object: StripeEventObject): number {
+  const candidates = [object.metadata, object.subscription_details?.metadata, object.parent?.subscription_details?.metadata];
+  for (const meta of candidates) {
+    const n = Number(meta?.trialDays);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+/** A subscription's current period end: top-level on older API versions, on the item on newer. */
+function subscriptionPeriodEnd(object: StripeEventObject): string | null {
+  return (
+    unixToIso(object.current_period_end) ??
+    unixToIso(object.items?.data?.[0]?.current_period_end) ??
+    (object.status === "trialing" ? unixToIso(object.trial_end) : null)
+  );
+}
+
 function unixToIso(seconds: unknown): string | null {
   return typeof seconds === "number" && Number.isFinite(seconds)
     ? new Date(seconds * 1000).toISOString()
@@ -245,9 +268,18 @@ async function handleCheckoutCompleted(
       ? object.metadata.plan
       : null;
   const plan = metaPlan ?? org.plan;
-  const status: SubscriptionStatus = "active";
+  // A checkout with a free trial starts the subscription in Stripe's `trialing` state; recording
+  // it as `active` hid every trial (no trial emails, false reconcile alarms). Gating treats
+  // `trialing` with no trial_ends_at as healthy, and Stripe moves it to active/past_due/canceled.
+  const status: SubscriptionStatus = trialDaysOf(object) > 0 ? "trialing" : "active";
 
-  await updateOrganization(supabase, org.id, { plan, subscription_status: status });
+  // A Stripe trial ends when Stripe says so: clear any leftover in-app trial date so gating
+  // can't lapse a card-on-file trial early (customer.subscription.updated sets the real end).
+  await updateOrganization(supabase, org.id, {
+    plan,
+    subscription_status: status,
+    ...(status === "trialing" ? { trial_ends_at: null } : {}),
+  });
 
   const subscriptionId = typeof object.subscription === "string" ? object.subscription : null;
   if (subscriptionId) {
@@ -266,9 +298,15 @@ async function handleInvoicePaid(
   object: StripeEventObject,
 ): Promise<string> {
   const org = await requireOrg(supabase, object, "invoice.paid");
-  const status: SubscriptionStatus = "active";
+  // The first invoice of a trial (billing_reason subscription_create, often $0) doesn't end the
+  // trial; the post-trial invoice (subscription_cycle) is what makes it active.
+  const startsTrial = object.billing_reason === "subscription_create" && trialDaysOf(object) > 0;
+  const status: SubscriptionStatus = startsTrial ? "trialing" : "active";
 
-  await updateOrganization(supabase, org.id, { subscription_status: status });
+  await updateOrganization(supabase, org.id, {
+    subscription_status: status,
+    ...(startsTrial ? { trial_ends_at: null } : {}),
+  });
 
   const subscriptionId = invoiceSubscriptionId(object);
   if (subscriptionId) {
@@ -316,6 +354,10 @@ async function handleSubscriptionUpdated(
   const status = mapStripeStatus(String(object.status ?? ""));
 
   const patch: Updates<"organizations"> = { plan, subscription_status: status };
+  if (status === "trialing") {
+    // Stripe owns the trial's end; mirror it so gating and the trial emails use the real date.
+    patch.trial_ends_at = unixToIso(object.trial_end);
+  }
   // A done-for-you tier change (e.g. Catch → Close in the portal) keeps the recorded tier in step.
   const tier = planTierForPriceId(priceId);
   if (tier) {
@@ -325,7 +367,7 @@ async function handleSubscriptionUpdated(
 
   if (typeof object.id === "string") {
     await upsertSubscription(supabase, {
-      currentPeriodEnd: unixToIso(object.current_period_end),
+      currentPeriodEnd: subscriptionPeriodEnd(object),
       organizationId: org.id,
       plan,
       status,
