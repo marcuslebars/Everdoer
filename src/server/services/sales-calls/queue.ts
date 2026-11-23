@@ -12,6 +12,7 @@
  *
  * Service role (worker / owner channel). Every row is read by id AND organization.
  */
+import { listNotes } from "@/server/agent/memory";
 import { parsePersona } from "@/server/agent/profile";
 import type { Json, Tables } from "@/server/db/database.types";
 import { toJson } from "@/server/db/json";
@@ -30,6 +31,7 @@ import { requireReceptionistMinutes } from "@/server/services/voice/minutes";
 import { salesAgentId } from "@/server/services/voice/sales-agent";
 
 import { addDoNotCall, callingWindow, findCallConsent, isDoNotCall, nextCallableAt } from "./compliance";
+import { buildEverdoerDemoCallPrompt, isEverdoerCallbackCompany } from "./everdoer-callback";
 import { loadSalesCallSettings, type SalesCallSettings } from "./settings";
 
 export type SalesCallRow = Tables<"sales_calls">;
@@ -289,20 +291,35 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
 
     const ctx = ctxFor(admin, row.organization_id);
     const facts = await loadCompanyFacts(ctx, row.company_id).catch((): null => null);
-    const prompt = buildSalesCallPrompt({
-      companyName: facts?.companyName ?? inputs.companyName,
-      customerName: inputs.contact.name || null,
-      services: facts?.services ?? [],
-      hoursText: facts?.hoursText ?? null,
-      serviceArea: facts?.serviceArea ?? null,
-      transferNumber: null,
-      persona: parsePersona(facts?.company?.agent_persona),
-      reason: claimed.reason === "owner_request" ? "owner_request" : "speed_to_lead",
-      note: claimed.note,
-      callbackNumber: inputs.businessNumber ? formatNanp(inputs.businessNumber) : null,
-      voicemail: inputs.settings.voicemail,
-      attempt: claimed.attempt,
-    });
+    const callbackNumber = inputs.businessNumber ? formatNanp(inputs.businessNumber) : null;
+    const persona = parsePersona(facts?.company?.agent_persona);
+    // Everdoer's own "Have Everly call me now" leads get the demo call (everdoer-callback.ts).
+    const prompt = isEverdoerCallbackCompany(row.company_id)
+      ? buildEverdoerDemoCallPrompt({
+          customerName: inputs.contact.name || null,
+          note: claimed.note,
+          services: facts?.services ?? [],
+          // Oldest first: the order they were written in (listNotes returns newest first).
+          notes: (await listNotes(admin, { organizationId: row.organization_id, companyId: row.company_id }, { limit: 20 })).map((n) => n.body).reverse(),
+          persona,
+          callbackNumber,
+          voicemail: inputs.settings.voicemail,
+          attempt: claimed.attempt,
+        })
+      : buildSalesCallPrompt({
+          companyName: facts?.companyName ?? inputs.companyName,
+          customerName: inputs.contact.name || null,
+          services: facts?.services ?? [],
+          hoursText: facts?.hoursText ?? null,
+          serviceArea: facts?.serviceArea ?? null,
+          transferNumber: null,
+          persona,
+          reason: claimed.reason === "owner_request" ? "owner_request" : "speed_to_lead",
+          note: claimed.note,
+          callbackNumber,
+          voicemail: inputs.settings.voicemail,
+          attempt: claimed.attempt,
+        });
     placedCallId = (
       await callContactWithMarina(ctx, row.contact_id, {
         sales: { salesCallId: row.id, prompt, agentId: salesAgentId() as string, fromNumber: inputs.businessNumber as string },

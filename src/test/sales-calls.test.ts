@@ -247,6 +247,66 @@ describe("speed-to-lead", () => {
   });
 });
 
+describe("Everdoer's own callback (EVERDOER_CALLBACK_COMPANY_ID)", () => {
+  const CB = "6f0c1d1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f";
+  beforeEach(() => {
+    db = seed({
+      companies: [{ id: CB, organization_id: ORG, name: "Everdoer", timezone: TZ, owner_phone_e164: "+17055550100", sales_call_settings: { enabled: true, delayMinutes: 1 } }],
+      contacts: [{ id: "ct-1", organization_id: ORG, company_id: CB, first_name: "Dana", last_name: null, phone: "+17055550123" }],
+      voice_numbers: [{ id: "vn-1", organization_id: ORG, company_id: CB, provider: "retell", active: true, phone_e164: "+12495550100" }],
+      agent_notes: [
+        { id: "n2", organization_id: ORG, company_id: CB, contact_id: null, body: "Guarantee: live in 5 business days.", created_at: "2026-11-02T00:00:00Z", archived_at: null },
+        { id: "n1", organization_id: ORG, company_id: CB, contact_id: null, body: "Prices are in CAD before HST.", created_at: "2026-11-01T00:00:00Z", archived_at: null },
+      ],
+    });
+    process.env.EVERDOER_CALLBACK_COMPANY_ID = CB;
+  });
+  afterEach(() => {
+    delete process.env.EVERDOER_CALLBACK_COMPANY_ID;
+  });
+
+  const envelope = (): LeadEnvelope =>
+    ({
+      schemaVersion: 1,
+      source: "public_form",
+      sourceSite: "everdoer",
+      formType: "contact",
+      receivedAt: "2026-10-28T13:59:00Z",
+      contact: { name: "Dana", phone: "705-555-0123" },
+      services: ["Landscaping"],
+      message: "Business: Green Acres",
+      meta: { callConsent: { granted: true, text: callConsentText("Everdoer"), capturedAt: "2026-10-28T13:59:00Z" } },
+    }) as LeadEnvelope;
+
+  it("dials straight from intake with the demo prompt, notes oldest first", async () => {
+    const r = await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CB, contactId: "ct-1", envelope: envelope(), leadId: "lead-9", nowMs: WED_10AM });
+    expect(r).toMatchObject({ scheduled: true, runAtMs: WED_10AM, placedNow: true });
+    expect(callContactWithMarina).toHaveBeenCalledTimes(1);
+    const opts = callContactWithMarina.mock.calls[0][2] as { sales: { fromNumber: string; prompt: string } };
+    expect(opts.sales.fromNumber).toBe("+12495550100");
+    expect(opts.sales.prompt).toContain("You asked for a call on everdoer.com");
+    expect(opts.sales.prompt).toContain("«Landscaping - Business: Green Acres»");
+    expect(opts.sales.prompt).toContain("Facts about Everdoer:\n- Prices are in CAD before HST.\n- Guarantee: live in 5 business days.");
+    expect(opts.sales.prompt).not.toContain("automated assistant calling for");
+    expect(db.tables.sales_calls[0]).toMatchObject({ status: "placed", claimed_by: "intake" });
+  });
+
+  it("outside calling hours it waits for the next opening instead", async () => {
+    const late = Date.parse("2026-10-29T01:45:00Z"); // Wed 21:45
+    const r = await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CB, contactId: "ct-1", envelope: envelope(), leadId: "lead-9", nowMs: late });
+    expect(r).toMatchObject({ scheduled: true, placedNow: false });
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+    expect(db.tables.sales_calls[0]).toMatchObject({ status: "scheduled", run_at: "2026-10-29T13:00:00.000Z" });
+  });
+
+  it("any other company keeps the normal delay and the normal prompt", async () => {
+    delete process.env.EVERDOER_CALLBACK_COMPANY_ID;
+    const r = await maybeScheduleSpeedToLead(db.client, { organizationId: ORG, companyId: CB, contactId: "ct-1", envelope: envelope(), leadId: "lead-9", nowMs: WED_10AM });
+    expect(r).toMatchObject({ scheduled: true, runAtMs: WED_10AM + 60_000 });
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+  });
+});
+
 describe("placing a call (every rule at dial time)", () => {
   it("dials on the sales agent from the company's own number with the sales prompt", async () => {
     consent();

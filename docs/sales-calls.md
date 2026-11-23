@@ -105,10 +105,48 @@ raw outbound `to_number`.
    the opening line, a quote by text if you ask, and the result text to the owner. Say "please
    don't call me again" and check the number lands in `do_not_call`.
 
+## Everdoer's own callback ("Have Everly call me now")
+
+everdoer.com has a form where a trades owner asks Everly to call them now. It is an ordinary
+speed-to-lead lead for one company, the **Everdoer** company in the internal Everdoer Demo org
+(plan `internal`, never billed), named by `EVERDOER_CALLBACK_COMPANY_ID`. For that company only
+(`sales-calls/everdoer-callback.ts`):
+
+- the call is dialed straight from intake (`placeSalesCall` with `claimedBy: "intake"`) instead
+  of waiting for the scheduler, so it rings within seconds. Every dial-time rule still runs:
+  outside calling hours it waits for the next opening like any other call;
+- the prompt is `buildEverdoerDemoCallPrompt`: Everly says who she is, offers to answer as the
+  caller's own receptionist while they play a customer, answers questions about Everdoer from
+  the company's price list (the plans) and saved notes only, and sends demo requests to Marcus
+  with `message_owner`. She doesn't use the quoting or booking tools on these calls.
+
+The consent wording is the platform's `callConsentText("Everdoer")`, recorded server-side, so
+the company must be named exactly "Everdoer". The same number is the inbound sales line: Everly
+answers it as Everdoer's receptionist, with the plans as the price list.
+
+Setup:
+
+1. Mark the org internal (`organizations.plan = 'internal'`) and cancel any Stripe subscription
+   it had. The job refuses an org that isn't internal.
+2. `npm run job:everdoer-callback-setup` (dry run), then `-- --apply`. It creates the company,
+   the plans, the notes, lead-call settings, a `contact` form key limited to everdoer.com, and
+   buys one Retell number (area code 249, then 705). Re-runnable.
+3. Set the printed `EVERDOER_CALLBACK_COMPANY_ID` on the **web and worker** services.
+4. On everdoer.com, set `VITE_CALLBACK_FORM_KEY` (printed) and redeploy. The form reads the
+   consent wording and the Turnstile site key from the public form config, so add
+   `everdoer.com` and `www.everdoer.com` to the Turnstile widget's hostnames.
+5. Test with your own phone only. The National DNCL registration (Everdoer as a telemarketer)
+   must be done before it's promoted.
+
+Prices and facts are data: change a plan price in the app's price list and a fact in Notes for
+the Everdoer company; nothing needs a deploy. Keep them in step with everdoer.com's
+`src/config.ts` and its claims ledger.
+
 ## Files
 
 `src/server/services/sales-calls/` (`settings.ts`, `compliance.ts`, `queue.ts`,
-`speed-to-lead.ts`, `owner-request.ts`), `retell/outbound-prompt.ts` (`buildSalesCallPrompt`),
+`speed-to-lead.ts`, `owner-request.ts`, `everdoer-callback.ts`, `everdoer-callback-setup.ts`
++ `jobs/everdoer-callback-setup.ts`), `retell/outbound-prompt.ts` (`buildSalesCallPrompt`),
 `voice/sales-agent.ts` + `jobs/retell-sales-agent.ts`, `voice.ts` (`sales` option),
 `retell/functions.ts` (outbound normalisation), `retell/lead-adapter.ts` (outcome routing),
 `owner-channel/tools.ts` (`sales_call`, `cancel_sales_call`, `lead_call_settings`),
