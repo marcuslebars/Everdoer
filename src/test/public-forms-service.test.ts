@@ -185,6 +185,26 @@ describe("public config — display-safe only", () => {
     expect(config.form.smsConsentText).toMatch(/Reply STOP to opt out/);
     expect(config.form.restrictedToSites).toBe(false);
   });
+
+  it("hands out the public Turnstile site key (never the secret), or null when unset", async () => {
+    const form = await resolvePublicFormKey(ACTIVE_KEY);
+    const saved = { site: process.env.VITE_TURNSTILE_SITE_KEY, secret: process.env.TURNSTILE_SECRET_KEY, plain: process.env.TURNSTILE_SITE_KEY };
+    try {
+      delete process.env.TURNSTILE_SITE_KEY;
+      process.env.VITE_TURNSTILE_SITE_KEY = "0x4AAAAsitekey";
+      process.env.TURNSTILE_SECRET_KEY = "0x4AAAAsecret";
+      const config = toPublicFormConfig(form!, []);
+      expect(config.form.turnstileSiteKey).toBe("0x4AAAAsitekey");
+      expect(JSON.stringify(config)).not.toContain("0x4AAAAsecret");
+      delete process.env.VITE_TURNSTILE_SITE_KEY;
+      expect(toPublicFormConfig(form!, []).form.turnstileSiteKey).toBeNull();
+    } finally {
+      for (const [k, v] of [["VITE_TURNSTILE_SITE_KEY", saved.site], ["TURNSTILE_SECRET_KEY", saved.secret], ["TURNSTILE_SITE_KEY", saved.plain]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
 });
 
 function envelopeFor(body: Row) {

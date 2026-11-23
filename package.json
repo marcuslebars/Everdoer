@@ -46,6 +46,7 @@
     "job:twilio-repoint": "tsx src/server/jobs/twilio-repoint.ts",
     "job:twilio-retag": "tsx src/server/jobs/twilio-retag.ts",
     "job:retell-repoint": "tsx src/server/jobs/retell-repoint.ts",
+    "job:everdoer-callback-setup": "tsx src/server/jobs/everdoer-callback-setup.ts",
     "stripe:setup-done-for-you": "node scripts/stripe/setup-done-for-you.mjs",
     "stripe:setup-crankleads": "node scripts/stripe/setup-done-for-you.mjs"
   },

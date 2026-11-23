@@ -52,6 +52,11 @@ export interface PublicFormConfig {
     callConsentText: string | null;
     /** True when the form only works on listed websites (the list itself is not exposed). */
     restrictedToSites: boolean;
+    /**
+     * The public Turnstile site key, for a form built on the business's own site (everdoer.com's
+     * call-back form) that posts here directly. Public by design; null when Turnstile is off.
+     */
+    turnstileSiteKey: string | null;
   };
   company: {
     name: string;
@@ -167,6 +172,11 @@ export async function listPublicServiceLabels(form: ResolvedPublicForm): Promise
 }
 
 /** Build the display-safe public config (explicit field picks — no row spreading). */
+/** The public site key the server runs with (both names are used across services). */
+function turnstileSiteKey(env: Record<string, string | undefined> = process.env): string | null {
+  return env.TURNSTILE_SITE_KEY?.trim() || env.VITE_TURNSTILE_SITE_KEY?.trim() || null;
+}
+
 export function toPublicFormConfig(form: ResolvedPublicForm, services: string[]): PublicFormConfig {
   return {
     form: {
@@ -174,6 +184,7 @@ export function toPublicFormConfig(form: ResolvedPublicForm, services: string[])
       smsConsentText: smsConsentText(form.company.name),
       callConsentText: form.callsAvailable ? callConsentText(form.company.name) : null,
       restrictedToSites: form.allowedOrigins.length > 0,
+      turnstileSiteKey: turnstileSiteKey(),
     },
     company: {
       name: form.company.name,

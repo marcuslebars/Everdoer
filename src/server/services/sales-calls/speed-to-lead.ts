@@ -11,11 +11,12 @@ import type { LeadEnvelope } from "@/server/services/lead-intake/envelope";
 import { normalizePhoneLast10 } from "@/server/services/lead-intake/matching";
 
 import { recordCallConsent } from "./compliance";
-import { scheduleSalesCall } from "./queue";
+import { isEverdoerCallbackCompany } from "./everdoer-callback";
+import { placeSalesCall, scheduleSalesCall } from "./queue";
 import { loadSalesCallSettings } from "./settings";
 
 export type SpeedToLeadResult =
-  | { scheduled: true; salesCallId: string; runAtMs: number }
+  | { scheduled: true; salesCallId: string; runAtMs: number; placedNow?: boolean }
   | { scheduled: false; reason: "no_consent" | "unverified" | "no_phone" | "phone_mismatch" | "turned_off" | "already_open" | "error" };
 
 /** What the lead asked about, for the call's prompt (service + a slice of their message). PURE. */
@@ -75,7 +76,10 @@ export async function maybeScheduleSpeedToLead(
 
     const settings = await loadSalesCallSettings(admin, scope);
     if (!settings.enabled) return { scheduled: false, reason: "turned_off" };
-    const runAtMs = nowMs + settings.delayMinutes * 60_000;
+    // Everdoer's own "Have Everly call me now" form promises a call within a minute: it's queued
+    // for now and dialed right here instead of on the next scheduler pass (everdoer-callback.ts).
+    const immediate = isEverdoerCallbackCompany(scope.companyId);
+    const runAtMs = immediate ? nowMs : nowMs + settings.delayMinutes * 60_000;
     const row = await scheduleSalesCall(admin, {
       scope,
       contactId: contact.id,
@@ -86,6 +90,15 @@ export async function maybeScheduleSpeedToLead(
       rawLeadId: input.leadId,
     });
     if (row === "already_open") return { scheduled: false, reason: "already_open" };
+    if (immediate) {
+      // Every dial-time rule still runs (calling hours defer it to the next opening). A failure
+      // here leaves the row to the queue's normal handling; it never fails the lead.
+      const placed = await placeSalesCall(admin, row, { nowMs: input.nowMs, claimedBy: "intake" }).catch((err: unknown) => {
+        console.error("[speed-to-lead] immediate call failed:", err instanceof Error ? err.message : err);
+        return null;
+      });
+      return { scheduled: true, salesCallId: row.id, runAtMs, placedNow: placed?.status === "placed" };
+    }
     return { scheduled: true, salesCallId: row.id, runAtMs };
   } catch (err) {
     console.error("[speed-to-lead] couldn't queue the call:", err instanceof Error ? err.message : err);
