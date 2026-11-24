@@ -5,8 +5,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { everdoerInboundOverride } from "@/server/services/sales-calls/everdoer-inbound";
 import {
   buildEverdoerDemoCallPrompt,
+  buildEverdoerInboundPrompt,
+  everdoerInboundGreeting,
   everdoerCallbackCompanyId,
   everdoerDemoOpeningLine,
   isEverdoerCallbackCompany,
@@ -80,6 +83,43 @@ describe("the demo prompt", () => {
     expect(prompt).toContain('Open with exactly: "Hi! This is Everly, Everdoer');
     expect(prompt).not.toContain("What they wrote on the form");
     expect(prompt).not.toContain("Everdoer's plans:");
+  });
+});
+
+describe("Everdoer's own line (inbound)", () => {
+  const ctx = { callerName: null, services: ["Close plan — $299 per month"], notes: ["Prices are in CAD before HST."], persona: { name: "Everly", tone: null } };
+
+  it("greets as Everdoer's AI receptionist, says calls may be recorded, and uses a known caller's name", () => {
+    expect(everdoerInboundGreeting(ctx)).toBe("Thanks for calling Everdoer! This is Everly, the AI receptionist Everdoer sets up for trades businesses. Calls may be recorded. How can I help?");
+    expect(everdoerInboundGreeting({ ...ctx, callerName: "Dana" })).toMatch(/^Hi Dana, thanks for calling Everdoer!/);
+  });
+
+  it("runs the same demo and rules as the call-back, plus existing customers and wrong numbers", () => {
+    const prompt = buildEverdoerInboundPrompt(ctx);
+    expect(prompt).toContain("You're answering Everdoer's own phone line");
+    expect(prompt).toContain("Pretend you're one of your customers calling your business");
+    expect(prompt).toContain("Don't use quote_services, check_availability, book_job or send_deposit_link on this call");
+    expect(prompt).toContain("An existing Everdoer customer");
+    expect(prompt).toContain("explain kindly that this is Everdoer, a software company");
+    expect(prompt).toContain("Everdoer's plans:\n- Close plan — $299 per month");
+    expect(prompt).not.toContain("voicemail");
+  });
+
+  it("overrides only the callback company, only with a sales agent, with the plans and notes in the prompt", async () => {
+    const db = createFakeDb({
+      companies: [{ id: CO, organization_id: "org", name: "Everdoer", slug: "everdoer", agent_persona: { name: "Everly", tone: "friendly" } }],
+      service_catalog_items: [{ id: "i1", organization_id: "org", company_id: CO, service_key: "everdoer_close_plan", label: "Close plan", pricing_type: "per_unit", rate_cents: 29_900, minimum_cents: 0, unit_label: "month", active: true, sort_order: 1 }],
+      agent_notes: [{ id: "n1", organization_id: "org", company_id: CO, contact_id: null, body: "Prices are in CAD before HST.", created_at: "2026-11-01T00:00:00Z", archived_at: null }],
+    });
+    const env = { EVERDOER_CALLBACK_COMPANY_ID: CO };
+    const input = { organizationId: "org", companyId: CO, callerName: null };
+    const out = await everdoerInboundOverride(db.client, input, { agentId: "agent_sales", env });
+    expect(out?.override_agent_id).toBe("agent_sales");
+    expect(out?.dynamic_variables.system_prompt).toContain("Everdoer's plans:\n- Close plan — $299 per month");
+    expect(out?.dynamic_variables.system_prompt).toContain("Facts about Everdoer:\n- Prices are in CAD before HST.");
+    expect(await everdoerInboundOverride(db.client, input, { agentId: null, env })).toBeNull();
+    expect(await everdoerInboundOverride(db.client, { ...input, companyId: "other" }, { agentId: "agent_sales", env })).toBeNull();
+    expect(await everdoerInboundOverride(db.client, input, { agentId: "agent_sales", env: {} })).toBeNull();
   });
 });
 

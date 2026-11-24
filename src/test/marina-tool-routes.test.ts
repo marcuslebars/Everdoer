@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   runPhoneQuote: vi.fn(),
   lookupCaller: vi.fn(),
   resolveRetellTenant: vi.fn(),
+  everdoerInboundOverride: vi.fn(),
 }));
 
 vi.mock("@/server/services/retell/config", () => ({
@@ -24,6 +25,7 @@ vi.mock("@/server/services/retell/tenant", () => ({
   createRetellAdminClient: () => ({}),
   resolveRetellTenant: h.resolveRetellTenant,
 }));
+vi.mock("@/server/services/sales-calls/everdoer-inbound", () => ({ everdoerInboundOverride: h.everdoerInboundOverride }));
 vi.mock("@/server/services/retell/caller-lookup", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/services/retell/caller-lookup")>();
   return {
@@ -49,6 +51,8 @@ beforeEach(() => {
   h.runPhoneQuote.mockReset();
   h.lookupCaller.mockReset();
   h.resolveRetellTenant.mockReset();
+  h.everdoerInboundOverride.mockReset();
+  h.everdoerInboundOverride.mockResolvedValue(null);
 });
 
 describe("POST /api/retell/functions/quote", () => {
@@ -157,6 +161,23 @@ describe("POST /api/retell/inbound", () => {
     const body = await res.json();
     expect(h.lookupCaller).not.toHaveBeenCalled();
     expect(body.call_inbound.dynamic_variables.greeting).toBe("Hi, this is Everly. How can I help you today?");
+  });
+
+  it("hands Everdoer's own line to the sales agent with Everly's prompt", async () => {
+    h.resolveRetellTenant.mockResolvedValue({ organizationId: "org_ev", companyId: "co_ev", sourceSite: "", resolvedBy: "number" });
+    h.lookupCaller.mockResolvedValue({ known: true, firstName: "Dana", fullName: "Dana R", boat: "", services: "", quoteId: "", quoteTotal: "", quoteAgeLabel: "", bookedWindow: "", depositPaid: false, depositLinkSent: false });
+    h.everdoerInboundOverride.mockResolvedValue({ override_agent_id: "agent_sales", dynamic_variables: { system_prompt: "EVERLY", company_name: "Everdoer" }, metadata: {} });
+    const body = await (await inbound(post("https://x/api/retell/inbound", ring))).json();
+    expect(h.everdoerInboundOverride.mock.calls[0][1]).toEqual({ organizationId: "org_ev", companyId: "co_ev", callerName: "Dana" });
+    expect(body.call_inbound).toMatchObject({ override_agent_id: "agent_sales", dynamic_variables: { system_prompt: "EVERLY", company_name: "Everdoer", caller_known: "true" }, metadata: {} });
+  });
+
+  it("any other company answers exactly as before (no override)", async () => {
+    h.resolveRetellTenant.mockResolvedValue({ organizationId: "org_1", companyId: "co_care", sourceSite: "a1marinecare", resolvedBy: "number" });
+    h.lookupCaller.mockResolvedValue({ known: false, firstName: "", fullName: "", boat: "", services: "", quoteId: "", quoteTotal: "", quoteAgeLabel: "", bookedWindow: "", depositPaid: false, depositLinkSent: false });
+    const body = await (await inbound(post("https://x/api/retell/inbound", ring))).json();
+    expect(body.call_inbound.override_agent_id).toBeUndefined();
+    expect(body.call_inbound.dynamic_variables.system_prompt).toBeUndefined();
   });
 
   it("connects the call as a new caller when the lookup is too slow", async () => {
