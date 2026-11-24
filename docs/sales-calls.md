@@ -121,8 +121,14 @@ speed-to-lead lead for one company, the **Everdoer** company in the internal Eve
   with `message_owner`. She doesn't use the quoting or booking tools on these calls.
 
 The consent wording is the platform's `callConsentText("Everdoer")`, recorded server-side, so
-the company must be named exactly "Everdoer". The same number is the inbound sales line: Everly
-answers it as Everdoer's receptionist, with the plans as the price list.
+the company must be named exactly "Everdoer".
+
+The same number is Everdoer's inbound sales line (`sales-calls/everdoer-inbound.ts`). Retell's
+inbound webhook (`/api/retell/inbound`) hands calls to it to the shared sales agent with
+`buildEverdoerInboundPrompt`: the same demo, facts and rules as the call-back, plus paths for an
+existing customer (message to Marcus, urgent if their phones are down) and wrong numbers. The
+call is still filed like any inbound call (lead + owner summary text). If the prompt can't be
+built in time, or `RETELL_SALES_AGENT_ID` isn't set, the number's own receptionist answers.
 
 Setup:
 
@@ -145,7 +151,7 @@ the Everdoer company; nothing needs a deploy. Keep them in step with everdoer.co
 ## Files
 
 `src/server/services/sales-calls/` (`settings.ts`, `compliance.ts`, `queue.ts`,
-`speed-to-lead.ts`, `owner-request.ts`, `everdoer-callback.ts`, `everdoer-callback-setup.ts`
+`speed-to-lead.ts`, `owner-request.ts`, `everdoer-callback.ts`, `everdoer-inbound.ts`, `everdoer-callback-setup.ts`
 + `jobs/everdoer-callback-setup.ts`), `retell/outbound-prompt.ts` (`buildSalesCallPrompt`),
 `voice/sales-agent.ts` + `jobs/retell-sales-agent.ts`, `voice.ts` (`sales` option),
 `retell/functions.ts` (outbound normalisation), `retell/lead-adapter.ts` (outcome routing),

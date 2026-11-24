@@ -14,6 +14,7 @@ import {
 import { getRetellConfig } from "@/server/services/retell/config";
 import { verifyRetellSignature } from "@/server/services/retell/signature";
 import { createRetellAdminClient, resolveRetellTenant } from "@/server/services/retell/tenant";
+import { everdoerInboundOverride, type EverdoerInboundOverride } from "@/server/services/sales-calls/everdoer-inbound";
 import { getOwnerLineConfig, isDedicatedOwnerNumber, ownerLineForRetellInbound, REJECT_INBOUND, type OwnerLineInboundAnswer } from "@/server/services/voice/owner-line";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const result = await withinBudget(
-    (async (): Promise<{ profile: CallerProfile; greeting: GreetingContext }> => {
+    (async (): Promise<{ profile: CallerProfile; greeting: GreetingContext; everdoer?: EverdoerInboundOverride | null }> => {
       const tenant = await resolveRetellTenant(admin, {
         toNumber: inbound.to_number ?? null,
         agentId: inbound.agent_id ?? null,
@@ -105,13 +106,30 @@ export async function POST(request: Request): Promise<NextResponse> {
         phone: inbound.from_number ?? null,
         timeZone: greeting.timeZone ?? getBusinessTimezone(),
       });
-      return { profile, greeting };
+      // Everdoer's own line (docs/sales-calls.md → Everdoer's own callback): Everly's demo script
+      // on the sales agent instead of the number's generic receptionist. Null = answer as usual.
+      const everdoer = await everdoerInboundOverride(admin, {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        callerName: profile.known ? profile.firstName || null : null,
+      });
+      return { profile, greeting, everdoer };
     })(),
     { profile: UNKNOWN_CALLER, greeting: { companyName: "", agentName: DEFAULT_AGENT_NAME } },
   );
 
   // PII discipline: no names or numbers in the log line.
-  console.log(`[retell:inbound] ${result.profile.known ? "returning caller" : "new caller"}`);
+  console.log(`[retell:inbound] ${result.profile.known ? "returning caller" : "new caller"}${result.everdoer ? " (Everdoer line)" : ""}`);
+
+  if (result.everdoer) {
+    return NextResponse.json({
+      call_inbound: {
+        override_agent_id: result.everdoer.override_agent_id,
+        dynamic_variables: { ...toDynamicVariables(result.profile, result.greeting), ...result.everdoer.dynamic_variables },
+        metadata: result.everdoer.metadata,
+      },
+    });
+  }
 
   return NextResponse.json({
     call_inbound: {
