@@ -424,7 +424,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     id: "ai-receptionist",
     title: "The AI receptionist (Front Desk)",
     summary: "What the AI receptionist does, how to get its number, and how minutes work.",
-    keywords: ["ai receptionist", "receptionist", "marina", "front desk", "ai", "answer calls", "voice", "agent", "minutes", "call summary", "urgent"],
+    keywords: ["ai receptionist", "receptionist", "marina", "front desk", "ai", "answer calls", "voice", "agent", "minutes", "call summary", "urgent", "call a customer", "outbound call", "instructions", "call with everly"],
     sections: [
       {
         heading: "What it does",
@@ -435,6 +435,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         heading: "Getting your number",
         body:
           "In setup, open Phone → \"AI receptionist answers\", optionally type an area code, and click \"Get my AI number\". Then open the Test call step and call it — the step completes by itself when your call lands. If you change your services or industry pack later, run the Phone step again so the receptionist picks up the changes.",
+      },
+      {
+        heading: "Having it call a customer for you",
+        body:
+          "Open a contact and click \"Call with Everly\" (it shows your AI's name). Write what it should do on the call, for example \"Ask if they still want the spring cleanup, mention we have Tuesday open, and book it if they're ready\", then choose Call now or pick a time. It calls from your business number, follows your instructions, can quote from your price list and book, and texts you how it went, including the answers to anything you asked it to find out. It only offers a discount if your instructions give one. You can also text your business number, like \"call Dave and ask if Thursday works\". Calls go out weekdays 9 a.m. to 9:30 p.m. and weekends 10 to 6, and only to people who agreed to automated calls. If they asked you to call them, tick the box that says so. Calls waiting to go out can be cancelled from the same window. Leave the box empty for a quick follow-up call right away.",
       },
       {
         heading: "Keeping you in the loop",

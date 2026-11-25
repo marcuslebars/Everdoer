@@ -23,7 +23,7 @@ import { useOrg } from "@/lib/org-context";
 import { useBrand } from "@/lib/brand-context";
 import { assistantCopy } from "@/lib/platform-brand";
 import { useAssistantName } from "@/lib/assistant-name";
-import { QuickCallDialog } from "@/components/voice/QuickCallDialog";
+import { AiCallDialog } from "@/components/voice/AiCallDialog";
 import { Modal } from "@/components/ui/Modal";
 import { 
   useCRMContacts, 
@@ -688,11 +688,9 @@ export default function CRMPage() {
       {isCreateOpen && <CreateContactDialog onClose={() => setIsCreateOpen(false)} />}
       {isCompanyOpen && <NewCompanyDialog onClose={() => setIsCompanyOpen(false)} />}
       {callContact && (
-        <QuickCallDialog
+        <AiCallDialog
           orgId={organizationId}
-          contactId={callContact.id}
-          initialName={callContact.name}
-          initialPhone={callContact.phone ?? ""}
+          contact={{ id: callContact.id, name: callContact.name, phone: callContact.phone ?? null }}
           onClose={() => setCallContact(null)}
         />
       )}

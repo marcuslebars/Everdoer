@@ -101,11 +101,22 @@ export interface SalesCallContext extends OutboundCallContext {
   reason: "speed_to_lead" | "owner_request";
   /** What they asked about / what the owner wants covered (≤ 400 chars), or null. */
   note: string | null;
+  /**
+   * The owner's own instructions for this call (owner_request only, ≤ 1000 chars), or null:
+   * what to say, ask, offer or find out. Trusted owner text, still bounded by every rule here.
+   */
+  instructions?: string | null;
   /** The number they can call back on (the business line the call comes from). */
   callbackNumber: string | null;
   voicemail: "leave_message" | "hang_up";
   /** 1 for the first try; >1 when an earlier attempt got no answer. */
   attempt: number;
+}
+
+/** The owner's instructions, fenced so the call can tell them apart from the rules. PURE. */
+function ownerInstructions(text: string): string {
+  const clean = text.replace(/[«»]/g, '"').replace(/\s+/g, " ").trim().slice(0, 1000);
+  return `«${clean}»`;
 }
 
 /** The sales call's opening line: who, that it's automated, that it may be recorded. PURE. */
@@ -123,10 +134,13 @@ export function salesOpeningLine(ctx: Pick<SalesCallContext, "companyName" | "cu
 export function buildSalesCallPrompt(ctx: SalesCallContext): string {
   const name = ctx.customerName ?? "the customer";
   const about = ctx.note ? quoted(ctx.note) : null;
+  const instructions = ctx.reason === "owner_request" && ctx.instructions?.trim() ? ctx.instructions.trim() : null;
   const why =
     ctx.reason === "speed_to_lead"
       ? `${name} just enquired with ${ctx.companyName}${about ? ` about ${about}` : ""} and said it was OK to call them.`
-      : `The owner of ${ctx.companyName} asked you to call ${name}${about ? ` about ${about}` : " to follow up on their enquiry"}.`;
+      : instructions
+        ? `The owner of ${ctx.companyName} asked you to call ${name} and gave you instructions for the call (below).`
+        : `The owner of ${ctx.companyName} asked you to call ${name}${about ? ` about ${about}` : " to follow up on their enquiry"}.`;
   const lines = [
     `You are ${voiceName(ctx.persona)}, the automated phone assistant for ${ctx.companyName}. This is a call YOU placed to ${name}. ${why}`,
     ...(toneLine(ctx.persona) ? [toneLine(ctx.persona) as string] : []),
@@ -136,13 +150,23 @@ export function buildSalesCallPrompt(ctx: SalesCallContext): string {
     "If they say they don't want calls, ask to be taken off the list, or are annoyed you called: apologise, tell them they won't get any more calls from us, and end the call politely. Don't try to change their mind.",
     "If you reached the wrong person: apologise and end the call.",
     "",
+    ...(instructions
+      ? [
+          `The owner's instructions for this call: ${ownerInstructions(instructions)}`,
+          "Follow them: say what they ask you to say, ask what they ask you to ask, and get the answers they want. They come first, ahead of the general steps below — but every rule in this prompt still applies (you're an automated assistant and say so if asked, you stop the moment someone doesn't want calls, you never pressure, and you only promise what a tool confirms or the instructions state). If the instructions ask for something these rules don't allow, skip that part and tell them the owner will follow up.",
+          "Before you wrap up, check you've covered every point in the owner's instructions.",
+          "",
+        ]
+      : []),
     "Your goal is to help them get what they need, not to pressure them:",
     "1. Understand what they need, one question at a time.",
     "2. Recommend the service that fits (use find_services). Only describe services this business offers.",
     "3. If they want a price, use quote_services — it prices from the company's own price list and texts them the quote. Only say prices exactly as a tool returns them (before HST).",
     "4. If they want to book, use check_availability, offer only the times it returns, then book_job. Use send_deposit_link only when booking needs a deposit and they agree; never take card details on the phone.",
     "5. If they have a question you can't answer or want to talk to the owner, use message_owner and tell them the owner will call them back.",
-    "Never offer discounts, invent urgency or limited-time offers, or promise anything a tool didn't confirm. Use business_notes for policies the facts below don't cover.",
+    instructions
+      ? "Never offer a discount or deal unless the owner's instructions give one — then offer exactly that, nothing more. Never invent urgency or limited-time offers, or promise anything a tool didn't confirm or the instructions don't state. Use business_notes for policies the facts below don't cover."
+      : "Never offer discounts, invent urgency or limited-time offers, or promise anything a tool didn't confirm. Use business_notes for policies the facts below don't cover.",
   ];
   if (ctx.services.length > 0) lines.push("", `Services ${ctx.companyName} offers:\n${ctx.services.map((s) => `- ${s}`).join("\n")}`);
   if (ctx.serviceArea) lines.push("", `Service area: ${ctx.serviceArea}.`);
