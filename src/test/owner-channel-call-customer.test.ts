@@ -483,14 +483,14 @@ describe("sales_call — consent, code, dial on the sales agent", () => {
     scriptModel([{ name: "sales_call", input: { contact_id: DANA, focus: "spring cleanup", customer_asked: true, when: "now" } }], "unused");
     await text("Dana asked me to call her back about the spring cleanup - have the AI call her");
     expect(callContactWithMarina).not.toHaveBeenCalled();
-    expect(ownerReplies().at(-1)).toContain('Have the AI call Dana Jones ((705) 555-0123) now about "spring cleanup"');
+    expect(ownerReplies().at(-1)).toContain('Have the AI call Dana Jones ((705) 555-0123) now and follow your instructions ("spring cleanup")');
 
     await text(lastCode());
     expect(db.tables.call_consents[0]).toMatchObject({ source: "owner_attested", phone_last10: "7055550123" });
     expect(callContactWithMarina).toHaveBeenCalledTimes(1);
     const opts = callContactWithMarina.mock.calls[0][2] as { sales: { agentId: string; fromNumber: string; prompt: string } };
     expect(opts.sales).toMatchObject({ agentId: "agent_sales", fromNumber: "+17055550001" });
-    expect(opts.sales.prompt).toContain("asked you to call Dana Jones about «spring cleanup»");
+    expect(opts.sales.prompt).toContain("The owner's instructions for this call: «spring cleanup»");
     expect(db.tables.sales_calls[0]).toMatchObject({ reason: "owner_request", status: "placed", requested_by_phone: OWNER });
     expect(ownerReplies().at(-1)).toContain("Calling Dana Jones now");
   });

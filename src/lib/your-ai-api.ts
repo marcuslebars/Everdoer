@@ -2,32 +2,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 
-export type YourAiTone = "friendly" | "professional" | "casual";
-
-export interface YourAiSwitch {
-  key: string;
-  group: "customers" | "paid" | "jobs" | "growing" | "posted";
-  label: string;
-  description: string;
-  customize: string | null;
-  choices?: Array<{ value: string; label: string }>;
-  on: boolean;
-  choice?: string;
-  needs?: string;
-  /** An automation that also does this (switching off here doesn't stop it). */
-  alsoDoneBy?: string;
-}
-
-export interface YourAiView {
-  companyId: string;
-  persona: { name: string | null; tone: YourAiTone | null; defaultName: string };
-  switches: YourAiSwitch[];
-  /**
-   * Calling your own assistant (docs/owner-line.md): what you've told it about you and your
-   * businesses. Null unless that is switched on for the account and you are an owner or admin.
-   */
-  ownerLine?: { brief: string | null; maxChars: number } | null;
-}
+// The view types live in your-ai-types.ts (no React Query), so the shared api-client — and the
+// mobile app that typechecks it — can reference them.
+export type { YourAiSwitch, YourAiTone, YourAiView } from "@/lib/your-ai-types";
+import type { YourAiSwitch, YourAiTone, YourAiView } from "@/lib/your-ai-types";
 
 export type YourAiPatch =
   | { switch: string; on: boolean; choice?: string }

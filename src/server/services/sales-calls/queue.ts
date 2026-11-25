@@ -80,6 +80,22 @@ export function skipReasonText(reason: SkipReason): string {
 
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
+/** Most an owner can write for one call. */
+export const SALES_CALL_INSTRUCTIONS_MAX = 1000;
+
+/** Tidy owner instructions: trimmed, runs of spaces collapsed (line breaks kept), capped. PURE. */
+export function cleanInstructions(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const t = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return t ? t.slice(0, SALES_CALL_INSTRUCTIONS_MAX) : null;
+}
+
 export async function scheduleSalesCall(
   admin: AdminClient,
   input: {
@@ -90,10 +106,14 @@ export async function scheduleSalesCall(
     maxAttempts: number;
     attempt?: number;
     note?: string | null;
+    /** The owner's instructions for the call (owner_request only; ≤ 1000 chars). */
+    instructions?: string | null;
     rawLeadId?: string | null;
     requestedByPhone?: string | null;
+    requestedByProfileId?: string | null;
   },
 ): Promise<SalesCallRow | "already_open"> {
+  const instructions = input.reason === "owner_request" ? cleanInstructions(input.instructions) : null;
   const { data, error } = await admin
     .from("sales_calls")
     .insert({
@@ -106,8 +126,10 @@ export async function scheduleSalesCall(
       attempt: input.attempt ?? 1,
       max_attempts: Math.max(input.attempt ?? 1, input.maxAttempts),
       note: input.note ? input.note.replace(/\s+/g, " ").trim().slice(0, 400) : null,
+      instructions,
       raw_lead_id: input.rawLeadId ?? null,
       requested_by_phone: input.requestedByPhone ?? null,
+      requested_by_profile_id: input.requestedByProfileId ?? null,
       created_at: new Date().toISOString(),
     })
     .select("*")
@@ -316,6 +338,7 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
           persona,
           reason: claimed.reason === "owner_request" ? "owner_request" : "speed_to_lead",
           note: claimed.note,
+          instructions: claimed.instructions,
           callbackNumber,
           voicemail: inputs.settings.voicemail,
           attempt: claimed.attempt,
@@ -430,6 +453,8 @@ export interface SalesAnalysis {
   doNotCall: boolean;
   callbackTime: string | null;
   servicesInterested: string | null;
+  /** What came of the owner's instructions (owner_request calls with instructions). */
+  instructionsResult: string | null;
 }
 
 /** call_analysis.custom_analysis_data → what the sales agent reported. PURE. */
@@ -442,6 +467,7 @@ export function readSalesAnalysis(custom: unknown): SalesAnalysis {
     doNotCall: c.do_not_call_requested === true || outcome === "do_not_call",
     callbackTime: text(c.callback_time, 80),
     servicesInterested: text(c.services_interested, 120),
+    instructionsResult: text(c.instructions_result, 240),
   };
 }
 
@@ -477,6 +503,7 @@ export function salesCallResultText(input: {
   const mins = input.durationMs != null && input.durationMs > 0 ? ` (${Math.max(1, Math.round(input.durationMs / 60000))} min)` : "";
   const label = input.analysis.doNotCall ? OUTCOME_LABEL.do_not_call : OUTCOME_LABEL[input.analysis.salesOutcome ?? "no_conversation"];
   const parts = [`${head}: ${label}${input.analysis.salesOutcome === "call_back_later" && input.analysis.callbackTime ? ` (${input.analysis.callbackTime})` : ""}.`];
+  if (input.analysis.instructionsResult && !input.analysis.doNotCall) parts.push(sentence(`Your instructions: ${input.analysis.instructionsResult}`));
   if (input.analysis.servicesInterested && !input.analysis.doNotCall) parts.push(sentence(`Interested in: ${input.analysis.servicesInterested}`));
   if (input.summary && !input.analysis.doNotCall) parts.push(sentence(clip(input.summary, SUMMARY_MAX)));
   return `${parts.join(" ")}${mins}`;
@@ -554,6 +581,7 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
         doNotCall: analysis.doNotCall,
         callbackTime: analysis.callbackTime,
         servicesInterested: analysis.servicesInterested,
+        instructionsResult: analysis.instructionsResult,
         summary: input.callSummary ? clip(input.callSummary, 600) : null,
         durationMs: input.durationMs,
         disconnectionReason: input.disconnectionReason ?? null,
@@ -574,8 +602,10 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
         maxAttempts: row.max_attempts,
         attempt: row.attempt + 1,
         note: row.note,
+        instructions: row.instructions,
         rawLeadId: row.raw_lead_id,
         requestedByPhone: row.requested_by_phone,
+        requestedByProfileId: row.requested_by_profile_id,
       });
       if (next !== "already_open") retryId = next.id;
     }

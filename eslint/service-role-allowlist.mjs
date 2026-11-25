@@ -58,6 +58,8 @@ export const SERVICE_ROLE_ALLOWLIST = [
   "src/app/api/organizations/[organizationId]/companies/[companyId]/ai-settings/weekly-report/test/route.ts",
   // "Your AI" switches: membership + company checked on the RLS client first (SANCTIONED EXCEPTION header in the route).
   "src/app/api/organizations/[organizationId]/companies/[companyId]/your-ai/route.ts",
+  // "Call with Everly" + instructions: membership/role + contact visibility on the RLS client first (SANCTIONED EXCEPTION header).
+  "src/app/api/organizations/[organizationId]/contacts/[contactId]/ai-call/route.ts",
   // Onboarding "Your AI" step: the same your-ai writes, behind the same membership + company checks.
   "src/app/api/organizations/[organizationId]/onboarding/your-ai/route.ts",
   // One-number Phone step: only the companies.ai_settings write (call answering on), after the checks.

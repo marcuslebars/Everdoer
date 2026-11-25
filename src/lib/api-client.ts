@@ -1279,6 +1279,62 @@ export function startContactCall(orgId: string, contactId: string): Promise<Cont
   });
 }
 
+// ─── AI calls with the owner's instructions (docs/sales-calls.md) ───────────────
+
+export interface AiCallSummary {
+  id: string;
+  status: "scheduled" | "dialing" | "placed" | "completed" | "failed" | "cancelled" | "skipped";
+  reason: "speed_to_lead" | "owner_request";
+  runAt: string;
+  createdAt: string;
+  instructions: string | null;
+  result: string | null;
+}
+
+export interface AiCallView {
+  availability: "enabled" | "not_set_up" | "not_in_plan";
+  unavailableReason: string | null;
+  hasPhone: boolean;
+  hasConsent: boolean;
+  doNotCall: boolean;
+  maxChars: number;
+  calls: AiCallSummary[];
+}
+
+export interface AiCallRequestInput {
+  instructions: string;
+  /** "now", "YYYY-MM-DD HH:MM" in the business's time, or null for the next calling hours. */
+  when: string | null;
+  customerAsked: boolean;
+}
+
+export interface AiCallRequestResult {
+  status: "placed" | "deferred" | "scheduled";
+  message: string;
+  salesCallId: string;
+  runAt: string;
+}
+
+/** The "Have the AI call" panel for one contact: availability, consent, recent AI calls. */
+export function fetchAiCallView(orgId: string, contactId: string): Promise<AiCallView> {
+  return apiFetch(`/api/organizations/${orgId}/contacts/${contactId}/ai-call`);
+}
+
+/** Have the AI call this contact and follow the owner's instructions. */
+export function requestAiCall(orgId: string, contactId: string, input: AiCallRequestInput): Promise<AiCallRequestResult> {
+  return apiFetch(`/api/organizations/${orgId}/contacts/${contactId}/ai-call`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Cancel an AI call that hasn't been dialed yet. */
+export function cancelAiCall(orgId: string, contactId: string, salesCallId: string): Promise<{ cancelled: boolean }> {
+  return apiFetch(`/api/organizations/${orgId}/contacts/${contactId}/ai-call?id=${encodeURIComponent(salesCallId)}`, {
+    method: "DELETE",
+  });
+}
+
 /** Pulls outcomes for this contact's finished calls. Idempotent. */
 export function syncContactCalls(orgId: string, contactId: string): Promise<{ synced: number }> {
   return apiFetch(`/api/organizations/${orgId}/contacts/${contactId}/calls/sync`, {
@@ -1759,7 +1815,7 @@ export function saveOnboardingBusiness(orgId: string, input: SaveBusinessInput):
 export type TextAutonomy = "ask_first" | "standard";
 
 export interface YourAiStepView {
-  view: import("./your-ai-api").YourAiView;
+  view: import("./your-ai-types").YourAiView;
   readiness: import("./ai-readiness").AiReadiness;
 }
 

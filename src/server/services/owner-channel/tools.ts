@@ -36,7 +36,7 @@ import { cleanPersonaName, loadPersona, PERSONA_TONES, savePersona, voiceName, t
 import { resyncReceptionistAgent } from "@/server/services/voice/resync";
 import { findCallConsent, isDoNotCall, nextCallableAt } from "@/server/services/sales-calls/compliance";
 import { salesCallProposal } from "@/server/services/sales-calls/owner-request";
-import { cancelSalesCall, openSalesCallFor } from "@/server/services/sales-calls/queue";
+import { cancelSalesCall, cleanInstructions, openSalesCallFor } from "@/server/services/sales-calls/queue";
 import { loadSalesCallSettings, saveSalesCallSettings } from "@/server/services/sales-calls/settings";
 
 export interface ToolRunState {
@@ -270,12 +270,16 @@ export const SALES_CALL_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "sales_call",
     description:
-      "Have the AI call a customer to sell: answer their questions, recommend a service, quote from the price list and book. Use when the owner says to call a lead/customer to follow up, close, quote or book them (not for passing on a specific message - that's call_customer). The customer must have agreed to automated calls; set customer_asked=true ONLY if the owner says the customer asked to be called. The owner confirms with a code.",
+      "Have the AI call a customer to sell or follow up, following any instructions the owner gives (what to say, ask, offer or find out): answer their questions, recommend a service, quote from the price list and book. Use when the owner says to call a lead/customer to follow up, close, quote or book them (not for passing on a specific message - that's call_customer). The customer must have agreed to automated calls; set customer_asked=true ONLY if the owner says the customer asked to be called. The owner confirms with a code.",
     input_schema: {
       type: "object",
       properties: {
         contact_id: { type: "string" },
-        focus: { type: "string", description: "What the call should focus on, in the owner's words (optional, max 200 chars)." },
+        focus: {
+          type: "string",
+          description:
+            "The owner's instructions for the call, in their own words, kept whole: what to say, ask, offer or find out (optional, max 1000 chars). Don't shorten or reword them.",
+        },
         customer_asked: { type: "boolean", description: "True only if the owner says the customer asked to be called." },
         when: { type: "string", description: "'now', or YYYY-MM-DD HH:MM local, or blank for the next calling hours." },
       },
@@ -581,7 +585,7 @@ async function salesCallTool(state: ToolRunState, input: Input) {
   }
   const when = resolveCallTime(str(input.when), state.nowMs, state.scope.timeZone);
   if ("error" in when) return { error: when.error };
-  const focus = str(input.focus) ? toPlainText(str(input.focus) as string).replace(/\s+/g, " ").slice(0, 200) : null;
+  const focus = str(input.focus) ? cleanInstructions(toPlainText(str(input.focus) as string)) : null;
   const runAtMs = nextCallableAt(when.runAtMs, state.scope.timeZone);
   const whenLabel = runAtMs <= state.nowMs ? "now" : shortWhen(new Date(runAtMs).toISOString(), state.scope.timeZone);
   const proposal = salesCallProposal({ who, phone: formatNanp(phone), focus, customerAsked, whenLabel });

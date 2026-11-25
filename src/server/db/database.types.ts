@@ -10560,6 +10560,8 @@ export type Database = {
           last_error: string | null
           max_attempts: number
           note: string | null
+          instructions: string | null
+          requested_by_profile_id: string | null
           organization_id: string
           outcome: Json | null
           owner_notified_at: string | null
@@ -10585,6 +10587,8 @@ export type Database = {
           last_error?: string | null
           max_attempts?: number
           note?: string | null
+          instructions?: string | null
+          requested_by_profile_id?: string | null
           organization_id: string
           outcome?: Json | null
           owner_notified_at?: string | null
@@ -10609,6 +10613,8 @@ export type Database = {
           last_error?: string | null
           max_attempts?: number
           note?: string | null
+          instructions?: string | null
+          requested_by_profile_id?: string | null
           organization_id?: string
           outcome?: Json | null
           owner_notified_at?: string | null

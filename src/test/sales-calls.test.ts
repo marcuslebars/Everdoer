@@ -13,9 +13,11 @@ vi.mock("@/server/services/voice", async (importOriginal) => ({
   isRetellOutboundActive: () => isRetellOutboundActive(),
 }));
 const requireReceptionistMinutes = vi.fn();
+const hasReceptionistPlan = vi.fn(async () => true);
 vi.mock("@/server/services/voice/minutes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/services/voice/minutes")>()),
   requireReceptionistMinutes: (...a: unknown[]) => requireReceptionistMinutes(...a),
+  hasReceptionistPlan: (...a: unknown[]) => hasReceptionistPlan(...(a as [])),
 }));
 vi.mock("@/server/services/voice/company-facts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/services/voice/company-facts")>()),
@@ -33,7 +35,9 @@ import { parseRetellFunctionBody } from "@/server/services/retell/functions";
 import { buildSalesCallPrompt, salesOpeningLine } from "@/server/services/retell/outbound-prompt";
 import { addDoNotCall, callingWindow, findCallConsent, isDoNotCall, nextCallableAt, recordCallConsent } from "@/server/services/sales-calls/compliance";
 import { executeSalesCallCommand, salesCallProposal } from "@/server/services/sales-calls/owner-request";
+import { aiCallResultLine, cancelAiCallFromApp, getAiCallView, requestAiCallFromApp } from "@/server/services/sales-calls/app-request";
 import {
+  cleanInstructions,
   placeSalesCall,
   processDueSalesCalls,
   readSalesAnalysis,
@@ -97,6 +101,8 @@ function queued(over: Partial<SalesCallRow> = {}): SalesCallRow {
     max_attempts: 2,
     requested_by_phone: null,
     note: "Gutter cleaning",
+    instructions: null,
+    requested_by_profile_id: null,
     raw_lead_id: "lead-1",
     claimed_at: null,
     claimed_by: null,
@@ -124,6 +130,7 @@ beforeEach(() => {
   callContactWithMarina.mockReset().mockResolvedValue({ agentCallId: "call_abc", toNumber: "+17055550123" });
   isRetellOutboundActive.mockReset().mockReturnValue(true);
   requireReceptionistMinutes.mockReset().mockResolvedValue(undefined);
+  hasReceptionistPlan.mockReset().mockResolvedValue(true);
   sendOwnerSms.mockReset().mockResolvedValue({ status: "sent" });
   db.onRpc(() => ({ data: true, error: null }));
 });
@@ -480,14 +487,14 @@ describe("outcomes", () => {
   });
 
   it("reads the analysis defensively and keeps customer words inside fixed templates", () => {
-    expect(readSalesAnalysis({ sales_outcome: "nonsense", do_not_call_requested: "yes" })).toEqual({ salesOutcome: null, doNotCall: false, callbackTime: null, servicesInterested: null });
+    expect(readSalesAnalysis({ sales_outcome: "nonsense", do_not_call_requested: "yes" })).toEqual({ salesOutcome: null, doNotCall: false, callbackTime: null, servicesInterested: null, instructionsResult: null });
     expect(readSalesAnalysis({ sales_outcome: "do_not_call" }).doNotCall).toBe(true);
     const text = salesCallResultText({
       who: "Kim",
       reason: "owner_request",
       reached: true,
       inVoicemail: false,
-      analysis: { salesOutcome: "call_back_later", doNotCall: false, callbackTime: "tomorrow after 5", servicesInterested: null },
+      analysis: { salesOutcome: "call_back_later", doNotCall: false, callbackTime: "tomorrow after 5", servicesInterested: null, instructionsResult: null },
       summary: "x".repeat(400),
       durationMs: 60_000,
       attempt: 1,
@@ -504,7 +511,7 @@ describe("owner-requested sales calls", () => {
 
   it("the proposal echoes who, when, the focus and the consent the owner is confirming", () => {
     expect(salesCallProposal({ who: "Kim", phone: "(705) 555-0177", focus: "spring cleanup", customerAsked: true, whenLabel: "now" }).summary).toBe(
-      'Have the AI call Kim ((705) 555-0177) now about "spring cleanup" to answer questions, quote and book? You\'re confirming Kim asked to be called.',
+      'Have the AI call Kim ((705) 555-0177) now and follow your instructions ("spring cleanup")? You\'re confirming Kim asked to be called.',
     );
   });
 
@@ -516,7 +523,7 @@ describe("owner-requested sales calls", () => {
     const r = await executeSalesCallCommand(db.client, approval, { ...payload, customerAsked: true }, decision, tz, WED_10AM);
     expect(r).toMatchObject({ ok: true, message: "Calling Kim now. I'll text you how it went." });
     expect(db.tables.call_consents[0]).toMatchObject({ source: "owner_attested", source_ref: "ap-1", phone_last10: "7055550177" });
-    expect(db.tables.sales_calls[0]).toMatchObject({ reason: "owner_request", requested_by_phone: "+17055550100", note: "spring cleanup", status: "placed" });
+    expect(db.tables.sales_calls[0]).toMatchObject({ reason: "owner_request", requested_by_phone: "+17055550100", note: null, instructions: "spring cleanup", status: "placed" });
   });
 
   it("outside hours it's scheduled for the next opening; declined does nothing", async () => {
@@ -580,5 +587,124 @@ describe("the sales prompt, agent and outbound tool requests", () => {
     const no = buildPublicFormEnvelope({ phone: "705-555-0123" } as never, ctx as never);
     expect(no.meta?.callConsent).toMatchObject({ granted: false });
     expect(no.meta?.callConsent?.text).toBeUndefined();
+  });
+});
+
+describe("calls with the owner's instructions", () => {
+  const INSTR = "Ask if Kim still wants the spring cleanup. Mention we have Tuesday open.\nIf she's ready, book it and offer our 10% repeat-customer discount.";
+  const actor = { profileId: "prof-1", label: "Marcus" };
+  const base = {
+    companyName: "Northshore Home",
+    customerName: "Kim",
+    services: ["Spring cleanup — $250"],
+    hoursText: null,
+    serviceArea: null,
+    transferNumber: null,
+    persona: { name: "Everly", tone: null },
+    note: null,
+    callbackNumber: "(705) 555-0001",
+    voicemail: "leave_message" as const,
+    attempt: 1,
+  };
+
+  it("the prompt follows the owner's instructions within every rule, and lets them set an offer", () => {
+    const prompt = buildSalesCallPrompt({ ...base, reason: "owner_request", instructions: INSTR });
+    expect(prompt).toContain("asked you to call Kim and gave you instructions for the call (below)");
+    expect(prompt).toContain("The owner's instructions for this call: «Ask if Kim still wants the spring cleanup. Mention we have Tuesday open. If she's ready, book it and offer our 10% repeat-customer discount.»");
+    expect(prompt).toContain("every rule in this prompt still applies");
+    expect(prompt).toContain("Never offer a discount or deal unless the owner's instructions give one — then offer exactly that, nothing more.");
+    expect(prompt).toContain("check you've covered every point in the owner's instructions");
+    expect(prompt).toContain("they won't get any more calls from us");
+  });
+
+  it("without instructions — or on a new-lead call — the prompt is unchanged", () => {
+    const plain = buildSalesCallPrompt({ ...base, reason: "owner_request", note: "spring cleanup" });
+    expect(plain).toContain("asked you to call Kim about «spring cleanup»");
+    expect(plain).not.toContain("owner's instructions");
+    expect(plain).toContain("Never offer discounts, invent urgency");
+    const lead = buildSalesCallPrompt({ ...base, reason: "speed_to_lead", instructions: "offer 50% off" });
+    expect(lead).not.toContain("50% off");
+  });
+
+  it("instructions are tidied, capped at 1000 and only kept on owner-requested calls", async () => {
+    expect(cleanInstructions("  a   b \r\n\n\n\nc  ")).toBe("a b\n\nc");
+    expect(cleanInstructions("x".repeat(1200))).toHaveLength(1000);
+    expect(cleanInstructions("   ")).toBeNull();
+    const row = await scheduleSalesCall(db.client, { scope, contactId: "ct-1", reason: "speed_to_lead", runAtMs: WED_10AM, maxAttempts: 2, instructions: "x" });
+    expect(row).not.toBe("already_open");
+    expect(rowOf((row as SalesCallRow).id).instructions).toBeNull();
+  });
+
+  it("the owner's result text answers the instructions first; a retry keeps them", async () => {
+    expect(readSalesAnalysis({ sales_outcome: "booked", instructions_result: "  Kim wants Tuesday; booked 9am.  " }).instructionsResult).toBe("Kim wants Tuesday; booked 9am.");
+    consent("ct-2", "7055550177");
+    const row = queued({ contact_id: "ct-2", reason: "owner_request", note: null, instructions: INSTR, requested_by_profile_id: "prof-1", status: "placed", retell_call_id: "call_1" });
+    await recordSalesCallOutcome(db.client, { salesCallId: row.id, organizationId: ORG, callId: "call_1", callSuccessful: false, inVoicemail: false, callSummary: null, durationMs: 0, customAnalysisData: {}, nowMs: WED_10AM });
+    const retry = db.tables.sales_calls.find((r) => r.attempt === 2);
+    expect(retry).toMatchObject({ instructions: INSTR, requested_by_profile_id: "prof-1", reason: "owner_request" });
+
+    const text = salesCallResultText({
+      who: "Kim",
+      reason: "owner_request",
+      reached: true,
+      inVoicemail: false,
+      analysis: { salesOutcome: "booked", doNotCall: false, callbackTime: null, servicesInterested: "spring cleanup", instructionsResult: "Kim wants Tuesday; booked 9am." },
+      summary: "Booked.",
+      durationMs: 120_000,
+      attempt: 1,
+    });
+    expect(text).toBe("Sales call - Kim: booked. Your instructions: Kim wants Tuesday; booked 9am. Interested in: spring cleanup. Booked. (2 min)");
+  });
+
+  it("from the app: needs consent or the owner's word, records it, and dials now with the instructions", async () => {
+    await expect(requestAiCallFromApp(db.client, scope, "ct-2", { instructions: INSTR, when: "now", customerAsked: false }, actor, WED_10AM)).rejects.toThrow(/hasn't agreed to automated calls/);
+    expect(db.tables.sales_calls).toHaveLength(0);
+
+    const r = await requestAiCallFromApp(db.client, scope, "ct-2", { instructions: INSTR, when: "now", customerAsked: true }, actor, WED_10AM);
+    expect(r).toMatchObject({ ok: true, status: "placed" });
+    expect(db.tables.call_consents[0]).toMatchObject({ source: "owner_attested", source_ref: "app:prof-1", evidence: "Marcus confirmed in the app that Kim asked to be called." });
+    expect(db.tables.sales_calls[0]).toMatchObject({ reason: "owner_request", instructions: INSTR, requested_by_profile_id: "prof-1", requested_by_phone: null, claimed_by: "app", status: "placed" });
+    const opts = callContactWithMarina.mock.calls[0][2] as { sales: { prompt: string } };
+    expect(opts.sales.prompt).toContain("The owner's instructions for this call: «Ask if Kim still wants");
+  });
+
+  it("from the app: a later time is queued (calling hours still apply) and can be cancelled", async () => {
+    consent("ct-2", "7055550177");
+    const r = await requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "Ask about Tuesday", when: "2026-10-29 10:30", customerAsked: false }, actor, WED_10AM);
+    expect(r).toMatchObject({ ok: true, status: "scheduled" });
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+    expect(db.tables.sales_calls[0]).toMatchObject({ status: "scheduled", run_at: "2026-10-29T14:30:00.000Z" });
+    expect(await cancelAiCallFromApp(db.client, scope, "ct-1", r.salesCallId)).toBe(false); // not that contact's
+    expect(await cancelAiCallFromApp(db.client, scope, "ct-2", r.salesCallId)).toBe(true);
+    expect(db.tables.sales_calls[0].status).toBe("cancelled");
+  });
+
+  it("from the app: refuses empty or over-long instructions, a missing plan, and do-not-call", async () => {
+    consent("ct-2", "7055550177");
+    await expect(requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "   ", when: "now", customerAsked: false }, actor, WED_10AM)).rejects.toThrow(/what to do/);
+    await expect(requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "x".repeat(1001), when: "now", customerAsked: false }, actor, WED_10AM)).rejects.toThrow(/under 1000/);
+    hasReceptionistPlan.mockResolvedValueOnce(false);
+    await expect(requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "Ask", when: "now", customerAsked: false }, actor, WED_10AM)).rejects.toThrow(/Front Desk plan/);
+    await addDoNotCall(db.client, { scope, phone: "(705) 555-0177", source: "owner", contactId: "ct-2", note: null, nowMs: WED_10AM });
+    await expect(requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "Ask", when: "now", customerAsked: false }, actor, WED_10AM)).rejects.toThrow(/do-not-call/);
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+  });
+
+  it("the panel shows availability, consent and past calls with plain results", async () => {
+    consent("ct-2", "7055550177");
+    queued({ contact_id: "ct-2", reason: "owner_request", instructions: "Ask about Tuesday", status: "completed", outcome: { reached: true, salesOutcome: "booked", instructionsResult: "Tuesday 9am works." } as never });
+    const view = await getAiCallView(db.client, scope, "ct-2");
+    expect(view).toMatchObject({ availability: "enabled", unavailableReason: null, hasPhone: true, hasConsent: true, doNotCall: false, maxChars: 1000 });
+    expect(view.calls[0]).toMatchObject({ instructions: "Ask about Tuesday", result: "Booked. Tuesday 9am works." });
+    expect(aiCallResultLine({ status: "skipped", skip_reason: "no_consent", outcome: null })).toBe("Not called: they haven't agreed to automated calls.");
+    expect(aiCallResultLine({ status: "completed", skip_reason: null, outcome: { reached: false, inVoicemail: true } as never })).toBe("Voicemail.");
+    isRetellOutboundActive.mockReturnValue(false);
+    expect((await getAiCallView(db.client, scope, "ct-2")).unavailableReason).toBe("AI calls aren't set up on this account yet.");
+  });
+
+  it("the sales agent reports what came of the instructions", () => {
+    const config = buildSalesAgentConfig({ baseUrl: "https://app.everdoer.com", functionSecret: "s" });
+    const fields = JSON.stringify(config.agent("llm_1"));
+    expect(fields).toContain("instructions_result");
   });
 });

@@ -56,8 +56,11 @@ web form (consent box ticked) ─► lead intake ─► maybeScheduleSpeedToLead
                                                    records call_consents (always)
                                                    queues sales_calls (reason speed_to_lead) if enabled
 owner text "call Dave…" ─► sales_call tool ─► code ─► executeSalesCallCommand (owner-request.ts)
+app "Call with Everly" + instructions ─► /contacts/[id]/ai-call ─► requestAiCallFromApp (app-request.ts)
+                                         both ─► startOwnerSalesCall
                                                    (owner_attested consent if the owner said so)
-                                                   queues sales_calls (reason owner_request), dials if open
+                                                   queues sales_calls (reason owner_request,
+                                                   with the owner's instructions), dials if open
 
 scheduler (every tick) ─► processDueSalesCalls ─► placeSalesCall (sales-calls/queue.ts)
    claim scheduled → dialing ─► decideDial: agent set up · callable phone · not do-not-call ·
@@ -105,6 +108,40 @@ raw outbound `to_number`.
    the opening line, a quote by text if you ask, and the result text to the owner. Say "please
    don't call me again" and check the number lands in `do_not_call`.
 
+## Calls with your instructions
+
+The owner tells the AI what to do on a call to one of their contacts: *"Ask if Kim still wants the
+spring cleanup. Mention we have Tuesday open. If she's ready, book it and offer our 10%
+repeat-customer discount."* It's an `owner_request` sales call that carries the owner's words
+(`sales_calls.instructions`, up to 1000 characters; migration
+`20261125100000_sales_call_instructions.sql`).
+
+- **From the app:** "Call with Everly" on a contact (header, inbox, CRM list) opens
+  `components/voice/AiCallDialog.tsx`. Write the instructions, pick now or a time, and tick
+  "they asked us to call" when no consent is on file (recorded as `owner_attested`, evidence
+  "<user> confirmed in the app…", `source_ref app:<profile id>`). Owners and admins only.
+  `/api/organizations/[orgId]/contacts/[contactId]/ai-call`: GET the panel (availability,
+  consent, do-not-call, the contact's last 10 AI calls with a plain result line), POST a call,
+  DELETE `?id=` a waiting one. Service: `sales-calls/app-request.ts`. An empty box keeps the
+  original one-tap follow-up call (`/contacts/[contactId]/call`).
+- **By text:** the `sales_call` tool's `focus` now carries the owner's whole instructions (up to
+  1000 characters, not reworded). The confirmation shows the first 160 characters; the call
+  gets all of it.
+- Both go through `owner-request.ts → startOwnerSalesCall`: contact in the caller's own
+  organization + company, do-not-call, consent (or the owner's word), queue, dial now when
+  calling hours are open. Every dial-time rule runs again in `placeSalesCall`, and retries keep
+  the instructions.
+- **On the call** (`buildSalesCallPrompt` with `instructions`): the owner's instructions come
+  first, ahead of the general sales steps, fenced in «…». Every rule still applies: the AI says
+  it's automated, stops when someone doesn't want calls, never pressures, and only promises what
+  a tool confirms or the instructions state. A discount or deal is allowed only when the
+  instructions give one, and then exactly that. Anything the rules don't allow is skipped with
+  "the owner will follow up". It checks it covered every point before wrapping up.
+- **The result:** the sales agent's post-call analysis has `instructions_result` (what came of
+  the instructions, answers to anything it was asked to find out). The owner's text leads with
+  "Your instructions: …", and the app shows it on the call. After deploying, re-run
+  `npm run job:retell-sales-agent -- --apply` so Retell's agent gets the new analysis field.
+
 ## Everdoer's own callback ("Have Everly call me now")
 
 everdoer.com has a form where a trades owner asks Everly to call them now. It is an ordinary
@@ -151,7 +188,7 @@ the Everdoer company; nothing needs a deploy. Keep them in step with everdoer.co
 ## Files
 
 `src/server/services/sales-calls/` (`settings.ts`, `compliance.ts`, `queue.ts`,
-`speed-to-lead.ts`, `owner-request.ts`, `everdoer-callback.ts`, `everdoer-inbound.ts`, `everdoer-callback-setup.ts`
+`speed-to-lead.ts`, `owner-request.ts`, `app-request.ts`, `everdoer-callback.ts`, `everdoer-inbound.ts`, `everdoer-callback-setup.ts`
 + `jobs/everdoer-callback-setup.ts`), `retell/outbound-prompt.ts` (`buildSalesCallPrompt`),
 `voice/sales-agent.ts` + `jobs/retell-sales-agent.ts`, `voice.ts` (`sales` option),
 `retell/functions.ts` (outbound normalisation), `retell/lead-adapter.ts` (outcome routing),
@@ -162,8 +199,8 @@ the Everdoer company; nothing needs a deploy. Keep them in step with everdoer.co
 
 - The consent checkbox on generated done-for-you sites (their content is a stored snapshot) and
   on the A1 sites (they can send `meta.callConsent` in the lead envelope today).
-- App screens: the settings toggle and a list of sales calls. The data is in `sales_calls`, and
-  members can read it.
+- App screens: the settings toggle and a list of every sales call (a contact's own AI calls show
+  in its "Call with Everly" dialog). The data is in `sales_calls`, and members can read it.
 - A live transfer to the owner from a sales call (the shared agent has no per-company transfer
   number).
 - Recording consent when a customer asks for a call back by text or on an inbound call

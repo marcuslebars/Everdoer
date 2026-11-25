@@ -37,6 +37,12 @@ export const SALES_AGENT_ANALYSIS_FIELDS: Array<Record<string, unknown>> = [
   { type: "boolean", name: "do_not_call_requested", description: "True if they said not to call them again, asked to be removed, or objected to being called." },
   { type: "string", name: "callback_time", description: "When they'd prefer to be called back, if they said (e.g. 'tomorrow after 5')." },
   { type: "string", name: "services_interested", description: "The services they were interested in, in a few words." },
+  {
+    type: "string",
+    name: "instructions_result",
+    description:
+      "Only if the owner gave you instructions for this call: what came of them, in one or two short sentences — the answers to anything you were asked to find out, and anything you couldn't cover. Leave empty otherwise.",
+  },
 ];
 
 export interface SalesAgentConfigInput {

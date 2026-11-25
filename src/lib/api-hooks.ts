@@ -59,6 +59,11 @@ import {
   fetchContactAIDrafts,
   sendAIDraft,
   startContactCall,
+  fetchAiCallView,
+  requestAiCall,
+  cancelAiCall,
+  type AiCallRequestInput,
+  type AiCallView,
   startQuickCall,
   syncContactCalls,
   fetchContactCalls,
@@ -487,6 +492,39 @@ export function useCallContact(orgId: string, contactId: string) {
       // The call shows up on the contact timeline once the agent reports back.
       void qc.invalidateQueries({ queryKey: ["crm", "contact", orgId, contactId] });
     },
+  });
+}
+
+const aiCallKey = (orgId: string, contactId: string) => ["crm", "contact", "ai-call", orgId, contactId] as const;
+
+/** "Have the AI call" panel data for one contact. */
+export function useAiCallView(orgId: string, contactId: string | null) {
+  return useQuery<AiCallView>({
+    queryKey: aiCallKey(orgId, contactId ?? ""),
+    queryFn: () => fetchAiCallView(orgId, contactId!),
+    enabled: Boolean(orgId && contactId),
+    staleTime: 15_000,
+  });
+}
+
+/** Have the AI call a contact with the owner's instructions (queued; dials now in calling hours). */
+export function useRequestAiCall(orgId: string, contactId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AiCallRequestInput) => requestAiCall(orgId, contactId, input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: aiCallKey(orgId, contactId) });
+      void qc.invalidateQueries({ queryKey: ["crm", "contact", orgId, contactId] });
+    },
+  });
+}
+
+/** Cancel an AI call that hasn't gone out yet. */
+export function useCancelAiCall(orgId: string, contactId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (salesCallId: string) => cancelAiCall(orgId, contactId, salesCallId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: aiCallKey(orgId, contactId) }),
   });
 }
 
