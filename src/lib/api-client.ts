@@ -1815,7 +1815,7 @@ export function saveOnboardingBusiness(orgId: string, input: SaveBusinessInput):
 export type TextAutonomy = "ask_first" | "standard";
 
 export interface YourAiStepView {
-  view: import("./your-ai-api").YourAiView;
+  view: import("./your-ai-types").YourAiView;
   readiness: import("./ai-readiness").AiReadiness;
 }
 
