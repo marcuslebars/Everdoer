@@ -64,9 +64,9 @@ describe("persona", () => {
   });
 
   it("opening lines use the owner's chosen name (or the default)", () => {
-    expect(salesOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam, the AI assistant over at Northshore. Just so you know, calls are recorded.");
-    expect(salesOpeningLine({ companyName: "Northshore", customerName: null })).toBe("Hi there, it's Everly, the AI assistant over at Northshore. Just so you know, calls are recorded.");
-    expect(outboundOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam, the AI assistant over at Northshore.");
+    expect(salesOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam with Northshore. Just so you know, calls are recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore", customerName: null })).toBe("Hi there, it's Everly with Northshore. Just so you know, calls are recorded.");
+    expect(outboundOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam with Northshore.");
     const prompt = buildSalesCallPrompt({ companyName: "Northshore", customerName: "Dana", services: [], hoursText: null, serviceArea: null, transferNumber: null, reason: "speed_to_lead", note: null, callbackNumber: null, voicemail: "hang_up", attempt: 1, persona: { name: "Sam", tone: "casual" } });
     expect(prompt.startsWith("You are Sam, the AI phone assistant for Northshore.")).toBe(true);
     expect(prompt).toContain("Keep it relaxed, plain-spoken and upbeat");

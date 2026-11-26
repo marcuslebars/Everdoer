@@ -163,7 +163,7 @@ export function extractBlueprint(company: SourceCompany): BlueprintContent {
     if (kept !== undefined && !(isRec(kept) && Object.keys(kept).length === 0)) columns[col] = kept;
   }
   const pack = isRec(company.industry_pack) && typeof company.industry_pack.id === "string" ? company.industry_pack.id : null;
-  return { schema: BLUEPRINT_SCHEMA, persona: parsePersona(company.agent_persona), industryPackId: pack, aiSettings, columns };
+  return { schema: BLUEPRINT_SCHEMA, persona: portablePersona(company.agent_persona), industryPackId: pack, aiSettings, columns };
 }
 
 /** Is this a blueprint we can apply? (Re-applies the skip lists, so an old snapshot can't carry them.) PURE. */
@@ -185,7 +185,13 @@ export function readBlueprintContent(raw: unknown): BlueprintContent | null {
       if (kept !== undefined) columns[col] = kept;
     }
   }
-  return { schema: BLUEPRINT_SCHEMA, persona: parsePersona(raw.persona), industryPackId: typeof raw.industryPackId === "string" ? raw.industryPackId : null, aiSettings, columns };
+  return { schema: BLUEPRINT_SCHEMA, persona: portablePersona(raw.persona), industryPackId: typeof raw.industryPackId === "string" ? raw.industryPackId : null, aiSettings, columns };
+}
+
+/** The persona minus the owner's own name (that belongs to one business, never a blueprint). PURE. */
+export function portablePersona(raw: unknown): AgentPersona {
+  const { name, tone } = parsePersona(raw);
+  return { name, tone };
 }
 
 // ── Applying ──────────────────────────────────────────────────────────────────
@@ -372,7 +378,8 @@ export function planBlueprint(content: BlueprintContent, target: TargetCompany, 
     written.columns[col] = next;
   }
 
-  const currentPersona = parsePersona(target.agent_persona);
+  // Compared on name + tone only: the target's own owner name is kept on apply (service.ts).
+  const currentPersona = portablePersona(target.agent_persona);
   const wants = content.persona.name !== null || content.persona.tone !== null;
   const persona = wants ? { name: content.persona.name ?? currentPersona.name, tone: content.persona.tone ?? currentPersona.tone } : null;
   const personaChanged = persona !== null && JSON.stringify(persona) !== JSON.stringify(currentPersona);

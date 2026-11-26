@@ -307,7 +307,7 @@ type Scope = { organizationId: string; companyId: string };
 
 export interface YourAiView {
   companyId: string;
-  persona: { name: string | null; tone: AgentPersona["tone"]; defaultName: string };
+  persona: { name: string | null; tone: AgentPersona["tone"]; defaultName: string; ownerName: string | null };
   switches: Array<SwitchDef & SwitchState>;
 }
 
@@ -393,7 +393,7 @@ export async function getYourAiView(admin: AdminClient, scope: Scope): Promise<Y
   const states = new Map(readSwitches(loaded.snapshot).map((s) => [s.key, s]));
   return {
     companyId: scope.companyId,
-    persona: { name: loaded.persona.name, tone: loaded.persona.tone, defaultName: DEFAULT_VOICE_NAME },
+    persona: { name: loaded.persona.name, tone: loaded.persona.tone, defaultName: DEFAULT_VOICE_NAME, ownerName: loaded.persona.ownerName ?? null },
     switches: SWITCHES.map((def) => ({ ...def, ...(states.get(def.key) as SwitchState) })),
   };
 }
@@ -427,11 +427,12 @@ export async function setSwitch(admin: AdminClient, scope: Scope, input: { key: 
   return getYourAiView(admin, scope);
 }
 
-/** Change the assistant's name and tone; the phone receptionist picks it up straight away. */
+/** Change the assistant's name, tone, or what it calls the owner; the phone receptionist picks up name/tone straight away. */
 export async function setYourAiPersona(admin: AdminClient, scope: Scope, persona: AgentPersona): Promise<YourAiView | null> {
   const loaded = await loadSnapshot(admin, scope);
   if (!loaded) return null;
-  const saved = await savePersona(admin, scope, persona);
+  // ownerName omitted (undefined) keeps the saved one: the name/tone controls don't send it.
+  const saved = await savePersona(admin, scope, { ...persona, ownerName: persona.ownerName === undefined ? (loaded.persona.ownerName ?? null) : persona.ownerName });
   if (saved.name !== loaded.persona.name || saved.tone !== loaded.persona.tone) {
     try {
       await resyncReceptionistAgent(admin, scope.companyId);

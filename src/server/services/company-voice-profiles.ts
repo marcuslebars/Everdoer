@@ -35,7 +35,7 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 export function effectiveVoiceForProfile(
   globalConfig: RetellVoiceConfig,
   profile: CompanyVoiceProfile | null,
-  ctx: { customerName?: string | null; companyName?: string | null; systemPrompt?: string | null },
+  ctx: { customerName?: string | null; companyName?: string | null; systemPrompt?: string | null; ownerName?: string | null },
 ): { config: RetellVoiceConfig; dynamicVariables: Record<string, string> } {
   const config: RetellVoiceConfig = {
     apiKey: globalConfig.apiKey,
@@ -47,6 +47,8 @@ export function effectiveVoiceForProfile(
   const companyName = profile?.brandLabel || ctx.companyName || null;
   if (ctx.customerName) dynamicVariables.customer_name = ctx.customerName;
   if (companyName) dynamicVariables.company_name = companyName;
+  // {{owner_name}}: the owner's first name, for anything set up in the Retell dashboard.
+  if (ctx.ownerName?.trim()) dynamicVariables.owner_name = ctx.ownerName.trim();
   // Everdoer-managed prompt: render it against the variables above (so {{customer_name}},
   // {{company_name}} + brand vars resolve), then inject as {{system_prompt}} — the Retell
   // agent's general prompt is a `{{system_prompt}}` passthrough.

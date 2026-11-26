@@ -9,6 +9,7 @@
  * rolled back. Service role only (operator job, done-for-you provisioning); every company read
  * and write is pinned to organization + company.
  */
+import { parsePersona } from "@/server/agent/profile";
 import type { Json, Tables, Updates } from "@/server/db/database.types";
 import { fromJson, toJson } from "@/server/db/json";
 import type { AdminClient } from "@/server/services/front-desk/contracts";
@@ -212,7 +213,12 @@ export async function applyBlueprint(
     if (p.changes.length === 0) return null;
     const patch: Updates<"companies"> = { ...companyPatch(p.columns) };
     if (Object.keys(p.aiSections).length > 0) patch.ai_settings = toJson(p.aiSettingsNext) as Json;
-    if (p.persona) patch.agent_persona = toJson(Object.fromEntries(Object.entries(p.persona).filter(([, v]) => v !== null))) as Json;
+    if (p.persona) {
+      // The target keeps its own owner name: a blueprint never carries or clears it.
+      const ownerName = parsePersona(row.agent_persona).ownerName;
+      const persona = { ...Object.fromEntries(Object.entries(p.persona).filter(([k, v]) => v !== null && k !== "ownerName")), ...(ownerName ? { ownerName } : {}) };
+      patch.agent_persona = toJson(persona) as Json;
+    }
     return { patch, result: p };
   });
   if (!plan) {

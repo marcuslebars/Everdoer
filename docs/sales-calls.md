@@ -29,7 +29,7 @@ re-checked when the call is dialed, not only when it was queued.
 | **Only verified submissions** | A web-form lead that didn't pass the bot check (Turnstile not verified) records no consent and is never called, so a bot can't get a stranger called. Signed intake from the business's own site counts as verified. |
 | **Express consent to automated calls, for this number** | `call_consents`, one evidence row per grant, writable only by the service role. Sources: `form_optin` (the checkbox, with the exact wording shown), `owner_attested` (the owner confirmed with a code that the customer asked to be called) and `customer_request`. Consent is for a number: if the contact's phone changes, it no longer applies. Implied consent (just enquiring) is never enough. |
 | **Calling hours** | Weekdays 9:00–21:30 and weekends 10:00–18:00, in the company's time zone. A call isn't started within 15 minutes of the end. Outside the window it waits for the next opening. |
-| **Identify and disclose** | The opening line is: *"Hi, is this Sam? Hey, it's Everly, the AI assistant over at Northshore Home. Just so you know, calls are recorded."* (with the owner's chosen name). It's said naturally but always keeps who's calling, that it's an AI and that calls are recorded, then gives the reason for the call. |
+| **Identify and disclose** | The opening line is: *"Hi, is this Sam? Hey, it's Marina with Northshore Home. Just so you know, calls are recorded."* (the assistant's name from Your AI). It names who's calling and for which business, and that calls are recorded. It doesn't announce "AI" up front (the customer already agreed to calls "including with an automated assistant"), but it never claims or pretends to be a person, and says plainly that it's the business's AI assistant the moment it's asked or the caller seems unsure. |
 | **Do-not-call** | `do_not_call`, per company and number, kept for 3 years and 14 days (a repeat request renews it). A "don't call me" on a call (the post-call field `do_not_call_requested`, or outcome `do_not_call`) adds the **number that was dialled**, revokes its consent and cancels any waiting call. This happens whatever Retell's success verdict is, even if the row was already closed. The agent apologises and ends the call; it never argues. Owner `call_customer` calls also refuse a listed number. |
 | **Caps** | `dailyCap` sales calls per company per local day (default 40). Over the cap, the call moves to tomorrow's opening. |
 | **No pressure** | The prompt forbids discounts, invented urgency and promises a tool didn't confirm. Prices are only quoted from the price-list tool. |
@@ -149,7 +149,14 @@ line) includes `NATURAL_SPEECH_LINES` from `retell/outbound-prompt.ts`: short tu
 and everyday words, reacting to what was said, one question at a time, never reading a list or
 the instructions out, numbers said the way people say them. Owner instructions are covered as a
 conversation, one point at a time. The opening lines are "Start with … (say it naturally)" rather
-than word-for-word, but must keep the disclosures.
+than word-for-word, but must keep the name, the business and (sales calls) the recording notice.
+
+**The owner's name.** Calls say the owner's first name instead of "the owner" ("Marcus will give
+you a call back"). It's set on Your AI ("Your name", `agent_persona.ownerName`), else the
+organization owner's profile name, else "the owner" (`agent/profile.ts → resolveOwnerName`). It's
+also sent to Retell as the `{{owner_name}}` dynamic variable on every outbound call, for anything
+set up in the dashboard. Blueprints never copy it to another business, and applying one keeps the
+target's own.
 
 The voice and conversation feel (voice, speed, temperature, responsiveness, interruption
 sensitivity, backchannel, model) are tuned in the Retell dashboard on the shared sales agent

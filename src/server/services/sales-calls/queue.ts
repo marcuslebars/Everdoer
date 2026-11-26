@@ -329,6 +329,7 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
           attempt: claimed.attempt,
         })
       : buildSalesCallPrompt({
+          ownerName: facts?.ownerName ?? null,
           companyName: facts?.companyName ?? inputs.companyName,
           customerName: inputs.contact.name || null,
           services: facts?.services ?? [],
@@ -345,7 +346,7 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
         });
     placedCallId = (
       await callContactWithMarina(ctx, row.contact_id, {
-        sales: { salesCallId: row.id, prompt, agentId: salesAgentId() as string, fromNumber: inputs.businessNumber as string },
+        sales: { salesCallId: row.id, prompt, agentId: salesAgentId() as string, fromNumber: inputs.businessNumber as string, ownerName: facts?.ownerName ?? null },
       })
     ).agentCallId;
   } catch (err) {

@@ -9,7 +9,7 @@ import type { YourAiSwitch, YourAiTone, YourAiView } from "@/lib/your-ai-types";
 
 export type YourAiPatch =
   | { switch: string; on: boolean; choice?: string }
-  | { persona: { name: string | null; tone: YourAiTone | null } }
+  | { persona: { name: string | null; tone: YourAiTone | null; ownerName?: string | null } }
   | { ownerBrief: string | null };
 
 export const YOUR_AI_GROUPS: Array<{ id: YourAiSwitch["group"]; title: string }> = [

@@ -99,11 +99,28 @@ function SwitchRow({ item, canManage, busy, onChange }: { item: YourAiSwitch; ca
   );
 }
 
-function PersonaCard({ view, canManage, busy, onSave }: { view: YourAiView; canManage: boolean; busy: boolean; onSave: (name: string | null, tone: YourAiTone | null) => void }) {
+function PersonaCard({
+  view,
+  canManage,
+  busy,
+  onSave,
+  onSaveOwnerName,
+}: {
+  view: YourAiView;
+  canManage: boolean;
+  busy: boolean;
+  onSave: (name: string | null, tone: YourAiTone | null) => void;
+  onSaveOwnerName: (ownerName: string | null) => void;
+}) {
   const [name, setName] = useState(view.persona.name ?? "");
   useEffect(() => setName(view.persona.name ?? ""), [view.persona.name]);
   const trimmed = name.trim();
   const nameChanged = trimmed !== (view.persona.name ?? "");
+  const savedOwner = view.persona.ownerName ?? "";
+  const [ownerName, setOwnerName] = useState(savedOwner);
+  useEffect(() => setOwnerName(savedOwner), [savedOwner]);
+  const ownerTrimmed = ownerName.trim();
+  const ownerChanged = ownerTrimmed !== savedOwner;
 
   return (
     <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
@@ -144,6 +161,39 @@ function PersonaCard({ view, canManage, busy, onSave }: { view: YourAiView; canM
             )}
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">Leave empty to use “{view.persona.defaultName}” on the phone.</p>
+        </div>
+        <div className="sm:order-last">
+          <label htmlFor="your-ai-owner-name" className="text-xs font-medium text-muted-foreground">
+            Your name
+          </label>
+          <div className="mt-1 flex gap-2">
+            <input
+              id="your-ai-owner-name"
+              value={ownerName}
+              maxLength={20}
+              disabled={!canManage || busy}
+              placeholder="e.g. Marcus"
+              onChange={(e) => setOwnerName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (ownerChanged) onSaveOwnerName(ownerTrimmed || null);
+                }
+              }}
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {ownerChanged && (
+              <button
+                type="button"
+                disabled={!canManage || busy}
+                onClick={() => onSaveOwnerName(ownerTrimmed || null)}
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                Save
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">What it calls you with customers, like “{ownerTrimmed || "Marcus"} will call you back”.</p>
         </div>
         <div>
           <span id="your-ai-tone" className="text-xs font-medium text-muted-foreground">
@@ -283,6 +333,19 @@ export default function YourAiPage() {
     );
   };
 
+  const saveOwnerName = (ownerName: string | null) => {
+    if (!data) return;
+    setPendingKey("persona");
+    update.mutate(
+      { persona: { name: data.persona.name, tone: data.persona.tone, ownerName } },
+      {
+        onSuccess: () => toast.success("Saved"),
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Couldn't save that. Try again."),
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  };
+
   const saveBrief = (brief: string | null) => {
     setPendingKey("brief");
     update.mutate(
@@ -317,7 +380,7 @@ export default function YourAiPage() {
         </div>
       ) : (
         <>
-          <PersonaCard view={data} canManage={canManage} busy={pendingKey !== null} onSave={savePersona} />
+          <PersonaCard view={data} canManage={canManage} busy={pendingKey !== null} onSave={savePersona} onSaveOwnerName={saveOwnerName} />
           {data.ownerLine && canManage && <OwnerBriefCard view={data} busy={pendingKey !== null} onSave={saveBrief} />}
           {YOUR_AI_GROUPS.map((group) => {
             const items = data.switches.filter((s) => s.group === group.id);

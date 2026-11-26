@@ -53,6 +53,8 @@ import { leadNote, maybeScheduleSpeedToLead } from "@/server/services/sales-call
 import type { LeadEnvelope } from "@/server/services/lead-intake/envelope";
 import { buildPublicFormEnvelope, callConsentText } from "@/server/services/lead-intake/public-form-envelope";
 import { buildSalesAgentConfig, ensureSalesAgent, SALES_TOOL_NAMES } from "@/server/services/voice/sales-agent";
+import { firstNameOf, resolveOwnerName } from "@/server/agent/profile";
+import { effectiveVoiceForProfile } from "@/server/services/company-voice-profiles";
 import { createFakeDb, type FakeDb } from "@/test/helpers/fake-supabase";
 
 const ORG = "org-1";
@@ -325,7 +327,7 @@ describe("placing a call (every rule at dial time)", () => {
     const [, contactId, opts] = callContactWithMarina.mock.calls[0] as [unknown, string, { sales: { salesCallId: string; agentId: string; fromNumber: string; prompt: string } }];
     expect(contactId).toBe("ct-1");
     expect(opts.sales).toMatchObject({ salesCallId: row.id, agentId: "agent_sales", fromNumber: "+17055550001" });
-    expect(opts.sales.prompt).toContain("over at Northshore Home. Just so you know, calls are recorded.");
+    expect(opts.sales.prompt).toContain("with Northshore Home. Just so you know, calls are recorded.");
     expect(opts.sales.prompt).toContain("Gutter cleaning — $180");
     expect(opts.sales.prompt).toContain("(705) 555-0001");
     expect(rowOf(row.id)).toMatchObject({ status: "placed", retell_call_id: "call_abc" });
@@ -553,10 +555,11 @@ describe("the sales prompt, agent and outbound tool requests", () => {
       voicemail: "leave_message",
       attempt: 1,
     });
-    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: null })).toBe("Hi there, it's Everly, the AI assistant over at Northshore Home. Just so you know, calls are recorded.");
-    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: "Kim", persona: { name: "Everly", tone: null } })).toBe("Hi, is this Kim? Hey, it's Everly, the AI assistant over at Northshore Home. Just so you know, calls are recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: null })).toBe("Hi there, it's Everly with Northshore Home. Just so you know, calls are recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: "Kim", persona: { name: "Marina", tone: null } })).toBe("Hi, is this Kim? Hey, it's Marina with Northshore Home. Just so you know, calls are recorded.");
     expect(prompt).toContain("How to talk (this matters as much as what you say):");
-    expect(prompt).toContain("say plainly that you're an AI assistant");
+    expect(prompt).toContain("You don't need to say you're an AI unless it comes up, but never claim or pretend to be a person");
+    expect(prompt).toContain("say plainly that you're Northshore Home's AI assistant");
     expect(prompt).toContain("just enquired with Northshore Home about «gutter cleaning» and said it was OK to call them");
     expect(prompt).toContain("tell them they won't get any more calls from us");
     expect(prompt).toContain("Never offer discounts, invent urgency");
@@ -741,5 +744,53 @@ describe("picked up and hung up; tuning in Retell survives a re-run", () => {
     expect(llmBody.general_prompt).toBe("{{system_prompt}}");
     expect(Object.keys(agentBody).sort()).toEqual(["post_call_analysis_data", "response_engine", "webhook_url"]);
     expect(agentBody.voice_id).toBeUndefined();
+  });
+});
+
+describe("the owner's name on calls", () => {
+  const base = {
+    companyName: "A1 Marine Care",
+    customerName: "Kim",
+    services: [],
+    hoursText: null,
+    serviceArea: null,
+    transferNumber: null,
+    persona: { name: "Marina", tone: null },
+    note: null,
+    callbackNumber: null,
+    voicemail: "leave_message" as const,
+    attempt: 1,
+  };
+
+  it("says the owner's name instead of \"the owner\" everywhere it talks about them", () => {
+    const prompt = buildSalesCallPrompt({ ...base, reason: "owner_request", instructions: "Ask how the shrink wrap went.", ownerName: "Marcus" });
+    expect(prompt).toContain("Marcus, the owner of A1 Marine Care, asked you to call Kim");
+    expect(prompt).toContain('Marcus owns A1 Marine Care. Whenever you mention the owner, say "Marcus" (for example "Marcus will give you a call back"), never "the owner".');
+    expect(prompt).toContain("Marcus's instructions for this call: «Ask how the shrink wrap went.»");
+    expect(prompt).toContain("tell them Marcus will call them back");
+    expect(prompt).not.toMatch(/tell them the owner/);
+    expect(prompt).toContain('Start with: "Hi, is this Kim? Hey, it\'s Marina with A1 Marine Care. Just so you know, calls are recorded."');
+    expect(prompt).not.toContain("the AI assistant over at");
+  });
+
+  it("without a name it still says \"the owner\"", () => {
+    const prompt = buildSalesCallPrompt({ ...base, reason: "owner_request", instructions: "Ask how it went." });
+    expect(prompt).toContain("The owner of A1 Marine Care asked you to call Kim");
+    expect(prompt).toContain("tell them the owner will call them back");
+    expect(prompt).not.toContain("Whenever you mention the owner");
+  });
+
+  it("the owner's name comes from Your AI, else the owner's profile, and goes to Retell as {{owner_name}}", async () => {
+    const db = createFakeDb({
+      organization_memberships: [{ organization_id: ORG, profile_id: "p1", role: "owner" }],
+      profiles: [{ id: "p1", full_name: "Marcus Lebars" }],
+    });
+    expect(await resolveOwnerName(db.client, scope, { name: "Marina", tone: null, ownerName: "Marc" })).toBe("Marc");
+    expect(await resolveOwnerName(db.client, scope, { name: "Marina", tone: null })).toBe("Marcus");
+    expect(await resolveOwnerName(createFakeDb({}).client, scope, null)).toBeNull();
+    expect(firstNameOf("  dana   r ")).toBe("Dana");
+
+    const { dynamicVariables } = effectiveVoiceForProfile({ apiKey: "k", fromNumber: "+1", agentId: "a" }, null, { companyName: "A1 Marine Care", systemPrompt: "Hi", ownerName: "Marcus" });
+    expect(dynamicVariables.owner_name).toBe("Marcus");
   });
 });

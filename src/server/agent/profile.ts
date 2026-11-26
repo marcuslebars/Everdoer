@@ -18,6 +18,11 @@ export interface AgentPersona {
   name: string | null;
   /** null = each prompt's built-in tone. */
   tone: PersonaTone | null;
+  /**
+   * What the AI calls the owner when it talks to customers ("Marcus will call you back"), or
+   * null to fall back to the organization owner's profile name, then "the owner".
+   */
+  ownerName?: string | null;
 }
 
 /**
@@ -41,9 +46,12 @@ export function cleanPersonaName(raw: unknown): string | null {
 /** Any stored value → a valid persona. PURE. */
 export function parsePersona(raw: unknown): AgentPersona {
   const r = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const ownerName = cleanPersonaName(r.ownerName);
   return {
     name: cleanPersonaName(r.name),
     tone: PERSONA_TONES.includes(r.tone as PersonaTone) ? (r.tone as PersonaTone) : null,
+    // Only present when set, so a persona without one reads exactly as before.
+    ...(ownerName ? { ownerName } : {}),
   };
 }
 
@@ -67,6 +75,32 @@ export function toneLine(persona: AgentPersona | null | undefined): string | nul
 }
 
 type Scope = { organizationId: string; companyId: string };
+
+/** "Marcus Lebars" → "Marcus"; anything that isn't a usable first name → null. PURE. */
+export function firstNameOf(fullName: string | null | undefined): string | null {
+  return cleanPersonaName((fullName ?? "").trim().split(/\s+/)[0] ?? "");
+}
+
+/**
+ * The owner's first name for calls: the one set on Your AI, else the organization owner's
+ * profile name, else null (prompts then say "the owner"). Never throws.
+ */
+export async function resolveOwnerName(
+  db: Pick<AdminClient, "from">,
+  scope: Scope,
+  persona: AgentPersona | null | undefined,
+): Promise<string | null> {
+  if (persona?.ownerName) return persona.ownerName;
+  try {
+    const { data } = await db.from("organization_memberships").select("profile_id").eq("organization_id", scope.organizationId).eq("role", "owner").limit(1).maybeSingle();
+    const profileId = (data as { profile_id: string } | null)?.profile_id;
+    if (!profileId) return null;
+    const { data: profile } = await db.from("profiles").select("full_name").eq("id", profileId).maybeSingle();
+    return firstNameOf((profile as { full_name: string | null } | null)?.full_name);
+  } catch {
+    return null;
+  }
+}
 
 /** A company's persona; a lookup error reads as the default (never fails a prompt). */
 export async function loadPersona(admin: AdminClient, scope: Scope): Promise<AgentPersona> {

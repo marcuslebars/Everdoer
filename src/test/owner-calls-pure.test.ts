@@ -33,7 +33,7 @@ describe("buildOutboundCallPrompt", () => {
   it("briefed call with a question — golden", () => {
     expect(buildOutboundCallPrompt(CTX, BRIEF)).toMatchInlineSnapshot(`
       "You are Everly, the AI phone assistant calling on behalf of Northshore Lawn. This is a call YOU placed to Dave Henderson.
-      Start with: "Hi, is this Dave Henderson? Hey, it's Everly, the AI assistant over at Northshore Lawn." (say it naturally, keeping who you are and that you're an AI). If they ask whether you're a real person, say plainly that you're an AI assistant and that the call may be recorded.
+      Start with: "Hi, is this Dave Henderson? Hey, it's Everly with Northshore Lawn." (say it naturally, keeping your name and the business). You don't need to say you're an AI unless it comes up, but never claim or pretend to be a person: if they ask whether you're real, a robot or an AI, or they seem unsure, say plainly that you're Northshore Lawn's AI assistant. If they ask about recording, tell them the call may be recorded.
 
       How to talk (this matters as much as what you say):
       - Sound like a friendly, relaxed person from the business making a quick call — not someone reading a script. Talk the way people actually talk on the phone.
@@ -74,7 +74,7 @@ describe("buildOutboundCallPrompt", () => {
       { companyName: "Northshore Lawn", customerName: null, services: [], hoursText: null, serviceArea: null, transferNumber: null },
       { ...BRIEF, askFor: null, ifVoicemail: "hang_up" },
     );
-    expect(prompt).toContain('Start with: "Hi there, it\'s Everly, the AI assistant over at Northshore Lawn." (say it naturally');
+    expect(prompt).toContain('Start with: "Hi there, it\'s Everly with Northshore Lawn." (say it naturally');
     expect(prompt).not.toContain("also wants to know");
     expect(prompt).toContain("If you reach voicemail, hang up without leaving a message.");
     expect(prompt).not.toContain("Services Northshore Lawn offers");

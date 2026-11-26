@@ -17,7 +17,7 @@ export interface YourAiSwitch {
 
 export interface YourAiView {
   companyId: string;
-  persona: { name: string | null; tone: YourAiTone | null; defaultName: string };
+  persona: { name: string | null; tone: YourAiTone | null; defaultName: string; ownerName?: string | null };
   switches: YourAiSwitch[];
   /**
    * Calling your own assistant (docs/owner-line.md): what you've told it about you and your
