@@ -235,7 +235,7 @@ describe("getYourAiView / setSwitch / setYourAiPersona", () => {
   it("the view: persona, every switch with its definition and state", async () => {
     const db = seed({ agent_persona: { name: "Sam", tone: "professional" } }, { platformBrand: "crankleads", aiNumber: true });
     const view = await getYourAiView(db.client, scope);
-    expect(view?.persona).toEqual({ name: "Sam", tone: "professional", defaultName: "Everly" });
+    expect(view?.persona).toEqual({ name: "Sam", tone: "professional", defaultName: "Everly", ownerName: null });
     expect(view?.switches).toHaveLength(SWITCH_KEYS.length);
     const calls = view?.switches.find((s) => s.key === "calls");
     expect(calls).toMatchObject({ label: "Answer your phone", on: true });
@@ -312,6 +312,19 @@ describe("getYourAiView / setSwitch / setYourAiPersona", () => {
     const view = await setYourAiPersona(db.client, scope, { name: null, tone: "friendly" });
     expect(view?.persona.name).toBeNull();
     expect(db.tables.companies[0].agent_persona).toEqual({ tone: "friendly" });
+  });
+
+  it("persona: the owner's name is saved on its own, kept when name/tone change, and doesn't re-sync the phone", async () => {
+    const db = seed({ agent_persona: { name: "Marina" } });
+    let view = await setYourAiPersona(db.client, scope, { name: "Marina", tone: null, ownerName: "Marcus" });
+    expect(view?.persona).toMatchObject({ name: "Marina", ownerName: "Marcus" });
+    expect(db.tables.companies[0].agent_persona).toEqual({ name: "Marina", ownerName: "Marcus" });
+    expect(resync).not.toHaveBeenCalled();
+    view = await setYourAiPersona(db.client, scope, { name: "Marina", tone: "casual" });
+    expect(db.tables.companies[0].agent_persona).toEqual({ name: "Marina", tone: "casual", ownerName: "Marcus" });
+    view = await setYourAiPersona(db.client, scope, { name: "Marina", tone: "casual", ownerName: null });
+    expect(view?.persona.ownerName).toBeNull();
+    expect(db.tables.companies[0].agent_persona).toEqual({ name: "Marina", tone: "casual" });
   });
 
   it("a failed re-sync doesn't fail the save", async () => {

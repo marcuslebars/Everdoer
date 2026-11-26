@@ -4,6 +4,7 @@
  * the owner changes shows up on both. Services carry their price only when the owner (or their
  * own website) gave one; the prompts tell Marina never to invent one that isn't listed.
  */
+import { parsePersona, resolveOwnerName } from "@/server/agent/profile";
 import type { Tables } from "@/server/db/database.types";
 import { listCatalogItems } from "@/server/services/quotes/catalog-items";
 import { bookableService, DEFAULT_ONLINE_BOOKING_SETTINGS } from "@/server/services/scheduling/rules";
@@ -22,6 +23,8 @@ export interface CompanyFacts {
   bookingUrl: string;
   /** The owner's line, the number Marina can hand out for "a person". */
   transferNumber: string | null;
+  /** What the AI calls the owner with customers ("Marcus"), or null (agent/profile.ts resolveOwnerName). */
+  ownerName: string | null;
 }
 
 export async function loadCompanyRow(context: TenantServiceContext, companyId: string): Promise<Tables<"companies">> {
@@ -65,7 +68,10 @@ export function hoursToText(hours: Tables<"companies">["hours"]): string | null 
 
 export async function loadCompanyFacts(context: TenantServiceContext, companyId: string): Promise<CompanyFacts> {
   const company = await loadCompanyRow(context, companyId);
-  const items = await listCatalogItems(context, companyId);
+  const [items, ownerName] = await Promise.all([
+    listCatalogItems(context, companyId),
+    resolveOwnerName(context.supabase as never, { organizationId: context.organizationId, companyId }, parsePersona(company.agent_persona)),
+  ]);
   const services = items.map((i) => {
     const price = bookableService(i, DEFAULT_ONLINE_BOOKING_SETTINGS, false).priceLabel;
     return price ? `${i.label} — ${price}` : i.label;
@@ -79,5 +85,6 @@ export async function loadCompanyFacts(context: TenantServiceContext, companyId:
     serviceArea: company.service_area ?? null,
     bookingUrl: bookingPageUrl(company),
     transferNumber: company.owner_phone_e164 ?? null,
+    ownerName,
   };
 }

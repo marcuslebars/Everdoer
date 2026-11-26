@@ -66,6 +66,8 @@ async function placeMarinaCall(input: {
   voiceProfile?: CompanyVoiceProfile | null;
   /** The prompt built for THIS call (retell/outbound-prompt.ts); injected as {{system_prompt}}. */
   systemPrompt?: string | null;
+  /** The owner's first name, sent as {{owner_name}} (agent/profile.ts resolveOwnerName). */
+  ownerName?: string | null;
   /** Sales calls: the sales agent and the company's own number win over the profile (Retell only). */
   override?: { agentId: string; fromNumber: string } | null;
 }): Promise<MarinaCallOutcome> {
@@ -92,6 +94,7 @@ async function placeMarinaCall(input: {
       customerName: input.customerName,
       companyName: input.companyName,
       systemPrompt: input.systemPrompt ?? null,
+      ownerName: input.ownerName ?? null,
     });
     const effective = input.override ? { ...config, agentId: input.override.agentId, fromNumber: input.override.fromNumber } : config;
     const result = await placeRetellCall(
@@ -116,12 +119,12 @@ async function outboundPromptFor(
   customerName: string | null,
   companyName: string | null,
   brief: OwnerCallBrief | null,
-): Promise<string | null> {
+): Promise<{ prompt: string; ownerName: string | null } | null> {
   if (!companyId) return null;
   const name = companyName ?? "the business";
   try {
     const facts = await loadCompanyFacts(context, companyId);
-    return buildOutboundCallPrompt(
+    const prompt = buildOutboundCallPrompt(
       {
         companyName: facts.companyName,
         customerName,
@@ -130,15 +133,18 @@ async function outboundPromptFor(
         serviceArea: facts.serviceArea,
         transferNumber: facts.transferNumber,
         persona: parsePersona(facts.company?.agent_persona),
+        ownerName: facts.ownerName,
       },
       brief ?? defaultOutboundBrief(facts.companyName, customerName ?? "them"),
     );
+    return { prompt, ownerName: facts.ownerName };
   } catch (err) {
     console.error("[voice] company facts unavailable; using a facts-free outbound prompt:", err instanceof Error ? err.message : err);
-    return buildOutboundCallPrompt(
+    const prompt = buildOutboundCallPrompt(
       { companyName: name, customerName, services: [], hoursText: null, serviceArea: null, transferNumber: null },
       brief ?? defaultOutboundBrief(name, customerName ?? "them"),
     );
+    return { prompt, ownerName: null };
   }
 }
 
@@ -195,7 +201,7 @@ export async function callContactWithMarina(
      * A sales call (docs/sales-calls.md): the prompt is built by the caller (sales-calls/queue.ts)
      * and the call runs on the sales agent, from the company's own number. Retell only.
      */
-    sales?: { salesCallId: string; prompt: string; agentId: string; fromNumber: string } | null;
+    sales?: { salesCallId: string; prompt: string; agentId: string; fromNumber: string; ownerName?: string | null } | null;
   },
 ): Promise<PlaceCallResult> {
   if ((options?.brief || options?.sales) && !isRetellOutboundActive()) {
@@ -226,9 +232,10 @@ export async function callContactWithMarina(
   const companyName = await resolveCompanyName(context, contact.company_id);
   // The prompt for this call: the company's facts + the owner's brief (or the plain follow-up
   // brief). Built per call, never the stored inbound prompt — see effectiveVoiceForProfile.
-  const systemPrompt = options?.sales
-    ? options.sales.prompt
+  const built = options?.sales
+    ? { prompt: options.sales.prompt, ownerName: options.sales.ownerName ?? null }
     : await outboundPromptFor(context, contact.company_id, name || null, companyName, options?.brief ?? null);
+  const systemPrompt = built?.prompt ?? null;
 
   const outcome = await placeMarinaCall({
     toNumber,
@@ -244,6 +251,7 @@ export async function callContactWithMarina(
     },
     voiceProfile,
     systemPrompt,
+    ownerName: built?.ownerName ?? null,
     override: options?.sales ? { agentId: options.sales.agentId, fromNumber: options.sales.fromNumber } : null,
   });
 

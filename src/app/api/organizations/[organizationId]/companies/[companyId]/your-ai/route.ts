@@ -34,6 +34,8 @@ const patchSchema = z
       .object({
         name: z.string().trim().max(20).nullable(),
         tone: z.enum(["friendly", "professional", "casual"]).nullable(),
+        // What the AI calls the owner with customers; omitted = keep what's saved.
+        ownerName: z.string().trim().max(20).nullable().optional(),
       })
       .strict()
       .optional(),
@@ -107,7 +109,9 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Ne
     } else if (body.persona) {
       const name = body.persona.name ? cleanPersonaName(body.persona.name) : null;
       if (body.persona.name && !name) throw new UserFacingError("Use a first name: letters only, 2 to 20 characters.");
-      data = await setYourAiPersona(admin, scope, { name, tone: body.persona.tone ?? null });
+      const ownerName = body.persona.ownerName ? cleanPersonaName(body.persona.ownerName) : body.persona.ownerName === undefined ? undefined : null;
+      if (body.persona.ownerName && !ownerName) throw new UserFacingError("Use your first name: letters only, 2 to 20 characters.");
+      data = await setYourAiPersona(admin, scope, { name, tone: body.persona.tone ?? null, ownerName });
     } else {
       data = await setSwitch(admin, scope, { key: body.switch as SwitchKey, on: body.on === true, choice: body.choice });
     }

@@ -2,10 +2,13 @@
 
 The **Your AI** page (`/ai`, under More, and linked from Home) is where an owner decides what the
 assistant does, in plain words. It doesn't use role names like "estimator" or "dispatcher". The
-page has two parts:
+page has three parts:
 
 - **Your assistant:** the name it uses with customers and its tone (`companies.agent_persona`,
   docs/agent-blueprints.md). A change re-syncs the phone receptionist straight away.
+- **Your name:** what the AI calls you with customers ("Marcus will call you back"), stored as
+  `agent_persona.ownerName`; used on every outbound call and sent to Retell as `{{owner_name}}`
+  (docs/sales-calls.md → "How the calls sound").
 - **Switches,** in five groups. Each one is exactly an existing setting, read through its role's
   own reader (so the defaults are the same as everywhere else) and written through its role's own
   merge. Nothing new is stored. **Customize** opens that setting's card in Settings → AI front
@@ -59,7 +62,8 @@ them and their businesses. Members never receive it (`ownerLine` is null in thei
 - Server: `src/server/services/your-ai/switches.ts`, with `readSwitches`, `aiSettingsMutation` and
   `overlappingAutomations` (all pure).
 - API: `GET` / `PATCH /api/organizations/:org/companies/:company/your-ai`. The `PATCH` body is
-  one of `{ switch, on, choice? }`, `{ persona: { name, tone } }` or `{ ownerBrief }`.
+  one of `{ switch, on, choice? }`, `{ persona: { name, tone, ownerName? } }` or `{ ownerBrief }`
+  (`ownerName` omitted keeps the saved one).
 - Client: `src/lib/your-ai-api.ts` and `src/screens/YourAiPage.tsx`.
 - Tests: `your-ai.test.ts`, `your-ai-page.test.tsx` and `your-ai-owner-brief-route.test.ts`.
 

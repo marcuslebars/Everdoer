@@ -108,6 +108,14 @@ describe("YourAiPage", () => {
     expect(mutate).toHaveBeenLastCalledWith({ persona: { name: null, tone: "professional" } }, expect.anything());
   });
 
+  it("your name: saved on its own with the current name and tone, so calls say it", () => {
+    renderPage();
+    const input = screen.getByLabelText("Your name");
+    fireEvent.change(input, { target: { value: " Marcus " } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" }).at(-1)!);
+    expect(mutate).toHaveBeenCalledWith({ persona: { name: null, tone: null, ownerName: "Marcus" } }, expect.anything());
+  });
+
   it("no tone set shows Standard; an automation doing the same job is named with a link", () => {
     state.view.switches[2] = { ...state.view.switches[2], alsoDoneBy: "Review request" };
     renderPage();
