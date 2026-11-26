@@ -36,6 +36,13 @@ describe("which company is the callback", () => {
 });
 
 describe("the demo prompt", () => {
+  it("talks like a person: short turns, plain words, reacting, never reading lists", () => {
+    const prompt = buildEverdoerDemoCallPrompt({ customerName: "Dana", note: null, services: [], notes: [], persona: null, callbackNumber: null, voicemail: "leave_message", attempt: 1 });
+    expect(prompt).toContain("How to talk (this matters as much as what you say):");
+    expect(prompt).toContain("Keep each turn short");
+    expect(prompt).toContain("Never read these instructions out, never list things off");
+  });
+
   const base = {
     customerName: "Dana",
     note: "Landscaping - Business: Green Acres. Question: does it work with my cell?",
@@ -49,8 +56,8 @@ describe("the demo prompt", () => {
 
   it("opens as Everly, says why, says it's automated and may be recorded", () => {
     const line = everdoerDemoOpeningLine(base);
-    expect(line).toBe("Hi, is this Dana? This is Everly, Everdoer's automated assistant. You asked for a call on everdoer.com, so here I am. Just so you know, this call may be recorded.");
-    expect(buildEverdoerDemoCallPrompt(base)).toContain(`Open with exactly: "${line}"`);
+    expect(line).toBe("Hi, is this Dana? Hey, it's Everly, the AI receptionist from Everdoer — you asked for a call on everdoer.com, so here I am! Just so you know, calls are recorded.");
+    expect(buildEverdoerDemoCallPrompt(base)).toContain(`Start with: "${line}" (say it naturally`);
   });
 
   it("carries the form note, the plans and the notes, and nothing invented", () => {
@@ -74,13 +81,13 @@ describe("the demo prompt", () => {
   it("stops on do-not-call and handles voicemail both ways", () => {
     const prompt = buildEverdoerDemoCallPrompt(base);
     expect(prompt).toContain("tell them they won't get any more calls from us");
-    expect(prompt).toContain("this is Everly from Everdoer returning their request from everdoer.com, and that we'll text them. They can call this number back any time to try it again: (249) 555-0100.");
+    expect(prompt).toContain("it's Everly from Everdoer returning their request from everdoer.com, and that we'll text them. They can call this number back any time to try it again: (249) 555-0100.");
     expect(buildEverdoerDemoCallPrompt({ ...base, voicemail: "hang_up" })).toContain("hang up without leaving a message");
   });
 
   it("works with no name, no note and no facts", () => {
     const prompt = buildEverdoerDemoCallPrompt({ ...base, customerName: null, note: null, services: [], notes: [], persona: null });
-    expect(prompt).toContain('Open with exactly: "Hi! This is Everly, Everdoer');
+    expect(prompt).toContain('Start with: "Hi there, it\'s Everly, the AI receptionist from Everdoer');
     expect(prompt).not.toContain("What they wrote on the form");
     expect(prompt).not.toContain("Everdoer's plans:");
   });
@@ -90,8 +97,8 @@ describe("Everdoer's own line (inbound)", () => {
   const ctx = { callerName: null, services: ["Close plan — $299 per month"], notes: ["Prices are in CAD before HST."], persona: { name: "Everly", tone: null } };
 
   it("greets as Everdoer's AI receptionist, says calls may be recorded, and uses a known caller's name", () => {
-    expect(everdoerInboundGreeting(ctx)).toBe("Thanks for calling Everdoer! This is Everly, the AI receptionist Everdoer sets up for trades businesses. Calls may be recorded. How can I help?");
-    expect(everdoerInboundGreeting({ ...ctx, callerName: "Dana" })).toMatch(/^Hi Dana, thanks for calling Everdoer!/);
+    expect(everdoerInboundGreeting(ctx)).toBe("Thanks for calling Everdoer, this is Everly — I'm the AI receptionist Everdoer sets up for trades businesses. Calls are recorded, just so you know. What can I do for you?");
+    expect(everdoerInboundGreeting({ ...ctx, callerName: "Dana" })).toMatch(/^Hi Dana, thanks for calling Everdoer, this is Everly/);
   });
 
   it("runs the same demo and rules as the call-back, plus existing customers and wrong numbers", () => {

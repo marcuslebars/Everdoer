@@ -90,17 +90,36 @@ export function buildSalesAgentConfig(input: SalesAgentConfigInput): { llm: Reco
  * Create or update the shared sales agent. Idempotent: pass the ids from the last run
  * (RETELL_SALES_LLM_ID / RETELL_SALES_AGENT_ID) and it updates them in place.
  */
+/**
+ * What an UPDATE sends: only what the code owns (prompt passthrough, tools, webhook, the
+ * post-call analysis the outcome text reads). The voice, model and conversation feel (voice,
+ * speed, temperature, responsiveness, interruption sensitivity, backchannel, model…) are set at
+ * creation and then left to the Retell dashboard, so tuning there isn't undone by a re-run. PURE.
+ */
+export function salesAgentManagedFields(config: ReturnType<typeof buildSalesAgentConfig>, llmId: string): { llm: Record<string, unknown>; agent: Record<string, unknown> } {
+  const { model: _model, ...llm } = config.llm;
+  const full = config.agent(llmId);
+  const agent = {
+    response_engine: full.response_engine,
+    webhook_url: full.webhook_url,
+    post_call_analysis_data: full.post_call_analysis_data,
+  };
+  return { llm, agent };
+}
+
 export async function ensureSalesAgent(
   client: RetellClient,
   input: SalesAgentConfigInput & { existing?: { llmId?: string | null; agentId?: string | null } },
 ): Promise<{ llmId: string; agentId: string; created: { llm: boolean; agent: boolean } }> {
   const config = buildSalesAgentConfig(input);
-  const llmId = input.existing?.llmId ? (await client.updateLlm(input.existing.llmId, config.llm)).llm_id : (await client.createLlm(config.llm)).llm_id;
-  const agentBody = config.agent(llmId);
+  const existingLlm = input.existing?.llmId ?? null;
+  const llmId = existingLlm
+    ? (await client.updateLlm(existingLlm, salesAgentManagedFields(config, existingLlm).llm)).llm_id
+    : (await client.createLlm(config.llm)).llm_id;
   const agentId = input.existing?.agentId
-    ? (await client.updateAgent(input.existing.agentId, agentBody)).agent_id
-    : (await client.createAgent(agentBody)).agent_id;
-  return { llmId, agentId, created: { llm: !input.existing?.llmId, agent: !input.existing?.agentId } };
+    ? (await client.updateAgent(input.existing.agentId, salesAgentManagedFields(config, llmId).agent)).agent_id
+    : (await client.createAgent(config.agent(llmId))).agent_id;
+  return { llmId, agentId, created: { llm: !existingLlm, agent: !input.existing?.agentId } };
 }
 
 /** RETELL_SALES_AGENT_ID, or null when sales calls aren't set up on this deployment. */

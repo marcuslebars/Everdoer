@@ -63,12 +63,12 @@ describe("persona", () => {
     expect(sam).toContain("Be polite, professional and concise. No slang, no emoji. Your goals:");
   });
 
-  it("opening lines use the name only when one is set", () => {
-    expect(salesOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? This is Sam, the automated assistant calling for Northshore, and this call may be recorded.");
-    expect(salesOpeningLine({ companyName: "Northshore", customerName: null })).toBe("Hi. This is the automated assistant calling for Northshore, and this call may be recorded.");
-    expect(outboundOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? This is Sam, Northshore's automated assistant calling.");
+  it("opening lines use the owner's chosen name (or the default)", () => {
+    expect(salesOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam, the AI assistant over at Northshore. Just so you know, calls are recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore", customerName: null })).toBe("Hi there, it's Everly, the AI assistant over at Northshore. Just so you know, calls are recorded.");
+    expect(outboundOpeningLine({ companyName: "Northshore", customerName: "Dana", persona: { name: "Sam", tone: null } })).toBe("Hi, is this Dana? Hey, it's Sam, the AI assistant over at Northshore.");
     const prompt = buildSalesCallPrompt({ companyName: "Northshore", customerName: "Dana", services: [], hoursText: null, serviceArea: null, transferNumber: null, reason: "speed_to_lead", note: null, callbackNumber: null, voicemail: "hang_up", attempt: 1, persona: { name: "Sam", tone: "casual" } });
-    expect(prompt.startsWith("You are Sam, the automated phone assistant for Northshore.")).toBe(true);
+    expect(prompt.startsWith("You are Sam, the AI phone assistant for Northshore.")).toBe(true);
     expect(prompt).toContain("Keep it relaxed, plain-spoken and upbeat");
   });
 });

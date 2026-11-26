@@ -548,6 +548,11 @@ export interface SalesCallOutcomeInput {
  * attempts remain, and text the owner once at the end (owner_notified_at is the claim). Never
  * throws.
  */
+/** A person answered and ended the call themselves (not voicemail, not a 1-second blip). PURE. */
+export function pickedUpThenHungUp(input: { disconnectionReason?: string | null; durationMs: number | null }, inVoicemail: boolean): boolean {
+  return !inVoicemail && input.disconnectionReason === "user_hangup" && (input.durationMs ?? 0) >= 5_000;
+}
+
 export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCallOutcomeInput): Promise<{ notified: boolean; retryId: string | null }> {
   const nowMs = input.nowMs ?? Date.now();
   try {
@@ -555,7 +560,11 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
     const row = (data as SalesCallRow | null) ?? null;
     if (!row) return { notified: false, retryId: null };
     const scope = { organizationId: row.organization_id, companyId: row.company_id };
-    const { reached, inVoicemail } = classifyOutboundCall(input);
+    const classified = classifyOutboundCall(input);
+    const inVoicemail = classified.inVoicemail;
+    // They picked up and hung up on us (Retell often marks that "unsuccessful"): that's a
+    // person's answer, not a missed call, so it counts as reached — no retry two hours later.
+    const reached = classified.reached || pickedUpThenHungUp(input, inVoicemail);
     const analysis = readSalesAnalysis(input.customAnalysisData);
     const inputs = await loadInputs(admin, row);
     const phone = input.dialedNumber ?? inputs?.contact.phone ?? null;

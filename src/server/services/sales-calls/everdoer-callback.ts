@@ -15,6 +15,7 @@
  * so a price change never needs a deploy. The prompt never invents a fact that isn't there.
  */
 import { toneLine, voiceName, type AgentPersona } from "@/server/agent/profile";
+import { NATURAL_SPEECH_LINES } from "@/server/services/retell/outbound-prompt";
 
 /** The company whose web leads get the Everly demo call, or null when the feature is off. */
 export function everdoerCallbackCompanyId(env: Record<string, string | undefined> = process.env): string | null {
@@ -52,8 +53,8 @@ function quoted(text: string): string {
 
 /** The opening line: who, why we're calling, that it's automated and may be recorded. PURE. */
 export function everdoerDemoOpeningLine(ctx: Pick<EverdoerDemoCallContext, "customerName" | "persona">): string {
-  const who = ctx.customerName ? `Hi, is this ${ctx.customerName}? ` : "Hi! ";
-  return `${who}This is ${voiceName(ctx.persona)}, Everdoer's automated assistant. You asked for a call on everdoer.com, so here I am. Just so you know, this call may be recorded.`;
+  const hello = ctx.customerName ? `Hi, is this ${ctx.customerName}? Hey, it's` : "Hi there, it's";
+  return `${hello} ${voiceName(ctx.persona)}, the AI receptionist from Everdoer — you asked for a call on everdoer.com, so here I am! Just so you know, calls are recorded.`;
 }
 
 const INTRO = (me: string) =>
@@ -104,7 +105,9 @@ export function buildEverdoerDemoCallPrompt(ctx: EverdoerDemoCallContext): strin
     `${INTRO(me)} This is a call YOU placed to ${name}, who runs a trades business. A moment ago they filled in the form on everdoer.com and ticked the box saying Everdoer may call them with an automated assistant.`,
     ...(ctx.note ? [`What they wrote on the form: ${quoted(ctx.note)}.`] : []),
     ...toneLines(ctx.persona),
-    `Open with exactly: "${everdoerDemoOpeningLine(ctx)}" Then ask if they have two minutes. If they ask whether you're a real person, say plainly that you're an AI — that's the point of the call.`,
+    `Start with: "${everdoerDemoOpeningLine(ctx)}" (say it naturally, keeping who you are, that you're an AI, and that calls are recorded). Then check they've got a couple of minutes. If they ask whether you're a real person, say plainly that you're an AI — that's the point of the call.`,
+    "",
+    ...NATURAL_SPEECH_LINES,
     "",
     "If it's not a good time: ask when would be better, thank them, and end the call.",
     "If they say they don't want calls, ask to be taken off the list, or are annoyed you called: apologise, tell them they won't get any more calls from us, and end the call politely. Don't try to change their mind.",
@@ -121,9 +124,9 @@ export function buildEverdoerDemoCallPrompt(ctx: EverdoerDemoCallContext): strin
     "",
     ctx.voicemail === "hang_up"
       ? "If you reach voicemail, hang up without leaving a message."
-      : `If you reach voicemail, leave one short message: that this is ${me} from Everdoer returning their request from everdoer.com, and that we'll text them.${callback} Then end the call.`,
+      : `If you reach voicemail, leave one short, friendly message: that it's ${me} from Everdoer returning their request from everdoer.com, and that we'll text them.${callback} Then end the call.`,
     "",
-    `Wrap up: say what happens next (${founder} following up, or nothing at all if they're not interested), thank them, and end the call. Keep the whole call under seven minutes.`,
+    `Wrap up like a person would: what happens next (${founder} following up, or nothing at all if they're not interested), a warm thanks, and goodbye. Keep the whole call under seven minutes.`,
     "",
     GUARD,
   );
@@ -141,7 +144,7 @@ export interface EverdoerInboundContext {
 /** The greeting on Everdoer's own line: who answered, that it's an AI, that calls may be recorded. PURE. */
 export function everdoerInboundGreeting(ctx: Pick<EverdoerInboundContext, "callerName" | "persona">): string {
   const hi = ctx.callerName ? `Hi ${ctx.callerName}, thanks` : "Thanks";
-  return `${hi} for calling Everdoer! This is ${voiceName(ctx.persona)}, the AI receptionist Everdoer sets up for trades businesses. Calls may be recorded. How can I help?`;
+  return `${hi} for calling Everdoer, this is ${voiceName(ctx.persona)} — I'm the AI receptionist Everdoer sets up for trades businesses. Calls are recorded, just so you know. What can I do for you?`;
 }
 
 /**
@@ -156,7 +159,9 @@ export function buildEverdoerInboundPrompt(ctx: EverdoerInboundContext): string 
     `${INTRO(me)} You're answering Everdoer's own phone line. The caller is most likely a trades business owner checking out Everdoer — maybe calling back after you rang them, or after seeing the number on everdoer.com.`,
     ...(ctx.callerName ? [`They're already in our records as ${ctx.callerName}.`] : []),
     ...toneLines(ctx.persona),
-    `Open with exactly: "${everdoerInboundGreeting(ctx)}" If they ask whether you're a real person, say plainly that you're an AI — that's the point: you're what their customers would hear.`,
+    `Start with: "${everdoerInboundGreeting(ctx)}" (say it naturally, keeping who you are, that you're an AI, and that calls are recorded). If they ask whether you're a real person, say plainly that you're an AI — that's the point: you're what their customers would hear.`,
+    "",
+    ...NATURAL_SPEECH_LINES,
     "",
     "Work out which of these it is, then follow that path:",
     "- A business owner curious about Everdoer (the usual case): follow the steps below.",
@@ -170,7 +175,7 @@ export function buildEverdoerInboundPrompt(ctx: EverdoerInboundContext): string 
     ...everdoerRules(founder),
     ...factLines(ctx),
     "",
-    `Wrap up: say what happens next (${founder} following up, or nothing at all if they're just looking), thank them, and end the call. Keep the whole call under seven minutes.`,
+    `Wrap up like a person would: what happens next (${founder} following up, or nothing at all if they're just looking), a warm thanks, and goodbye. Keep the whole call under seven minutes.`,
     "",
     GUARD,
   ].join("\n");

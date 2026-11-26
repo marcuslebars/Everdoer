@@ -14,7 +14,7 @@ the agent roadmap (docs/agent-kernel.md).
 These prompts read the profile (`agent/profile.ts`):
 
 - **Phone receptionist** (`retell/provision.ts`): "You are Sam…" plus the tone line. Its prompt is stored in Retell, so the owner command re-syncs it straight away.
-- **Sales and owner-requested calls** (`retell/outbound-prompt.ts`): the name in the opening line ("This is Sam, the automated assistant calling for…") and the tone.
+- **Sales and owner-requested calls** (`retell/outbound-prompt.ts`): the name in the opening line ("Hey, it's Sam, the AI assistant over at…") and the tone.
 - **Customer texting agent** (`sms-agent/prompt.ts`): "Your name is Sam." The voice line follows the tone, and the first-message intro uses the name.
 
 With the profile empty, every prompt is exactly what it was before (golden tests).
