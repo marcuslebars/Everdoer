@@ -38,6 +38,7 @@ import { executeSalesCallCommand, salesCallProposal } from "@/server/services/sa
 import { aiCallResultLine, cancelAiCallFromApp, getAiCallView, requestAiCallFromApp } from "@/server/services/sales-calls/app-request";
 import {
   cleanInstructions,
+  pickedUpThenHungUp,
   placeSalesCall,
   processDueSalesCalls,
   readSalesAnalysis,
@@ -51,7 +52,7 @@ import { applySalesCallPatch, DEFAULT_SALES_CALL_SETTINGS, parseSalesCallSetting
 import { leadNote, maybeScheduleSpeedToLead } from "@/server/services/sales-calls/speed-to-lead";
 import type { LeadEnvelope } from "@/server/services/lead-intake/envelope";
 import { buildPublicFormEnvelope, callConsentText } from "@/server/services/lead-intake/public-form-envelope";
-import { buildSalesAgentConfig, SALES_TOOL_NAMES } from "@/server/services/voice/sales-agent";
+import { buildSalesAgentConfig, ensureSalesAgent, SALES_TOOL_NAMES } from "@/server/services/voice/sales-agent";
 import { createFakeDb, type FakeDb } from "@/test/helpers/fake-supabase";
 
 const ORG = "org-1";
@@ -291,7 +292,7 @@ describe("Everdoer's own callback (EVERDOER_CALLBACK_COMPANY_ID)", () => {
     expect(callContactWithMarina).toHaveBeenCalledTimes(1);
     const opts = callContactWithMarina.mock.calls[0][2] as { sales: { fromNumber: string; prompt: string } };
     expect(opts.sales.fromNumber).toBe("+12495550100");
-    expect(opts.sales.prompt).toContain("You asked for a call on everdoer.com");
+    expect(opts.sales.prompt).toContain("you asked for a call on everdoer.com");
     expect(opts.sales.prompt).toContain("«Landscaping - Business: Green Acres»");
     expect(opts.sales.prompt).toContain("Facts about Everdoer:\n- Prices are in CAD before HST.\n- Guarantee: live in 5 business days.");
     expect(opts.sales.prompt).not.toContain("automated assistant calling for");
@@ -324,7 +325,7 @@ describe("placing a call (every rule at dial time)", () => {
     const [, contactId, opts] = callContactWithMarina.mock.calls[0] as [unknown, string, { sales: { salesCallId: string; agentId: string; fromNumber: string; prompt: string } }];
     expect(contactId).toBe("ct-1");
     expect(opts.sales).toMatchObject({ salesCallId: row.id, agentId: "agent_sales", fromNumber: "+17055550001" });
-    expect(opts.sales.prompt).toContain("This is the automated assistant calling for Northshore Home, and this call may be recorded.");
+    expect(opts.sales.prompt).toContain("over at Northshore Home. Just so you know, calls are recorded.");
     expect(opts.sales.prompt).toContain("Gutter cleaning — $180");
     expect(opts.sales.prompt).toContain("(705) 555-0001");
     expect(rowOf(row.id)).toMatchObject({ status: "placed", retell_call_id: "call_abc" });
@@ -552,7 +553,10 @@ describe("the sales prompt, agent and outbound tool requests", () => {
       voicemail: "leave_message",
       attempt: 1,
     });
-    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: null })).toBe("Hi. This is the automated assistant calling for Northshore Home, and this call may be recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: null })).toBe("Hi there, it's Everly, the AI assistant over at Northshore Home. Just so you know, calls are recorded.");
+    expect(salesOpeningLine({ companyName: "Northshore Home", customerName: "Kim", persona: { name: "Everly", tone: null } })).toBe("Hi, is this Kim? Hey, it's Everly, the AI assistant over at Northshore Home. Just so you know, calls are recorded.");
+    expect(prompt).toContain("How to talk (this matters as much as what you say):");
+    expect(prompt).toContain("say plainly that you're an AI assistant");
     expect(prompt).toContain("just enquired with Northshore Home about «gutter cleaning» and said it was OK to call them");
     expect(prompt).toContain("tell them they won't get any more calls from us");
     expect(prompt).toContain("Never offer discounts, invent urgency");
@@ -611,9 +615,11 @@ describe("calls with the owner's instructions", () => {
     const prompt = buildSalesCallPrompt({ ...base, reason: "owner_request", instructions: INSTR });
     expect(prompt).toContain("asked you to call Kim and gave you instructions for the call (below)");
     expect(prompt).toContain("The owner's instructions for this call: «Ask if Kim still wants the spring cleanup. Mention we have Tuesday open. If she's ready, book it and offer our 10% repeat-customer discount.»");
-    expect(prompt).toContain("every rule in this prompt still applies");
+    expect(prompt).toContain("Every rule in this prompt still applies");
+    expect(prompt).toContain("Cover each point, but as a conversation");
+    expect(prompt).toContain("If they want something else along the way");
     expect(prompt).toContain("Never offer a discount or deal unless the owner's instructions give one — then offer exactly that, nothing more.");
-    expect(prompt).toContain("check you've covered every point in the owner's instructions");
+    expect(prompt).toContain("make sure you've covered every point in the owner's instructions");
     expect(prompt).toContain("they won't get any more calls from us");
   });
 
@@ -706,5 +712,34 @@ describe("calls with the owner's instructions", () => {
     const config = buildSalesAgentConfig({ baseUrl: "https://app.everdoer.com", functionSecret: "s" });
     const fields = JSON.stringify(config.agent("llm_1"));
     expect(fields).toContain("instructions_result");
+  });
+});
+
+describe("picked up and hung up; tuning in Retell survives a re-run", () => {
+  it("a person who answers and hangs up isn't called again", async () => {
+    expect(pickedUpThenHungUp({ disconnectionReason: "user_hangup", durationMs: 19_000 }, false)).toBe(true);
+    expect(pickedUpThenHungUp({ disconnectionReason: "user_hangup", durationMs: 2_000 }, false)).toBe(false);
+    expect(pickedUpThenHungUp({ disconnectionReason: "user_hangup", durationMs: 19_000 }, true)).toBe(false);
+    expect(pickedUpThenHungUp({ disconnectionReason: "dial_no_answer", durationMs: 19_000 }, false)).toBe(false);
+
+    consent("ct-2", "7055550177");
+    const row = queued({ contact_id: "ct-2", reason: "owner_request", note: null, instructions: "Ask how the shrink wrap went", status: "placed", retell_call_id: "call_9" });
+    const r = await recordSalesCallOutcome(db.client, { salesCallId: row.id, organizationId: ORG, callId: "call_9", callSuccessful: false, inVoicemail: false, callSummary: null, durationMs: 18_791, disconnectionReason: "user_hangup", customAnalysisData: { sales_outcome: "no_conversation" }, nowMs: WED_10AM });
+    expect(r.retryId).toBeNull();
+    expect(rowOf(row.id)).toMatchObject({ status: "completed" });
+    expect(db.tables.sales_calls.filter((x) => x.attempt === 2)).toHaveLength(0);
+  });
+
+  it("an update only sends what the code owns — never the voice, model or conversation settings", async () => {
+    const updateLlm = vi.fn(async (id: string, _body: Record<string, unknown>) => ({ llm_id: id }));
+    const updateAgent = vi.fn(async (id: string, _body: Record<string, unknown>) => ({ agent_id: id }));
+    const client = { updateLlm, updateAgent, createLlm: vi.fn(), createAgent: vi.fn() } as never;
+    await ensureSalesAgent(client, { baseUrl: "https://app.everdoer.com", functionSecret: "s", existing: { llmId: "llm_1", agentId: "agent_1" } });
+    const llmBody = updateLlm.mock.calls[0][1] as Record<string, unknown>;
+    const agentBody = updateAgent.mock.calls[0][1] as Record<string, unknown>;
+    expect(llmBody.model).toBeUndefined();
+    expect(llmBody.general_prompt).toBe("{{system_prompt}}");
+    expect(Object.keys(agentBody).sort()).toEqual(["post_call_analysis_data", "response_engine", "webhook_url"]);
+    expect(agentBody.voice_id).toBeUndefined();
   });
 });
