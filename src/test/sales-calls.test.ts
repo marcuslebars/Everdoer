@@ -566,7 +566,9 @@ describe("the sales prompt, agent and outbound tool requests", () => {
     expect(prompt).toContain("just enquired with Northshore Home about «gutter cleaning» and said it was OK to call them");
     expect(prompt).toContain("tell them they won't get any more calls from us");
     expect(prompt).toContain("Never offer discounts, invent urgency");
-    expect(prompt).toContain("They can call back on (705) 555-0001.");
+    expect(prompt).toContain("and that they can call back on (705) 555-0001. Don't say anyone will text them. Don't mention prices or details.");
+    expect(prompt).toContain("If anyone says hello, answers you or talks back, even right after a greeting, it's a person");
+    expect(prompt).not.toMatch(/we'll text them/);
   });
 
   it("the shared agent: prompt passthrough, only the sales tools, the do-not-call field", () => {

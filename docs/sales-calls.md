@@ -169,6 +169,8 @@ post-call analysis), so dashboard tuning survives a re-run.
 A person who picks up and hangs up (`user_hangup` after 5+ seconds, not voicemail) counts as
 reached: no retry.
 
+**Voicemail.** A recorded greeting followed by a beep or silence is voicemail; anyone saying hello or talking back, even over the carrier's greeting, is a person, and the AI starts the call normally. On real voicemail it leaves two sentences at most: who's calling, from which business, and the number to call back on. It never says "we'll text you": nothing sends that text (the owner is asked "Want me to text them?" instead). It never repeats the owner's instructions or prices in the message. The same rule (`voicemailLines` in `outbound-prompt.ts`) is used for owner `call_customer` calls and Everdoer's own callback.
+
 ## Everdoer's own callback ("Have Everly call me now")
 
 everdoer.com has a form where a trades owner asks Everly to call them now. It is an ordinary
