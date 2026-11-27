@@ -88,6 +88,7 @@ describe("readSwitches (pure)", () => {
     expect(d.texts && d.calls && d.quote_follow_ups && d.chase_invoices && d.weather && d.morning_briefing).toBe(true);
     expect(d.reviews).toBe(false);
     expect(d.lead_calls).toBe(false);
+    expect(d.calls_any_time).toBe(false);
     const h = stateOf(snapshot());
     expect(Object.values(h).every((on) => on === false)).toBe(true);
   });
@@ -125,6 +126,13 @@ describe("readSwitches (pure)", () => {
     // Forwarded calls are answered by the shared agent: no number needed.
     expect(s.find((x) => x.key === "calls")).not.toHaveProperty("needs");
     expect(s.find((x) => x.key === "weather")).not.toHaveProperty("needs");
+  });
+
+  it("after-hours calls read sales_call_settings.anyTime and need what AI calls need", () => {
+    expect(stateOf(snapshot({ salesCallSettings: { anyTime: true } })).calls_any_time).toBe(true);
+    expect(stateOf(snapshot({ salesCallSettings: { enabled: true } })).calls_any_time).toBe(false);
+    expect(readSwitches(snapshot({ leadCalls: "not_in_plan" })).find((x) => x.key === "calls_any_time")?.needs).toMatch(/Front Desk plan/);
+    expect(SWITCHES.find((x) => x.key === "calls_any_time")?.description).toMatch(/9 a\.m\.–9:30 p\.m\..*10–6/);
   });
 
   it("lead calls: outside the plan or not set up says so", () => {
@@ -213,6 +221,7 @@ describe("aiSettingsMutation (pure)", () => {
   it("reviews and lead calls live in their own columns", () => {
     expect(aiSettingsMutation("reviews", true)).toBeNull();
     expect(aiSettingsMutation("lead_calls", true)).toBeNull();
+    expect(aiSettingsMutation("calls_any_time", true)).toBeNull();
   });
 });
 
@@ -288,6 +297,18 @@ describe("getYourAiView / setSwitch / setYourAiPersona", () => {
     await expect(setSwitch(db.client, scope, { key: "lead_calls", on: true })).rejects.toThrow(/isn't set up/);
     await setSwitch(db.client, scope, { key: "lead_calls", on: false });
     expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: false });
+  });
+
+  it("after-hours calls: sales_call_settings.anyTime only, lead calls untouched; on needs the plan, off always works", async () => {
+    const db = seed({ sales_call_settings: { enabled: false, delayMinutes: 2 } });
+    const view = await setSwitch(db.client, scope, { key: "calls_any_time", on: true });
+    expect(view?.switches.find((s) => s.key === "calls_any_time")?.on).toBe(true);
+    expect(view?.switches.find((s) => s.key === "lead_calls")?.on).toBe(false);
+    expect(db.tables.companies[0].sales_call_settings).toMatchObject({ enabled: false, delayMinutes: 2, anyTime: true });
+    calls.plan = false;
+    await expect(setSwitch(db.client, scope, { key: "calls_any_time", on: true })).rejects.toThrow(/Front Desk plan/);
+    await setSwitch(db.client, scope, { key: "calls_any_time", on: false });
+    expect(db.tables.companies[0].sales_call_settings).toMatchObject({ anyTime: false });
   });
 
   it("the view names an active automation doing the same job", async () => {

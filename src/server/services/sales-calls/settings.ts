@@ -19,6 +19,12 @@ export interface SalesCallSettings {
   /** Sales calls per company per local day. */
   dailyCap: number;
   voicemail: "leave_message" | "hang_up";
+  /**
+   * Call at any time of day, evenings and weekends included, instead of only inside the CRTC
+   * telemarketing hours (compliance.ts → CALLING_WINDOWS). The owner's choice; off by default.
+   * Covers every sales call: speed-to-lead, owner-requested and their retries.
+   */
+  anyTime: boolean;
 }
 
 export const DEFAULT_SALES_CALL_SETTINGS: SalesCallSettings = {
@@ -28,6 +34,7 @@ export const DEFAULT_SALES_CALL_SETTINGS: SalesCallSettings = {
   retryMinutes: 120,
   dailyCap: 40,
   voicemail: "leave_message",
+  anyTime: false,
 };
 
 export const SALES_CALL_LIMITS = {
@@ -54,6 +61,7 @@ export function parseSalesCallSettings(raw: unknown): SalesCallSettings {
     retryMinutes: clampInt(r.retryMinutes, SALES_CALL_LIMITS.retryMinutes, d.retryMinutes),
     dailyCap: clampInt(r.dailyCap, SALES_CALL_LIMITS.dailyCap, d.dailyCap),
     voicemail: r.voicemail === "hang_up" ? "hang_up" : "leave_message",
+    anyTime: r.anyTime === true,
   };
 }
 
@@ -64,6 +72,7 @@ export interface SalesCallSettingsPatch {
   retryMinutes?: number;
   dailyCap?: number;
   voicemail?: "leave_message" | "hang_up";
+  anyTime?: boolean;
 }
 
 /** settings + patch → settings (clamped). PURE. */

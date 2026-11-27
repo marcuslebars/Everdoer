@@ -138,7 +138,7 @@ export async function startOwnerSalesCall(
   }
 
   const settings = await loadSalesCallSettings(admin, scope);
-  const runAtMs = nextCallableAt(Math.max(nowMs, input.runAtMs ?? nowMs), scope.timeZone);
+  const runAtMs = nextCallableAt(Math.max(nowMs, input.runAtMs ?? nowMs), scope.timeZone, settings.anyTime);
   const row = await scheduleSalesCall(admin, {
     scope,
     contactId: contact.id,

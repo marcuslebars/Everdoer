@@ -19,6 +19,7 @@ page has three parts:
 | Talking to customers | Answer customer texts (On its own / Ask me first) | `ai_settings.sms_agent.enabled` + `.autonomy` |
 | | Answer your phone | `ai_settings.call_answering.mode`: `ai` on, `voicemail` off |
 | | Call new leads right away | `sales_call_settings.enabled` (docs/sales-calls.md) |
+| | Make AI calls after hours too | `sales_call_settings.anyTime`: every AI sales call may dial at any hour instead of only in CRTC calling hours. Can be switched on only where AI calls are in the plan and set up. |
 | Getting paid | Follow up on quotes | `ai_settings.estimator.follow_ups`. Switching on also turns the estimator on. |
 | | Chase unpaid invoices | `ai_settings.collections.enabled` and `.textReminders`. Switching on turns on both. Reminder emails are separate (`invoice_settings`, Settings → Invoices). |
 | Running jobs | Reschedule for bad weather | `ai_settings.dispatch.weather.enabled` |

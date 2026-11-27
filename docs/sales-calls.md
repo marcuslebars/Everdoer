@@ -28,7 +28,7 @@ re-checked when the call is dialed, not only when it was queued.
 | --- | --- |
 | **Only verified submissions** | A web-form lead that didn't pass the bot check (Turnstile not verified) records no consent and is never called, so a bot can't get a stranger called. Signed intake from the business's own site counts as verified. |
 | **Express consent to automated calls, for this number** | `call_consents`, one evidence row per grant, writable only by the service role. Sources: `form_optin` (the checkbox, with the exact wording shown), `owner_attested` (the owner confirmed with a code that the customer asked to be called) and `customer_request`. Consent is for a number: if the contact's phone changes, it no longer applies. Implied consent (just enquiring) is never enough. |
-| **Calling hours** | Weekdays 9:00–21:30 and weekends 10:00–18:00, in the company's time zone. A call isn't started within 15 minutes of the end. Outside the window it waits for the next opening. |
+| **Calling hours** | Weekdays 9:00–21:30 and weekends 10:00–18:00, in the company's time zone. A call isn't started within 15 minutes of the end. Outside the window it waits for the next opening. **The owner can turn this off** ("Make AI calls after hours too" in Your AI, or `anyTime` below). Then calls go out at any hour; consent, do-not-call, identification and caps still apply. Off by default. The switch says plainly that these are the hours the CRTC rules set for unsolicited sales calls, so turning it on is the owner's informed choice. |
 | **Identify and disclose** | The opening line is: *"Hi, is this Sam? Hey, it's Marina with Northshore Home. Just so you know, calls are recorded."* (the assistant's name from Your AI). It names who's calling and for which business, and that calls are recorded. It doesn't announce "AI" up front (the customer already agreed to calls "including with an automated assistant"), but it never claims or pretends to be a person, and says plainly that it's the business's AI assistant the moment it's asked or the caller seems unsure. |
 | **Do-not-call** | `do_not_call`, per company and number, kept for 3 years and 14 days (a repeat request renews it). A "don't call me" on a call (the post-call field `do_not_call_requested`, or outcome `do_not_call`) adds the **number that was dialled**, revokes its consent and cancels any waiting call. This happens whatever Retell's success verdict is, even if the row was already closed. The agent apologises and ends the call; it never argues. Owner `call_customer` calls also refuse a listed number. |
 | **Caps** | `dailyCap` sales calls per company per local day (default 40). Over the cap, the call moves to tomorrow's opening. |
@@ -45,9 +45,11 @@ re-checked when the call is dialed, not only when it was queued.
 | `retryMinutes` | 120 | 30–1440 |
 | `dailyCap` | 40 | 1–200 |
 | `voicemail` | `leave_message` | `leave_message` / `hang_up` |
+| `anyTime` (after-hours calls) | `false` | `true` lets every sales call (speed-to-lead, owner-requested, retries) dial at any hour. A call asked for with no time then goes out right away. Over the daily cap, the next try is 8 a.m. tomorrow, not midnight. |
 
-By text: "turn on lead calls", "call new leads after 10 minutes", "try 3 times" (the
-`lead_call_settings` tool). Owner-requested calls work even with `enabled` off.
+By text: "turn on lead calls", "call new leads after 10 minutes", "try 3 times", "you can call
+after hours" (the `lead_call_settings` tool, `any_time`). Owner-requested calls work even with
+`enabled` off.
 
 ## How it works
 

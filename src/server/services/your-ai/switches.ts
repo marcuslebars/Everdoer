@@ -41,6 +41,7 @@ export const SWITCH_KEYS = [
   "texts",
   "calls",
   "lead_calls",
+  "calls_any_time",
   "quote_follow_ups",
   "chase_invoices",
   "weather",
@@ -105,6 +106,14 @@ export const SWITCHES: SwitchDef[] = [
     group: "customers",
     label: "Call new leads right away",
     description: "Phones a web lead a few minutes after they ask to be called, to answer questions and book them.",
+    customize: null,
+  },
+  {
+    key: "calls_any_time",
+    group: "customers",
+    label: "Make AI calls after hours too",
+    description:
+      "Lets your AI call at any hour, evenings and weekends included: new leads and the calls you ask it to make. Off keeps calls to weekdays 9 a.m.–9:30 p.m. and weekends 10–6, the hours Canada's telemarketing rules set for unsolicited sales calls.",
     customize: null,
   },
   {
@@ -226,6 +235,7 @@ export function readSwitches(s: CompanySnapshot): SwitchState[] {
     texts: { key: "texts", on: textsOn, choice: sms.autonomy === "ask_first" ? "ask_first" : "standard" },
     calls: { key: "calls", on: readCallAnsweringSettings(ai, s.org).mode === "ai" },
     lead_calls: { key: "lead_calls", on: parseSalesCallSettings(s.salesCallSettings).enabled, needs: leadCallsNeeds },
+    calls_any_time: { key: "calls_any_time", on: parseSalesCallSettings(s.salesCallSettings).anyTime, needs: leadCallsNeeds },
     // Follow-ups are for quotes the AI sent by text, so they need texting on.
     quote_follow_ups: { key: "quote_follow_ups", on: followUpsActive(readEstimatorSettings(ai, s.org)), needs: needsTexts },
     // The Bookkeeper's reminders are texts: off when its reminder texts are.
@@ -299,6 +309,7 @@ export function aiSettingsMutation(key: SwitchKey, on: boolean, choice?: string)
       return (current) => asRecord(mergeWeeklyReportSettings(toJson(current) as Json, { enabled: on }));
     case "reviews":
     case "lead_calls":
+    case "calls_any_time":
       return null;
   }
 }
@@ -418,6 +429,14 @@ export async function setSwitch(admin: AdminClient, scope: Scope, input: { key: 
       if (availability === "not_set_up") throw new UserFacingError("Calling new leads isn't set up for your business yet.");
     }
     await saveSalesCallSettings(admin, scope, { enabled: input.on });
+  } else if (input.key === "calls_any_time") {
+    // Turning it off is always allowed; on only where AI calls exist (it covers owner-requested calls too).
+    if (input.on) {
+      const availability = await leadCallsAvailability(admin, scope.organizationId);
+      if (availability === "not_in_plan") throw new UserFacingError("AI calls are part of the Front Desk plan.");
+      if (availability === "not_set_up") throw new UserFacingError("AI calls aren't set up for your business yet.");
+    }
+    await saveSalesCallSettings(admin, scope, { anyTime: input.on });
   } else {
     const mutate = aiSettingsMutation(input.key, input.on, input.choice);
     if (!mutate) throw new UserFacingError("Unknown switch.");

@@ -152,8 +152,11 @@ describe("settings", () => {
       retryMinutes: 30,
       dailyCap: 200,
       voicemail: "hang_up",
+      anyTime: false,
     });
     expect(applySalesCallPatch(DEFAULT_SALES_CALL_SETTINGS, { enabled: true, delayMinutes: 10, maxAttempts: undefined })).toMatchObject({ enabled: true, delayMinutes: 10, maxAttempts: 2 });
+    expect(parseSalesCallSettings({ anyTime: "true" }).anyTime).toBe(false); // only a real true turns it on
+    expect(applySalesCallPatch(DEFAULT_SALES_CALL_SETTINGS, { anyTime: true }).anyTime).toBe(true);
   });
 });
 
@@ -715,6 +718,64 @@ describe("calls with the owner's instructions", () => {
     const config = buildSalesAgentConfig({ baseUrl: "https://app.everdoer.com", functionSecret: "s" });
     const fields = JSON.stringify(config.agent("llm_1"));
     expect(fields).toContain("instructions_result");
+  });
+});
+
+describe("after-hours calling (the owner's choice)", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const WED_2120 = at("2026-10-29T01:20:00Z"); // Wed 21:20 Toronto
+  const SAT_0700 = at("2026-10-31T11:00:00Z"); // Sat 07:00 Toronto
+  const actor = { profileId: "prof-1", label: "Marcus" };
+  const anyTime = () => {
+    db.tables.companies[0].sales_call_settings = { ...(db.tables.companies[0].sales_call_settings as object), anyTime: true };
+  };
+
+  it("the window never closes with anyTime; the daily cap's overflow waits for 8 a.m., not midnight", () => {
+    expect(callingWindow(WED_2120, TZ, true)).toEqual({ open: true, nextOpenMs: WED_2120 });
+    expect(nextCallableAt(SAT_0700, TZ, true)).toBe(SAT_0700);
+    expect(nextCallableAt(SAT_0700, TZ)).toBe(at("2026-10-31T14:00:00Z")); // default unchanged: Sat 10:00
+    expect(tomorrowsOpening(WED_2120, TZ, true)).toBe(at("2026-10-29T12:00:00Z")); // Thu 08:00
+  });
+
+  it("a queued call dials after hours instead of waiting", async () => {
+    anyTime();
+    consent();
+    const r = await placeSalesCall(db.client, queued(), { nowMs: WED_2120 });
+    expect(r.status).toBe("placed");
+    expect(callContactWithMarina).toHaveBeenCalledTimes(1);
+  });
+
+  it("consent and do-not-call still apply after hours", async () => {
+    anyTime();
+    const r = await placeSalesCall(db.client, queued(), { nowMs: WED_2120 });
+    expect(r).toMatchObject({ status: "skipped", reason: "no_consent" });
+    expect(callContactWithMarina).not.toHaveBeenCalled();
+  });
+
+  it("from the app, \"call now\" at 7 a.m. Saturday dials now, and no time given also means now", async () => {
+    anyTime();
+    consent("ct-2", "7055550177");
+    const now = await requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "Ask about Tuesday", when: "now", customerAsked: false }, actor, SAT_0700);
+    expect(now).toMatchObject({ ok: true, status: "placed" });
+    db.tables.sales_calls[0].status = "completed";
+    const blank = await requestAiCallFromApp(db.client, scope, "ct-2", { instructions: "Ask about Tuesday", when: "", customerAsked: false }, actor, SAT_0700);
+    expect(blank).toMatchObject({ ok: true, status: "placed" });
+    expect((await getAiCallView(db.client, scope, "ct-2")).anyTime).toBe(true);
+  });
+
+  it("by text, an owner-requested call outside hours dials now", async () => {
+    anyTime();
+    consent("ct-2", "7055550177");
+    const approval = { id: "ap-9", organization_id: ORG, company_id: CO, contact_id: "ct-2", kind: "owner_command", summary: "", payload: {}, status: "approved", short_code: null, requested_by: "owner_command", expires_at: null, created_at: "" } as never;
+    const payload = { action: "sales_call" as const, contactId: "ct-2", who: "Kim", focus: null, customerAsked: false, runAtMs: null, ownerPhone: "+17055550100" };
+    const r = await executeSalesCallCommand(db.client, approval, payload, { approved: true, decidedVia: "sms" as const, decidedBy: "+17055550100" }, { ...scope, timeZone: TZ }, WED_2120);
+    expect(r).toMatchObject({ ok: true, message: "Calling Kim now. I'll text you how it went." });
+  });
+
+  it("off by default: the same call at 21:20 still waits for 9 a.m.", async () => {
+    consent();
+    expect(await placeSalesCall(db.client, queued(), { nowMs: WED_2120 })).toMatchObject({ status: "deferred", runAtMs: at("2026-10-29T13:00:00Z") });
+    expect((await getAiCallView(db.client, scope, "ct-1")).anyTime).toBe(false);
   });
 });
 

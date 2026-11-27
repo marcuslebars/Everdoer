@@ -252,7 +252,7 @@ export const CALL_TOOLS: Anthropic.Messages.Tool[] = [
         contact_id: { type: "string" },
         purpose: { type: "string", description: "What to tell them, in the owner's words." },
         ask_for: { type: "string", description: "The one question to get answered (optional)." },
-        when: { type: "string", description: "'now', or YYYY-MM-DD HH:MM local, or blank for the next calling hours." },
+        when: { type: "string", description: "'now', or YYYY-MM-DD HH:MM local, or blank for the next calling hours (right away when the business calls any time)." },
         if_voicemail: { type: "string", enum: ["leave_message", "hang_up"] },
       },
       required: ["contact_id", "purpose"],
@@ -294,13 +294,14 @@ export const SALES_CALL_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "lead_call_settings",
     description:
-      "Turn automatic new-lead calls on or off, or change them: the AI calls web leads who ticked 'you can call me' this many minutes after they enquire, with this many tries. Leave out what the owner didn't mention. Applied right away.",
+      "Turn automatic new-lead calls on or off, or change them: the AI calls web leads who ticked 'you can call me' this many minutes after they enquire, with this many tries. any_time: true lets every AI sales call (new leads and the owner's own requests) go out at any hour, after hours included; false keeps them to standard calling hours. Leave out what the owner didn't mention. Applied right away.",
     input_schema: {
       type: "object",
       properties: {
         on: { type: "boolean" },
         delay_minutes: { type: "integer", minimum: 1, maximum: 1440 },
         attempts: { type: "integer", minimum: 1, maximum: 3 },
+        any_time: { type: "boolean", description: "True: call at any time of day, after hours included. False: standard calling hours only." },
       },
     },
   },
@@ -583,10 +584,12 @@ async function salesCallTool(state: ToolRunState, input: Input) {
   } catch (err) {
     return { ok: false, reason: `The call can't be placed - ${failureMessage(err)}.` };
   }
-  const when = resolveCallTime(str(input.when), state.nowMs, state.scope.timeZone);
+  const { anyTime } = await loadSalesCallSettings(state.admin, state.scope);
+  // No time given: the next calling hours, or right now when the business calls any time.
+  const when = resolveCallTime(str(input.when) || (anyTime ? "now" : null), state.nowMs, state.scope.timeZone);
   if ("error" in when) return { error: when.error };
   const focus = str(input.focus) ? cleanInstructions(toPlainText(str(input.focus) as string)) : null;
-  const runAtMs = nextCallableAt(when.runAtMs, state.scope.timeZone);
+  const runAtMs = nextCallableAt(when.runAtMs, state.scope.timeZone, anyTime);
   const whenLabel = runAtMs <= state.nowMs ? "now" : shortWhen(new Date(runAtMs).toISOString(), state.scope.timeZone);
   const proposal = salesCallProposal({ who, phone: formatNanp(phone), focus, customerAsked, whenLabel });
   await proposeConfirmation(state, contact.id, {
@@ -613,10 +616,12 @@ async function leadCallSettingsTool(state: ToolRunState, input: Input) {
     ...(typeof input.on === "boolean" ? { enabled: input.on } : {}),
     ...(typeof input.delay_minutes === "number" ? { delayMinutes: input.delay_minutes } : {}),
     ...(typeof input.attempts === "number" ? { maxAttempts: input.attempts } : {}),
+    ...(typeof input.any_time === "boolean" ? { anyTime: input.any_time } : {}),
   };
+  const hours = (anyTime: boolean) => (anyTime ? "any time of day, evenings and weekends included" : "standard hours only (weekdays 9-9:30, weekends 10-6)");
   if (Object.keys(patch).length === 0) {
     const current = await loadSalesCallSettings(state.admin, state.scope);
-    return { ok: true, lead_calls: current.enabled ? "on" : "off", delay_minutes: current.delayMinutes, attempts: current.maxAttempts };
+    return { ok: true, lead_calls: current.enabled ? "on" : "off", delay_minutes: current.delayMinutes, attempts: current.maxAttempts, call_hours: hours(current.anyTime) };
   }
   const next = await saveSalesCallSettings(state.admin, state.scope, patch);
   return {
@@ -624,7 +629,10 @@ async function leadCallSettingsTool(state: ToolRunState, input: Input) {
     lead_calls: next.enabled ? "on" : "off",
     delay_minutes: next.delayMinutes,
     attempts: next.maxAttempts,
-    note: "Only leads who tick the automated call-back box on the website form are called, and only during calling hours (weekdays 9-9:30, weekends 10-6).",
+    call_hours: hours(next.anyTime),
+    note: next.anyTime
+      ? "Only leads who tick the automated call-back box on the website form are called. Canada's telemarketing rules limit unsolicited sales calls to weekdays 9-9:30 and weekends 10-6, so after-hours calls are the owner's call."
+      : "Only leads who tick the automated call-back box on the website form are called, and only during calling hours (weekdays 9-9:30, weekends 10-6).",
   };
 }
 
