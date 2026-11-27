@@ -121,9 +121,12 @@ export function buildOutboundCallPrompt(ctx: OutboundCallContext, brief: OwnerCa
   if (ctx.transferNumber) lines.push("", `If they need to speak to a person, give them ${ctx.transferNumber}.`);
   lines.push(
     "",
-    b.ifVoicemail === "hang_up"
-      ? "If you reach voicemail, hang up without leaving a message."
-      : `If you reach voicemail, leave a short, friendly message: that it's ${voiceName(ctx.persona)} from ${ctx.companyName}, the gist of ${quoted(b.purpose)}, and that ${ctx.companyName} will text them. Then end the call.`,
+    ...voicemailLines({
+      hangUp: b.ifVoicemail === "hang_up",
+      who: `${voiceName(ctx.persona)} from ${ctx.companyName}`,
+      about: `with the gist of ${quoted(b.purpose)}`,
+      callbackNumber: ctx.transferNumber,
+    }),
     "",
     `Wrap up like a person would: a warm thanks and goodbye (check the best number to reach them only if ${ownerRef(ctx)} needs to follow up). Keep the whole call under three minutes.`,
     "",
@@ -168,6 +171,31 @@ export function salesOpeningLine(ctx: Pick<SalesCallContext, "companyName" | "cu
  * How every outbound call should SOUND (sales, owner-instruction and Everdoer calls): a relaxed,
  * friendly person on the phone, not a script being read out. PURE text.
  */
+/**
+ * What to do on voicemail, shared by every outbound prompt. Two things the model got wrong:
+ * it promised "we'll text them" (nothing sends that text: the owner is asked instead), and it
+ * kept reading the message after a person said "Hello?" over the carrier's greeting.
+ */
+export function voicemailLines(input: {
+  hangUp: boolean;
+  /** "Marina from A1 Marine Care" */
+  who: string;
+  /** Extra for the message, e.g. "returning their enquiry", or the gist of the owner's message. */
+  about?: string | null;
+  callbackNumber?: string | null;
+  /** Kept out of the message (e.g. the owner's instructions, prices). */
+  keepOut?: string | null;
+}): string[] {
+  const person =
+    "Voicemail is a recorded greeting (\"the person you're trying to reach is not available\", \"at the tone, record your message\") followed by a beep or silence. If anyone says hello, answers you or talks back, even right after a greeting, it's a person: forget the voicemail and start the call normally with your opening line.";
+  if (input.hangUp) return [person, "If it really is voicemail, hang up without leaving a message."];
+  const callback = input.callbackNumber ? `, and that they can call back on ${input.callbackNumber}` : "";
+  return [
+    person,
+    `If it really is voicemail, wait for the beep and leave one short message, two sentences at most: that it's ${input.who}${input.about ? `, ${input.about}` : ""}${callback}. Don't say anyone will text them.${input.keepOut ? ` ${input.keepOut}` : ""} Then end the call.`,
+  ];
+}
+
 export const NATURAL_SPEECH_LINES: string[] = [
   "How to talk (this matters as much as what you say):",
   "- Sound like a friendly, relaxed person from the business making a quick call — not someone reading a script. Talk the way people actually talk on the phone.",
@@ -229,12 +257,15 @@ export function buildSalesCallPrompt(ctx: SalesCallContext): string {
   if (ctx.services.length > 0) lines.push("", `Services ${ctx.companyName} offers:\n${ctx.services.map((s) => `- ${s}`).join("\n")}`);
   if (ctx.serviceArea) lines.push("", `Service area: ${ctx.serviceArea}.`);
   if (ctx.hoursText) lines.push("", `Business hours: ${ctx.hoursText}.`);
-  const callback = ctx.callbackNumber ? ` They can call back on ${ctx.callbackNumber}.` : "";
   lines.push(
     "",
-    ctx.voicemail === "hang_up"
-      ? "If you reach voicemail, hang up without leaving a message."
-      : `If you reach voicemail, leave one short, friendly message: that it's ${voiceName(ctx.persona)} from ${ctx.companyName}${ctx.reason === "speed_to_lead" ? ", returning their enquiry" : ""}, and that we'll text them.${callback} Don't mention prices or details. Then end the call.`,
+    ...voicemailLines({
+      hangUp: ctx.voicemail === "hang_up",
+      who: `${voiceName(ctx.persona)} from ${ctx.companyName}`,
+      about: ctx.reason === "speed_to_lead" ? "returning their enquiry" : null,
+      callbackNumber: ctx.callbackNumber,
+      keepOut: `Don't mention prices or details${instructions ? `, or anything from ${ownerPossessive(ctx)} instructions` : ""}.`,
+    }),
     "",
     `Wrap up like a person would: a quick recap of anything that happens next (quote texted, booking time, ${ownerRef(ctx)} calling back), a warm thanks, and goodbye. Keep the whole call under five minutes.`,
     "",

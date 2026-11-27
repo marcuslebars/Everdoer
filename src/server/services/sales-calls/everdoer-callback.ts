@@ -15,7 +15,7 @@
  * so a price change never needs a deploy. The prompt never invents a fact that isn't there.
  */
 import { toneLine, voiceName, type AgentPersona } from "@/server/agent/profile";
-import { NATURAL_SPEECH_LINES } from "@/server/services/retell/outbound-prompt";
+import { NATURAL_SPEECH_LINES, voicemailLines } from "@/server/services/retell/outbound-prompt";
 
 /** The company whose web leads get the Everly demo call, or null when the feature is off. */
 export function everdoerCallbackCompanyId(env: Record<string, string | undefined> = process.env): string | null {
@@ -119,12 +119,14 @@ export function buildEverdoerDemoCallPrompt(ctx: EverdoerDemoCallContext): strin
     ...everdoerRules(founder),
     ...factLines(ctx),
   ];
-  const callback = ctx.callbackNumber ? ` They can call this number back any time to try it again: ${ctx.callbackNumber}.` : "";
   lines.push(
     "",
-    ctx.voicemail === "hang_up"
-      ? "If you reach voicemail, hang up without leaving a message."
-      : `If you reach voicemail, leave one short, friendly message: that it's ${me} from Everdoer returning their request from everdoer.com, and that we'll text them.${callback} Then end the call.`,
+    ...voicemailLines({
+      hangUp: ctx.voicemail === "hang_up",
+      who: `${me} from Everdoer`,
+      about: "returning their request from everdoer.com",
+      callbackNumber: ctx.callbackNumber ? `${ctx.callbackNumber} any time to try it again` : null,
+    }),
     "",
     `Wrap up like a person would: what happens next (${founder} following up, or nothing at all if they're not interested), a warm thanks, and goodbye. Keep the whole call under seven minutes.`,
     "",

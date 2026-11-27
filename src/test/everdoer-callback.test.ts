@@ -81,7 +81,7 @@ describe("the demo prompt", () => {
   it("stops on do-not-call and handles voicemail both ways", () => {
     const prompt = buildEverdoerDemoCallPrompt(base);
     expect(prompt).toContain("tell them they won't get any more calls from us");
-    expect(prompt).toContain("it's Everly from Everdoer returning their request from everdoer.com, and that we'll text them. They can call this number back any time to try it again: (249) 555-0100.");
+    expect(prompt).toContain("it's Everly from Everdoer, returning their request from everdoer.com, and that they can call back on (249) 555-0100 any time to try it again. Don't say anyone will text them.");
     expect(buildEverdoerDemoCallPrompt({ ...base, voicemail: "hang_up" })).toContain("hang up without leaving a message");
   });
 

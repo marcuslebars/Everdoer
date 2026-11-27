@@ -61,7 +61,8 @@ describe("buildOutboundCallPrompt", () => {
 
       If they need to speak to a person, give them +17055559999.
 
-      If you reach voicemail, leave a short, friendly message: that it's Everly from Northshore Lawn, the gist of «the lift is fixed and we can launch any day this week», and that Northshore Lawn will text them. Then end the call.
+      Voicemail is a recorded greeting ("the person you're trying to reach is not available", "at the tone, record your message") followed by a beep or silence. If anyone says hello, answers you or talks back, even right after a greeting, it's a person: forget the voicemail and start the call normally with your opening line.
+      If it really is voicemail, wait for the beep and leave one short message, two sentences at most: that it's Everly from Northshore Lawn, with the gist of «the lift is fixed and we can launch any day this week», and that they can call back on +17055559999. Don't say anyone will text them. Then end the call.
 
       Wrap up like a person would: a warm thanks and goodbye (check the best number to reach them only if the owner needs to follow up). Keep the whole call under three minutes.
 
@@ -76,7 +77,7 @@ describe("buildOutboundCallPrompt", () => {
     );
     expect(prompt).toContain('Start with: "Hi there, it\'s Everly with Northshore Lawn." (say it naturally');
     expect(prompt).not.toContain("also wants to know");
-    expect(prompt).toContain("If you reach voicemail, hang up without leaving a message.");
+    expect(prompt).toContain("If it really is voicemail, hang up without leaving a message.");
     expect(prompt).not.toContain("Services Northshore Lawn offers");
     expect(prompt).not.toContain("speak to a person");
   });
