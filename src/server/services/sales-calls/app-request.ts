@@ -12,6 +12,7 @@
 import { cleanInstructions, cancelSalesCall, SALES_CALL_INSTRUCTIONS_MAX, skipReasonText, type SalesCallRow } from "./queue";
 import { findCallConsent, isDoNotCall } from "./compliance";
 import { startOwnerSalesCall, type StartOwnerSalesCallResult } from "./owner-request";
+import { loadSalesCallSettings } from "./settings";
 import { salesAgentId } from "@/server/services/voice/sales-agent";
 import { isRetellOutboundActive } from "@/server/services/voice";
 import { hasReceptionistPlan, requireReceptionistMinutes } from "@/server/services/voice/minutes";
@@ -45,6 +46,8 @@ export interface AiCallView {
   hasPhone: boolean;
   hasConsent: boolean;
   doNotCall: boolean;
+  /** The business calls any time of day (sales_call_settings.anyTime), not only in calling hours. */
+  anyTime: boolean;
   maxChars: number;
   calls: AiCallSummary[];
 }
@@ -115,7 +118,7 @@ async function contactOf(admin: AdminClient, scope: AiCallScope, contactId: stri
 
 /** What the "Have the AI call" panel shows for one contact. */
 export async function getAiCallView(admin: AdminClient, scope: AiCallScope, contactId: string): Promise<AiCallView> {
-  const [availability, contact, { data: rows }] = await Promise.all([
+  const [availability, contact, { data: rows }, settings] = await Promise.all([
     aiCallAvailability(admin, scope.organizationId),
     contactOf(admin, scope, contactId),
     admin
@@ -126,6 +129,7 @@ export async function getAiCallView(admin: AdminClient, scope: AiCallScope, cont
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(10),
+    loadSalesCallSettings(admin, scope),
   ]);
   const phone = contact?.phone?.trim() || null;
   const [hasConsent, doNotCall] = phone && contact ? await Promise.all([findCallConsent(admin, scope, contact).then(Boolean), isDoNotCall(admin, scope, phone)]) : [false, false];
@@ -135,6 +139,7 @@ export async function getAiCallView(admin: AdminClient, scope: AiCallScope, cont
     hasPhone: Boolean(phone),
     hasConsent,
     doNotCall,
+    anyTime: settings.anyTime,
     maxChars: SALES_CALL_INSTRUCTIONS_MAX,
     calls: ((rows ?? []) as SalesCallRow[]).map(toSummary),
   };
@@ -169,15 +174,17 @@ export async function requestAiCallFromApp(
     throw new ValidationError(err instanceof Error ? err.message : "This month's AI minutes are used up.");
   }
 
-  const [contact, { data: company }] = await Promise.all([
+  const [contact, { data: company }, settings] = await Promise.all([
     contactOf(admin, scope, contactId),
     admin.from("companies").select("timezone").eq("organization_id", scope.organizationId).eq("id", scope.companyId).maybeSingle(),
+    loadSalesCallSettings(admin, scope),
   ]);
   if (!contact) throw new ValidationError("That contact isn't in this business.");
   const who = [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() || "this contact";
   const timeZone = (company as { timezone: string | null } | null)?.timezone?.trim() || DEFAULT_TIMEZONE;
 
-  const when = resolveCallTime(request.when?.trim() || null, nowMs, timeZone);
+  // No time given: the next calling hours, or right now when the business calls any time.
+  const when = resolveCallTime(request.when?.trim() || (settings.anyTime ? "now" : null), nowMs, timeZone);
   if ("error" in when) throw new ValidationError(when.error);
 
   const result = await startOwnerSalesCall(admin, {

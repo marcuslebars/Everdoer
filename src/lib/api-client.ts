@@ -1297,6 +1297,8 @@ export interface AiCallView {
   hasPhone: boolean;
   hasConsent: boolean;
   doNotCall: boolean;
+  /** After-hours calling is on: calls go out at any hour. */
+  anyTime?: boolean;
   maxChars: number;
   calls: AiCallSummary[];
 }

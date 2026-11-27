@@ -239,15 +239,18 @@ export async function decideDial(admin: AdminClient, row: SalesCallRow, inputs: 
   if (row.reason === "speed_to_lead" && !inputs.settings.enabled) return { kind: "skip", reason: "turned_off" };
   if (!inputs.businessNumber) return { kind: "skip", reason: "no_business_number" };
   if (row.reason === "speed_to_lead" && (await alreadyInTouch(admin, row))) return { kind: "skip", reason: "already_in_touch" };
-  const window = callingWindow(nowMs, inputs.timeZone);
+  const window = callingWindow(nowMs, inputs.timeZone, inputs.settings.anyTime);
   if (!window.open) return { kind: "defer", runAtMs: window.nextOpenMs };
   return { kind: "dial" };
 }
 
-/** Tomorrow's first calling minute (the daily cap ran out today). PURE given the zone. */
-export function tomorrowsOpening(nowMs: number, timeZone: string): number {
+/**
+ * Tomorrow's first calling minute (the daily cap ran out today). With "any time" on it's 8 a.m.,
+ * not midnight: the cap's overflow shouldn't ring someone at 12:01. PURE given the zone.
+ */
+export function tomorrowsOpening(nowMs: number, timeZone: string, anyTime = false): number {
   const tomorrow = addDays(localDate(new Date(nowMs), timeZone), 1);
-  return nextCallableAt(zonedInstant(tomorrow, "00:00", timeZone).getTime(), timeZone);
+  return nextCallableAt(zonedInstant(tomorrow, anyTime ? "08:00" : "00:00", timeZone).getTime(), timeZone, anyTime);
 }
 
 // ── Placing ───────────────────────────────────────────────────────────────────
@@ -298,7 +301,7 @@ export async function placeSalesCall(admin: AdminClient, row: SalesCallRow, opti
 
     const day = localDate(new Date(clock()), inputs.timeZone);
     if (!(await consumeLimit(admin, `sales_calls:${row.company_id}:${day}`, inputs.settings.dailyCap, 86_400))) {
-      const runAtMs = tomorrowsOpening(clock(), inputs.timeZone);
+      const runAtMs = tomorrowsOpening(clock(), inputs.timeZone, inputs.settings.anyTime);
       await setStatus(admin, row.id, ["dialing"], { status: "scheduled", run_at: new Date(runAtMs).toISOString(), claimed_at: null, claimed_by: null });
       return { status: "deferred", runAtMs, message: `That's today's limit on sales calls - I'll call ${who} tomorrow.` };
     }
@@ -603,7 +606,7 @@ export async function recordSalesCallOutcome(admin: AdminClient, input: SalesCal
 
     let retryId: string | null = null;
     if (!reached && !analysis.doNotCall && !wrongNumber && row.attempt < row.max_attempts && inputs) {
-      const runAtMs = nextCallableAt(nowMs + inputs.settings.retryMinutes * 60_000, inputs.timeZone);
+      const runAtMs = nextCallableAt(nowMs + inputs.settings.retryMinutes * 60_000, inputs.timeZone, inputs.settings.anyTime);
       const next = await scheduleSalesCall(admin, {
         scope,
         contactId: row.contact_id,

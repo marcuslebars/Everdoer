@@ -3,7 +3,8 @@
  *
  *   - Calling hours (CRTC Unsolicited Telecommunications Rules): weekdays 9:00–21:30, weekends
  *     10:00–18:00, in the business's time zone (its customers are local). A call is only started
- *     with at least CALL_END_MARGIN_MIN left in the window.
+ *     with at least CALL_END_MARGIN_MIN left in the window. A business that turns on "any time"
+ *     (sales_call_settings.anyTime) skips this rule: the owner's choice, off by default.
  *   - Express consent to automated calls to THIS number (call_consents): an AI voice that calls
  *     to sell is treated as an automatic dialing-announcing device, which needs express consent.
  *   - The internal do-not-call list (do_not_call): a "don't call me" is kept 3 years + 14 days.
@@ -45,9 +46,11 @@ function hhmm(min: number): string {
 
 /**
  * Is `nowMs` inside the calling window (with the end margin)? `nextOpenMs` is when calls may start:
- * `nowMs` itself when open, else the next opening. PURE given the time zone.
+ * `nowMs` itself when open, else the next opening. With `anyTime` the window never closes.
+ * PURE given the time zone.
  */
-export function callingWindow(nowMs: number, timeZone: string): { open: boolean; nextOpenMs: number } {
+export function callingWindow(nowMs: number, timeZone: string, anyTime = false): { open: boolean; nextOpenMs: number } {
+  if (anyTime) return { open: true, nextOpenMs: nowMs };
   const today = localDate(new Date(nowMs), timeZone);
   const minutes = localMinutes(nowMs, timeZone);
   const w = windowFor(today);
@@ -57,9 +60,9 @@ export function callingWindow(nowMs: number, timeZone: string): { open: boolean;
   return { open: false, nextOpenMs: at.getTime() };
 }
 
-/** `atMs` if the window is open then, else the next opening. PURE. */
-export function nextCallableAt(atMs: number, timeZone: string): number {
-  return callingWindow(atMs, timeZone).nextOpenMs;
+/** `atMs` if the window is open then (always, with `anyTime`), else the next opening. PURE. */
+export function nextCallableAt(atMs: number, timeZone: string, anyTime = false): number {
+  return callingWindow(atMs, timeZone, anyTime).nextOpenMs;
 }
 
 // ── Consent ───────────────────────────────────────────────────────────────────

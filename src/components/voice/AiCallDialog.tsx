@@ -167,7 +167,9 @@ export function AiCallDialog({
         <p className="text-[11px] text-muted-foreground/70 flex items-start gap-1.5 leading-snug">
           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
           {hasInstructions
-            ? "Calls go out weekdays 9 a.m.–9:30 p.m. and weekends 10–6 (your time). Outside those hours it waits for the next opening. You'll get a text with how it went."
+            ? data?.anyTime
+              ? "Calls go out at any hour (after-hours calling is on in Your AI). You'll get a text with how it went."
+              : "Calls go out weekdays 9 a.m.–9:30 p.m. and weekends 10–6 (your time). Outside those hours it waits for the next opening. You'll get a text with how it went."
             : "Rings a real phone the moment you confirm."}
         </p>
 
